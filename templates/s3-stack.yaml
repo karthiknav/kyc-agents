@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 Bucket for Agent Source Code'
+
+Parameters:
+  StackName:
+    Type: String
+    Description: Base name for the stack
+
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${StackName}-agent-source"
+      VersioningConfiguration:
+        Status: Enabled
+
+Outputs:
+  SourceBucketName:
+    Description: Name of the source bucket
+    Value: !Ref SourceBucket
+    Export:
+      Name: !Sub "${StackName}-SourceBucketName"

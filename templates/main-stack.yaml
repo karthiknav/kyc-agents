@@ -1,0 +1,230 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Agent Core Runtime Main Stack'
+
+Parameters:
+  ImageTag:
+    Type: String
+    Default: 'latest'
+    Description: Docker image tag
+  
+  NetworkMode:
+    Type: String
+    Default: 'PUBLIC'
+    AllowedValues:
+      - PUBLIC
+      - PRIVATE
+    Description: Network mode for agent runtime
+  
+  AgentName:
+    Type: String
+    Default: 'basic_agent'
+    Description: Name of the agent
+
+  RolesStackName:
+    Type: String
+    Description: Name of the roles stack to import IAM roles from
+
+  SourceBucketName:
+    Type: String
+    Description: Name of the S3 bucket containing agent source code
+
+  SourceZipKey:
+    Type: String
+    Default: 'agent-source.zip'
+    Description: S3 key for the agent source zip file
+
+Resources:
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-basic-agent"
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Keep last 5 images",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 5
+              },
+              "action": { "type": "expire" }
+            }]
+          }
+
+  CodeBuildTriggerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-codebuild-trigger"
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !ImportValue
+        Fn::Sub: "${RolesStackName}-LambdaExecutionRoleArn"
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import logging
+          import time
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          codebuild = boto3.client('codebuild')
+
+          def handler(event, context):
+              logger.info('Event: %s', event)
+              request_type = event['RequestType']
+
+              try:
+                  if request_type == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  if request_type in ['Create', 'Update']:
+                      project_name = event['ResourceProperties']['ProjectName']
+                      wait_for_completion = event['ResourceProperties'].get('WaitForCompletion', 'false').lower() == 'true'
+
+                      logger.info(f'Starting build for project: {project_name}')
+                      response = codebuild.start_build(projectName=project_name)
+                      build_id = response['build']['id']
+                      logger.info(f'Build started: {build_id}')
+
+                      if not wait_for_completion:
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BuildId': build_id})
+                          return
+
+                      max_wait_time = 900
+                      start_time = time.time()
+
+                      while time.time() - start_time < max_wait_time:
+                          build_response = codebuild.batch_get_builds(ids=[build_id])
+                          build_status = build_response['builds'][0]['buildStatus']
+
+                          if build_status == 'SUCCEEDED':
+                              logger.info(f'Build {build_id} succeeded')
+                              cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BuildId': build_id})
+                              return
+                          elif build_status in ['FAILED', 'FAULT', 'STOPPED', 'TIMED_OUT']:
+                              error_message = f"Build {build_id} failed with status: {build_status}"
+                              logger.error(error_message)
+
+                              try:
+                                  logs_info = build_response['builds'][0].get('logs', {})
+                                  if logs_info.get('groupName') and logs_info.get('streamName'):
+                                      logger.info(f"Build logs available in CloudWatch")
+                              except Exception as log_error:
+                                  logger.warning(f"Could not get log information: {log_error}")
+
+                              cfnresponse.send(event, context, cfnresponse.FAILED, {
+                                  'Error': error_message,
+                                  'BuildId': build_id
+                              })
+                              return
+
+                          logger.info(f"Build {build_id} status: {build_status}")
+                          time.sleep(30)
+
+              except Exception as e:
+                  logger.error('Error: %s', str(e))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  AgentImageBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-agent-build"
+      Description: !Sub "Build agent Docker image for ${AWS::StackName}"
+      ServiceRole: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Value: !Ref ECRRepository
+          - Name: IMAGE_TAG
+            Value: !Ref ImageTag
+          - Name: SOURCE_BUCKET
+            Value: !Ref SourceBucketName
+      Source:
+        Type: S3
+        Location: !Sub "${SourceBucketName}/${SourceZipKey}"
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+            build:
+              commands:
+                - echo Build started on `date`
+                - echo Building Docker image...
+                - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+                - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing Docker image...
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+                - echo Docker image pushed successfully-t $IMAGE_REPO_NAME:$IMAGE_TAG .
+                - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing the Docker image...
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+                - echo ARM64 Docker image pushed successfully
+
+  TriggerImageBuild:
+    Type: Custom::CodeBuildTrigger
+    DependsOn:
+      - ECRRepository
+      - AgentImageBuildProject
+      - CodeBuildTriggerFunction
+    Properties:
+      ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
+      ProjectName: !Ref AgentImageBuildProject
+      WaitForCompletion: "true"
+
+  AgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    DependsOn:
+      - TriggerImageBuild
+    Properties:
+      AgentRuntimeName: !Sub
+        - "${StackNameUnderscore}_${AgentName}"
+        - StackNameUnderscore: !Join ["_", !Split ["-", !Ref "AWS::StackName"]]
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub "${ECRRepository.RepositoryUri}:${ImageTag}"
+      RoleArn: !ImportValue
+        Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
+      NetworkConfiguration:
+        NetworkMode: !Ref NetworkMode
+      Description: !Sub "Basic agent runtime for ${AWS::StackName}"
+
+Outputs:
+  AgentRuntimeId:
+    Description: ID of the created agent runtime
+    Value: !GetAtt AgentRuntime.AgentRuntimeId
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentRuntimeId"
+
+  ECRRepositoryUri:
+    Description: URI of the ECR repository
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRRepositoryUri"
