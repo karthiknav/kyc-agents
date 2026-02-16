@@ -7,14 +7,6 @@ Parameters:
     Default: 'latest'
     Description: Docker image tag
   
-  NetworkMode:
-    Type: String
-    Default: 'PUBLIC'
-    AllowedValues:
-      - PUBLIC
-      - PRIVATE
-    Description: Network mode for agent runtime
-  
   AgentName:
     Type: String
     Default: 'basic_agent'
@@ -23,6 +15,10 @@ Parameters:
   RolesStackName:
     Type: String
     Description: Name of the roles stack to import IAM roles from
+
+  VpcStackName:
+    Type: String
+    Description: Name of the VPC stack to import network resources from
 
   SourceBucketName:
     Type: String
@@ -34,10 +30,24 @@ Parameters:
     Description: S3 key for the agent source zip file
 
 Resources:
+  AgentRuntimeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Agent Runtime
+      VpcId: !ImportValue
+        Fn::Sub: "${VpcStackName}-VpcId"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-agent-runtime-sg"
+
   ECRRepository:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Sub "${AWS::StackName}-basic-agent"
+      EmptyOnDelete: true
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
@@ -176,14 +186,6 @@ Resources:
             post_build:
               commands:
                 - echo Build completed on `date`
-                - echo Pushing Docker image...
-                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-                - echo Docker image pushed successfully-t $IMAGE_REPO_NAME:$IMAGE_TAG .
-                - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-
-            post_build:
-              commands:
-                - echo Build completed on `date`
                 - echo Pushing the Docker image...
                 - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
                 - echo ARM64 Docker image pushed successfully
@@ -213,7 +215,14 @@ Resources:
       RoleArn: !ImportValue
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:
-        NetworkMode: !Ref NetworkMode
+        NetworkMode: VPC
+        NetworkModeConfig:
+          Subnets: !Split
+            - ','
+            - !ImportValue
+                Fn::Sub: '${VpcStackName}-PrivateSubnetIds'
+          SecurityGroups:
+            - !Ref AgentRuntimeSecurityGroup
       Description: !Sub "Basic agent runtime for ${AWS::StackName}"
 
 Outputs:

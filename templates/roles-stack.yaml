@@ -26,6 +26,13 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              - Sid: CreateBedrockAgentCoreNetworkServiceLinkedRolePermissions
+                Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: arn:aws:iam::*:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName: network.bedrock-agentcore.amazonaws.com
               - Sid: GetResourceApiKey
                 Effect: Allow
                 Action: bedrock-agentcore:GetResourceApiKey

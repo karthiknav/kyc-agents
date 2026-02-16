@@ -4,6 +4,7 @@ set -e
 
 BASE_NAME="${1:-basic-agent-demo}"
 REGION="${2:-us-east-1}"
+VPC_STACK="${BASE_NAME}-vpc"
 S3_STACK="${BASE_NAME}-s3"
 ROLES_STACK="${BASE_NAME}-roles"
 MAIN_STACK="${BASE_NAME}-main"
@@ -11,15 +12,26 @@ MAIN_STACK="${BASE_NAME}-main"
 echo "=========================================="
 echo "Deploying Agent Runtime Stacks"
 echo "=========================================="
+echo "VPC Stack: $VPC_STACK"
 echo "S3 Stack: $S3_STACK"
 echo "Roles Stack: $ROLES_STACK"
 echo "Main Stack: $MAIN_STACK"
 echo "Region: $REGION"
 echo "=========================================="
 
+# Deploy VPC stack
+echo ""
+echo "[1/5] Deploying VPC stack..."
+aws cloudformation deploy \
+    --stack-name "$VPC_STACK" \
+    --template-file templates/vpc-stack.yaml \
+    --parameter-overrides StackName="$VPC_STACK" \
+    --region "$REGION"
+echo "✓ VPC stack ready"
+
 # Deploy S3 stack
 echo ""
-echo "[1/4] Deploying S3 stack..."
+echo "[2/5] Deploying S3 stack..."
 aws cloudformation deploy \
     --stack-name "$S3_STACK" \
     --template-file templates/s3-stack.yaml \
@@ -37,7 +49,7 @@ echo "Source bucket: $SOURCE_BUCKET"
 
 # Upload agent source as zip
 echo ""
-echo "[2/4] Uploading agent source..."
+echo "[3/5] Uploading agent source..."
 cd agent
 TIMESTAMP=$(date +%s)
 ZIP_KEY="agent-source-${TIMESTAMP}.zip"
@@ -54,7 +66,7 @@ echo "✓ Agent source uploaded: $ZIP_KEY"
 
 # Deploy roles stack
 echo ""
-echo "[3/4] Deploying roles stack..."
+echo "[4/5] Deploying roles stack..."
 aws cloudformation deploy \
     --stack-name "$ROLES_STACK" \
     --template-file templates/roles-stack.yaml \
@@ -65,11 +77,12 @@ echo "✓ Roles stack ready"
 
 # Deploy main stack
 echo ""
-echo "[4/4] Deploying main stack..."
+echo "[5/5] Deploying main stack..."
 aws cloudformation deploy \
     --stack-name "$MAIN_STACK" \
     --template-file templates/main-stack.yaml \
     --parameter-overrides \
+        VpcStackName="$VPC_STACK" \
         RolesStackName="$ROLES_STACK" \
         SourceBucketName="$SOURCE_BUCKET" \
         SourceZipKey="$ZIP_KEY" \
