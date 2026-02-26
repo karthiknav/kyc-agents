@@ -1,0 +1,38 @@
+default_agent: kyc_agent
+agents:
+  kyc_agent:
+    name: kyc_agent
+    entrypoint: C:/Documents/Code/gitlabrepo/kyc-agents/crew/research_crew.py
+    platform: linux/arm64
+    container_runtime: none
+    aws:
+      execution_role: arn:aws:iam::206409480438:role/AmazonBedrockAgentCoreExecutionRolev1
+      execution_role_auto_create: false
+      account: '206409480438'
+      region: us-east-1
+      ecr_repository: 206409480438.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-kyc_agent
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+    bedrock_agentcore:
+      agent_id: kyc_agent-UuWAt5DYf0
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:206409480438:runtime/kyc_agent-UuWAt5DYf0
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-kyc_agent-builder
+      execution_role: arn:aws:iam::206409480438:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-63e44ecf01
+      source_bucket: bedrock-agentcore-codebuild-sources-206409480438-us-east-1
+    memory:
+      mode: STM_ONLY
+      memory_id: kyc_agent_mem-ePG6oSCWcP
+      memory_arn: arn:aws:bedrock-agentcore:us-east-1:206409480438:memory/kyc_agent_mem-ePG6oSCWcP
+      memory_name: kyc_agent_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: false
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
