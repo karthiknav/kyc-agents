@@ -1,5 +1,7 @@
 crewai
 crewai-tools
+boto3
+python-dotenv
 tavily-python
 bedrock-agentcore<=0.1.5
 langchain-community

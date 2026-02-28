@@ -1,24 +1,15 @@
-research_task:
+screening_task:
   description: >
-    Search the web for news and articles about the person: {name}.
-    Find any relevant news, sanctions, PEP, or adverse media mentions.
-    Return a clear list of all relevant news items with source, date, and summary where available.
-  expected_output: >
-    A structured list of news and articles about {name}. Each item should include
-    source, headline or summary, and relevance. No analysis or conclusion—only the retrieved news.
-  agent: researcher
-
-analysis_task:
-  description: >
-    Using the news and articles retrieved for {name}, perform KYC screening analysis.
-    Determine whether screening is OK, not OK, or ambiguous based on the content.
-    Output your conclusion as valid JSON only, with no markdown or extra text.
+    Given caseId {caseId}:
+    1. Use get_case_details to fetch the case from DynamoDB and extract identity.fullName and case_id.
+    2. Use search_person with the person_name (and pass case_id for propagation) to find news, sanctions, PEP, and adverse media.
+    3. Use produce_screening_analysis with the case details and search results to generate the screening analysis.
+    Return valid JSON with name, analysis_result (screening ok | screening not ok | ambiguous), and analysis_summary.
   expected_output: >
     Valid JSON object with exactly these keys:
-    - "name": the full name that was screened (string)
-    - "analysis_result": one of "screening ok", "screening not ok", "ambiguous" (string)
-    - "analysis_summary": a short summary explaining the reasoning based on the news (string)
-    Example: {"name": "John Doe", "analysis_result": "screening ok", "analysis_summary": "No adverse findings."}
-  agent: analyst
-  context:
-    - research_task
+    - "case_id": the case ID from the case (string)
+    - "name": the full name from identity.fullName (string)
+    - "analysis_result": one of "OK", "NOK", "AMBIGUOUS" (string)
+    - "analysis_summary": a short summary explaining the reasoning (string)
+    Example: {"case_id": "01HR9B5J7Z6J7PD5B6PKQJ2MM4", "name": "Naveena Arul", "analysis_result": "screening ok", "analysis_summary": "No adverse findings."}
+  agent: kyc_screening_agent

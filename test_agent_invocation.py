@@ -7,8 +7,8 @@ agentcore_client = boto3.client(
     region_name="us-east-1"
 )
 
-# Resume analyzer payload
-payload = {"prompt": "Vijay Mallya"}
+# KYC screening payload - pass caseId to fetch from DynamoDB
+payload = {"caseId": "01HR9B5J7Z6J7PD5B6PKQJ2MM4"}
 
 print("Invoking resume analyzer agent...")
 print(f"Payload: {json.dumps(payload, indent=2)}")
