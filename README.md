@@ -96,6 +96,42 @@ Python’s built-in `venv` module:
 
 Dependencies are listed in `crew/requirements.txt`. After setup, run your scripts with the virtual environment activated.
 
+---
+
+## Running the agent locally
+
+Run the KYC screening agent from the **project root** (`kyc-agents`):
+
+1. **Activate the virtual environment** (from the project root, if the venv is in `crew/`):
+
+   **Windows (PowerShell):**
+   ```powershell
+   crew\.venv\Scripts\Activate.ps1
+   ```
+
+   **macOS/Linux:**
+   ```bash
+   source crew/.venv/bin/activate
+   ```
+
+2. **Set environment variables** (or use a `.env` file in the project root):
+   - `OPENAI_API_KEY` – required for the screening analysis LLM
+   - `TAVILY_API_KEY` – required for web search
+   - Optional: `KYC_CASES_TABLE` (DynamoDB table name, default `kyc-cases`), `KYC_RESULTS_BUCKET` (S3 bucket for reports, default `kyc-results`)
+
+   For local runs without AWS SSM, create a `.env` with these keys or export them in your shell.
+
+3. **Run the agent:**
+
+   From the project root:
+   ```bash
+   python -m crew.research_crew
+   ```
+
+   This runs a local test with a default payload (`caseId: "01HR9B5J7Z6J7PD5B6PKQJ2MM4"`). To use a different case ID, edit the payload in `crew/research_crew.py`.
+
+---
+
 ### Tavily Search (API key)
 
 The crew uses [Tavily](https://tavily.com) for web search. Set your API key before running:
