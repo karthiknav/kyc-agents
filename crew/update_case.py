@@ -8,6 +8,44 @@ import boto3
 logger = logging.getLogger(__name__)
 
 
+def _format_screening_report(
+    case_id: str,
+    name: str,
+    analysis_result: str,
+    analysis_summary: str,
+    search_results_summary: str = "",
+    updated_at: str = "",
+) -> str:
+    """Format screening output as a markdown report."""
+    status_emoji = {"OK": "✅", "NOK": "❌", "AMBIGUOUS": "⚠️"}
+    emoji = status_emoji.get(analysis_result, "❓")
+    lines = [
+        "# KYC Screening Report",
+        "",
+        f"**Case ID:** `{case_id}`",
+        f"**Subject:** {name}",
+        f"**Report generated:** {updated_at}",
+        "",
+        "---",
+        "",
+        "## Search results summary",
+        "",
+        search_results_summary or "_No search results summary available._",
+        "",
+        "---",
+        "",
+        "## Screening result",
+        "",
+        f"**Result:** {emoji} **{analysis_result}**",
+        "",
+        "**Analysis summary:**",
+        "",
+        analysis_summary,
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def update_screening_result(task_output):
     """Update the screening stage in the case document according to the schema."""
     logger.info("update_screening_result input: task_output=%s", task_output)
@@ -23,6 +61,8 @@ def update_screening_result(task_output):
     case_id = task_output.get("case_id")
     analysis_result = task_output.get("analysis_result")
     analysis_summary = task_output.get("analysis_summary")
+    search_results_summary = task_output.get("search_results_summary", "")
+    name = task_output.get("name", "Unknown")
     if not case_id or not analysis_result or not analysis_summary:
         logger.info("Results incomplete: case_id=%s, analysis_result=%s, analysis_summary=%s", case_id, analysis_result, analysis_summary)
         return
@@ -38,7 +78,7 @@ def update_screening_result(task_output):
         "NOK": "NOK",
         "AMBIGUOUS": "AMBIGUOUS",
     }
-    status = result_map.get(analysis_result.lower(), "AMBIGUOUS")
+    status = result_map.get(str(analysis_result).lower(), "AMBIGUOUS")
     # finalDecision: LOGICALLY DERIVED from screening result
     final_decision_map = {
         "OK": "OK",
@@ -49,12 +89,41 @@ def update_screening_result(task_output):
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Build markdown report
+    report_md = _format_screening_report(
+        case_id=case_id,
+        name=name,
+        analysis_result=status,
+        analysis_summary=analysis_summary,
+        search_results_summary=search_results_summary,
+        updated_at=now,
+    )
+
+    # Upload report to S3 and get key
+    report_s3 = None
+    bucket = os.environ.get("KYC_RESULTS_BUCKET", "kyc-results")
+    report_key = f"cases/{case_id}/screening-report.md"
+    try:
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket,
+            Key=report_key,
+            Body=report_md.encode("utf-8"),
+            ContentType="text/markdown",
+        )
+        report_s3 = {"bucket": bucket, "key": report_key}
+        logger.info("Screening report uploaded to s3://%s/%s", bucket, report_key)
+    except Exception as e:
+        logger.exception("Failed to upload screening report to S3: %s", e)
+
     # Build the screening stage object per schema
     screening_stage = {
-        "status": status,
+        "result": status,
         "updatedAt": now,
         "summary": analysis_summary,
     }
+    if report_s3:
+        screening_stage["reportS3"] = report_s3
 
     table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
     try:
@@ -67,7 +136,7 @@ def update_screening_result(task_output):
             ExpressionAttributeNames={"#stages": "stages"},
             ExpressionAttributeValues={":empty_map": {}},
         )
-        # Step 2: set #stages.screening with status, summary, updatedAt
+        # Step 2: set #stages.screening with status, summary, updatedAt, reportMarkdown, reportS3
         table.update_item(
             Key={"CaseId": case_id},
             UpdateExpression="SET #stages.#screening = :screening",

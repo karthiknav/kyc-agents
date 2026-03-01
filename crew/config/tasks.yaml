@@ -11,5 +11,6 @@ screening_task:
     - "name": the full name from identity.fullName (string)
     - "analysis_result": one of "OK", "NOK", "AMBIGUOUS" (string)
     - "analysis_summary": a short summary explaining the reasoning (string)
-    Example: {"case_id": "01HR9B5J7Z6J7PD5B6PKQJ2MM4", "name": "Naveena Arul", "analysis_result": "screening ok", "analysis_summary": "No adverse findings."}
+    - "search_results_summary": concise summary of key info from web search (string)
+    Example: {"case_id": "01HR9B5J7Z6J7PD5B6PKQJ2MM4", "name": "Paul Vincent", "analysis_result": "screening ok", "analysis_summary": "No adverse findings.", "search_results_summary": "Search returned no adverse media."}
   agent: kyc_screening_agent

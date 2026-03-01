@@ -6,6 +6,7 @@ tavily-python
 bedrock-agentcore<=0.1.5
 langchain-community
 langchain-tavily
+langchain-openai
 duckduckgo-search
 ddgs
 bedrock_agentcore_starter_toolkit

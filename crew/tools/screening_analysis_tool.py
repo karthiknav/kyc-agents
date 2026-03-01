@@ -4,8 +4,9 @@ import logging
 from typing import Type
 
 from crewai.tools import BaseTool
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -38,10 +39,15 @@ class ScreeningAnalysisTool(BaseTool):
         except json.JSONDecodeError:
             return json.dumps({"error": "Invalid case_details JSON"})
 
-        # search_results may be raw string or JSON with case_id + search_results
+        # search_results may be raw string or JSON with case_id + search_results, or a dict (from agent)
         search_results_text = search_results
         case_id_from_search = None
-        if isinstance(search_results, str) and search_results.strip().startswith("{"):
+        if isinstance(search_results, dict):
+            search_results_text = search_results.get("search_results", "")
+            if not isinstance(search_results_text, str):
+                search_results_text = json.dumps(search_results_text) if search_results_text else ""
+            case_id_from_search = search_results.get("case_id")
+        elif isinstance(search_results, str) and search_results.strip().startswith("{"):
             try:
                 search_parsed = json.loads(search_results)
                 if isinstance(search_parsed, dict):
@@ -49,6 +55,9 @@ class ScreeningAnalysisTool(BaseTool):
                     case_id_from_search = search_parsed.get("case_id")
             except json.JSONDecodeError:
                 pass
+        # Ensure we always have a string for the LLM (slicing a dict would raise)
+        if not isinstance(search_results_text, str):
+            search_results_text = str(search_results_text) if search_results_text else ""
 
         name = "Unknown"
         case_id = "Unknown"
@@ -58,41 +67,66 @@ class ScreeningAnalysisTool(BaseTool):
                 case_id = case_id_from_search
             identity = case.get("identity") or {}
             name = identity.get("fullName", "Unknown") if isinstance(identity, dict) else "Unknown"
-
-        # Use LLM for analysis - we'll use a simple structured prompt via CrewAI
-        # Since this tool runs inside an agent, the agent can also do analysis.
-        # This tool provides a structured format; the actual analysis logic
-        # can be enhanced. For now we produce a template the agent can refine,
-        # or we invoke the model. CrewAI tools don't have direct LLM access by default.
-        # We'll do a heuristic + structured output. For production, hook to an LLM.
-        analysis_result = self._analyze(search_results_text)
-        analysis_summary = self._summarize(search_results_text, analysis_result)
+        
+        # Use LLM for analysis of search results
+        analysis_result, analysis_summary, search_results_summary = self._analyze_with_llm(search_results_text)
 
         out = json.dumps({
             "case_id": case_id,
             "name": name,
             "analysis_result": analysis_result,
             "analysis_summary": analysis_summary,
+            "search_results_summary": search_results_summary,
         }, indent=2)
         logger.info("produce_screening_analysis output: analysis_result=%s", analysis_result)
         return out
 
-    def _analyze(self, search_results: str) -> str:
-        """Determine screening outcome from search results."""
-        lower = search_results.lower()
-        negative_keywords = ["sanction", "convicted", "fraud", "arrest", "scam", "money laundering"]
-        ambiguous_keywords = ["investigation", "alleged", "accused", "controversy", "lawsuit"]
+    def _analyze_with_llm(self, search_results: str):
+        """Use LLM to analyze search results and determine screening outcome (OK, NOK, AMBIGUOUS)."""
+        # Ensure string for slicing (agent may pass dict)
+        text = search_results if isinstance(search_results, str) else str(search_results)
+        text_truncated = text[:12000] if len(text) > 12000 else text
+        logger.info("_analyze_with_llm: input length=%s (truncated to %s)", len(text), len(text_truncated))
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0,
+        )
+        prompt = f"""You are a KYC (Know Your Customer) compliance analyst.
+Analyze the following web search results about a person for adverse media, sanctions, PEP (Politically Exposed Person), fraud, criminal activity, or other compliance risks.
 
-        if any(k in lower for k in negative_keywords):
-            return "NOT"
-        if any(k in lower for k in ambiguous_keywords):
-            return "AMBIGUOUS"
-        return "OK"
+Search results:
+{text_truncated}
 
-    def _summarize(self, search_results: str, result: str) -> str:
-        """Produce a short summary."""
-        if result == "NOK":
-            return "Adverse findings or negative indicators found in search results."
-        if result == "AMBIGUOUS":
-            return "Some ambiguous or investigatory content found; manual review recommended."
-        return "No adverse findings in search results."
+Respond with a JSON object containing exactly these keys:
+1. "analysis_result": one of "OK" (no adverse findings), "NOK" (clear adverse findings), or "AMBIGUOUS" (unclear or investigatory content requiring manual review)
+2. "analysis_summary": a 5-10 sentence summary explaining your reasoning
+3. "search_results_summary": a 5-10 sentence summary of the key information found in the web search results (main sources, topics, and any notable findings)
+
+Example:
+{{"analysis_result": "OK", "analysis_summary": "No adverse findings in search results.", "search_results_summary": "Search returned news articles and public records. No sanctions or adverse media identified. Subject appears in business and professional contexts only."}}
+{{"analysis_result": "NOK", "analysis_summary": "Adverse findings: convicted of fraud in 2018.", "search_results_summary": "Multiple sources report conviction for financial fraud. Subject was charged in 2018 and sentenced to..."}}
+
+Your response (JSON only, no markdown):"""
+
+        try:
+            response = llm.invoke(prompt)
+            logger.info("LLM response: %s", response)
+            content = response.content.strip()
+            # Remove markdown code block if present
+            if content.startswith("```"):
+                lines = content.split("\n")
+                content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+            result = json.loads(content)
+            logger.info("LLM screening analysis result: %s", result)
+            analysis_result = str(result.get("analysis_result", "AMBIGUOUS")).upper()
+            if analysis_result not in ("OK", "NOK", "AMBIGUOUS"):
+                analysis_result = "AMBIGUOUS"
+            analysis_summary = str(result.get("analysis_summary", "")) or "Analysis completed."
+            search_results_summary = str(result.get("search_results_summary", "")) or "No search results summary available."
+        except Exception as e:
+            logger.exception("LLM screening analysis failed: %s", e)
+            analysis_result = "AMBIGUOUS"
+            analysis_summary = f"Analysis failed: {str(e)}. Manual review required."
+            search_results_summary = ""
+
+        return analysis_result, analysis_summary, search_results_summary
