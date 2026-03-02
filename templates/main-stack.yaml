@@ -20,14 +20,18 @@ Parameters:
     Type: String
     Description: Name of the VPC stack to import network resources from
 
-  SourceBucketName:
-    Type: String
-    Description: Name of the S3 bucket containing agent source code
-
   SourceZipKey:
     Type: String
     Default: 'agent-source.zip'
     Description: S3 key for the agent source zip file
+
+  KycCasesTableName:
+    Type: String
+    Description: DynamoDB table name for KYC cases (passed to agent as KYC_CASES_TABLE)
+
+  KycResultsBucketName:
+    Type: String
+    Description: S3 bucket name for KYC results/reports (passed to agent as KYC_RESULTS_BUCKET)
 
 Resources:
   AgentRuntimeSecurityGroup:
@@ -166,10 +170,10 @@ Resources:
           - Name: IMAGE_TAG
             Value: !Ref ImageTag
           - Name: SOURCE_BUCKET
-            Value: !Ref SourceBucketName
+            Value: !Ref KycResultsBucketName
       Source:
         Type: S3
-        Location: !Sub "${SourceBucketName}/${SourceZipKey}"
+        Location: !Sub "${KycResultsBucketName}/${SourceZipKey}"
         BuildSpec: |
           version: 0.2
           phases:
@@ -212,6 +216,9 @@ Resources:
       AgentRuntimeArtifact:
         ContainerConfiguration:
           ContainerUri: !Sub "${ECRRepository.RepositoryUri}:${ImageTag}"
+      EnvironmentVariables:
+        KYC_CASES_TABLE: !Ref KycCasesTableName
+        KYC_RESULTS_BUCKET: !Ref KycResultsBucketName
       RoleArn: !ImportValue
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:

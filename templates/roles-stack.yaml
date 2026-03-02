@@ -8,6 +8,14 @@ Parameters:
   BaseStackName:
     Type: String
     Description: Name of the Base stack
+  KycCasesTableName:
+    Type: String
+    Default: kyc-cases
+    Description: DynamoDB table name for KYC cases (agent read/write)
+  KycResultsBucketName:
+    Type: String
+    Default: kyc-results
+    Description: S3 bucket name for KYC results and screening reports (agent write)
 
 Resources:
   AgentExecutionRole:
@@ -142,6 +150,20 @@ Resources:
                   - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:code-interpreter-custom/*"
                   - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:aws:code-interpreter/*"
                   - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:code-interpreter/*"
+              - Sid: KycDynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${KycCasesTableName}"
+              - Sid: KycS3
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub "arn:aws:s3:::${KycResultsBucketName}/*"
 
   CodeBuildRole:
     Type: AWS::IAM::Role
@@ -210,6 +232,18 @@ Outputs:
     Value: !GetAtt AgentExecutionRole.Arn
     Export:
       Name: !Sub "${StackName}-AgentExecutionRoleArn"
+
+  KycCasesTableName:
+    Description: DynamoDB table name for KYC cases (for agent env)
+    Value: !Ref KycCasesTableName
+    Export:
+      Name: !Sub "${StackName}-KycCasesTableName"
+
+  KycResultsBucketName:
+    Description: S3 bucket name for KYC results (for agent env)
+    Value: !Ref KycResultsBucketName
+    Export:
+      Name: !Sub "${StackName}-KycResultsBucketName"
 
   CodeBuildRoleArn:
     Description: ARN of the CodeBuild role

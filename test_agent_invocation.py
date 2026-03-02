@@ -1,16 +1,16 @@
 import boto3
 import json
 
-agent_arn = "arn:aws:bedrock-agentcore:us-east-1:206409480438:runtime/kyc_agent-UuWAt5DYf0"
+agent_arn = "arn:aws:bedrock-agentcore:us-east-1:206409480438:runtime/kyc_agent_agentcore_basic_agent-2lh2fyAGYE"
 agentcore_client = boto3.client(
     'bedrock-agentcore',
     region_name="us-east-1"
 )
 
 # KYC screening payload - pass caseId to fetch from DynamoDB
-payload = {"caseId": "01HR9B5J7Z6J7PD5B6PKQJ2MM4"}
+payload = {"caseId": "1234"}
 
-print("Invoking resume analyzer agent...")
+print("Invoking KYC screening agent...")
 print(f"Payload: {json.dumps(payload, indent=2)}")
 
 boto3_response = agentcore_client.invoke_agent_runtime(
