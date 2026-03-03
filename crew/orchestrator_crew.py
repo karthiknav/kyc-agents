@@ -5,9 +5,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from crew.crew import KYCCrew
 import boto3
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from crewai import Agent, Crew, Process, Task
+
+from crew.tools.aggregate_results_tool import AggregateKYCResultsTool
+from crew.tools.dynamodb_tool import GetCaseDetailsTool
+from crew.tools.escalate_human_tool import EscalateToHumanTool
+from crew.tools.fanout_tool import FanoutSubagentsTool
+from crew.tools.get_case_stages_tool import GetCasestagesTool
+from crew.crew import KYCCrew
+from crew.update_orchestrator_result import update_orchestrator_result
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,9 +43,10 @@ app = BedrockAgentCoreApp()
 @app.entrypoint
 def agent_invocation(payload):
     """
-    Handler for KYC document processing.
+    Handler for KYC orchestration.
     Payload must include caseId.
-    Returns JSON with comparison_result, comparison_summary, discrepancies, documents_summary.
+    On first invocation: fans out to sub-agents.
+    On subsequent invocations: aggregates results and makes final decision.
     """
     try:
         case_id = payload.get("caseId", "").strip()
@@ -45,15 +54,23 @@ def agent_invocation(payload):
             logger.warning("No caseId provided in payload")
             return {"error": "Missing 'caseId' in payload"}
 
-        logger.info("KYC document processing for caseId: %s", case_id)
+        logger.info("KYC orchestration for caseId: %s", case_id)
 
-        result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
+        # Build a focused crew with only the orchestrator agent and task
+        kyc_crew = KYCCrew()
+        crew = Crew(
+            agents=[kyc_crew.orchestrator_agent()],
+            tasks=[kyc_crew.orchestrator_task()],
+            process=Process.sequential,
+            verbose=True,
+        )
+        result = crew.kickoff(inputs={"caseId": case_id})
 
-        logger.info("Result: %s", result.raw)
+        logger.info("Orchestrator result: %s", result.raw)
         return {"result": result.raw}
 
     except Exception as e:
-        logger.exception("Agent invocation failed")
+        logger.exception("Orchestrator invocation failed")
         return {"error": str(e)}
 
 

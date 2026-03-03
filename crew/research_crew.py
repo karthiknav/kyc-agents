@@ -5,9 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from crew.crew import KYCCrew
 import boto3
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from crewai import Crew, Process
+
+from crew.crew import KYCCrew
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,7 +52,14 @@ def agent_invocation(payload):
 
         logger.info("KYC screening for caseId: %s", case_id)
 
-        crew_instance = KYCCrew().crew()
+        # Run only the sanctions screening agent and task
+        kyc_crew = KYCCrew()
+        crew_instance = Crew(
+            agents=[kyc_crew.kyc_screening_agent()],
+            tasks=[kyc_crew.screening_task()],
+            process=Process.sequential,
+            verbose=True,
+        )
         result = crew_instance.kickoff(inputs={"caseId": case_id})
 
         logger.info("Result: %s", result.raw)
