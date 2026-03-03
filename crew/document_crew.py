@@ -37,10 +37,11 @@ app = BedrockAgentCoreApp()
 @app.entrypoint
 def agent_invocation(payload):
     """
-    Handler for KYC orchestration.
-    Payload must include caseId.
-    On first invocation: fans out to sub-agents.
-    On subsequent invocations: aggregates results and makes final decision.
+    Handler for KYC document processing.
+    Receives {caseId} from the SQS-triggered Lambda.
+    Runs document_processing_agent + document_processing_task only.
+    On completion, update_document_result writes stages.documentProcessing to DynamoDB
+    and publishes {caseId, targetAgent: "orchestrator"} back to the KYC queue.
     """
     try:
         case_id = payload.get("caseId", "").strip()
@@ -48,23 +49,22 @@ def agent_invocation(payload):
             logger.warning("No caseId provided in payload")
             return {"error": "Missing 'caseId' in payload"}
 
-        logger.info("KYC orchestration for caseId: %s", case_id)
+        logger.info("KYC document processing for caseId: %s", case_id)
 
-        # Build a focused crew with only the orchestrator agent and task
         kyc_crew = KYCCrew()
         crew = Crew(
-            agents=[kyc_crew.orchestrator_agent()],
-            tasks=[kyc_crew.orchestrator_task()],
+            agents=[kyc_crew.document_processing_agent()],
+            tasks=[kyc_crew.document_processing_task()],
             process=Process.sequential,
             verbose=True,
         )
         result = crew.kickoff(inputs={"caseId": case_id})
 
-        logger.info("Orchestrator result: %s", result.raw)
+        logger.info("Document processing result: %s", result.raw)
         return {"result": result.raw}
 
     except Exception as e:
-        logger.exception("Orchestrator invocation failed")
+        logger.exception("Document processing invocation failed")
         return {"error": str(e)}
 
 
