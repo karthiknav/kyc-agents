@@ -1,3 +1,17 @@
+orchestrator_agent:
+  role: >
+    KYC Orchestrator
+  goal: >
+    Receive the initial KYC case invocation, fan out to the document processing agent
+    and sanctions screening agent in parallel, aggregate their results, and decide
+    whether the case should be escalated for human review or can be auto-approved.
+  backstory: >
+    You are the central KYC orchestrator. You coordinate all sub-agents, collect their
+    outputs, and make the final risk decision. You escalate to human review whenever
+    document processing or sanctions screening returns a non-OK result or when results
+    are ambiguous.
+  max_iter: 10
+
 document_processing_agent:
   role: >
     Document Processing Agent

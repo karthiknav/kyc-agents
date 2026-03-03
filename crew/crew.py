@@ -4,17 +4,56 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
 
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
+from crew.tools.get_case_files_tool import GetCaseFilesTool
 from crew.tools.search_person_tool import SearchPersonTool
 from crew.tools.screening_analysis_tool import ScreeningAnalysisTool
+from crew.tools.textract_tool import ExtractDocumentTextTool
+from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.update_case import update_screening_result
+from crew.update_document_result import update_document_result
 
 
 @CrewBase
-class ResearchCrew():
-    """KYC screening crew: single agent with get_case_details, search_person, and produce_screening_analysis tools."""
+class KYCCrew():
+    """KYC crew: orchestrator (placeholder), document processing agent, and sanctions screening agent."""
 
     agents: List[BaseAgent]
     tasks: List[Task]
+
+    # ------------------------------------------------------------------
+    # Orchestrator (placeholder — full implementation coming)
+    # ------------------------------------------------------------------
+
+    @agent
+    def orchestrator_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['orchestrator_agent'],  # type: ignore[index]
+            verbose=True,
+            tools=[
+                GetCaseDetailsTool(),
+            ],
+        )
+
+    # ------------------------------------------------------------------
+    # Document Processing Agent
+    # ------------------------------------------------------------------
+
+    @agent
+    def document_processing_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['document_processing_agent'],  # type: ignore[index]
+            verbose=True,
+            tools=[
+                GetCaseDetailsTool(),
+                GetCaseFilesTool(),
+                ExtractDocumentTextTool(),
+                CompareIdentityDocumentsTool(),
+            ],
+        )
+
+    # ------------------------------------------------------------------
+    # Sanctions Screening Agent
+    # ------------------------------------------------------------------
 
     @agent
     def kyc_screening_agent(self) -> Agent:
@@ -28,16 +67,30 @@ class ResearchCrew():
             ],
         )
 
+    # ------------------------------------------------------------------
+    # Tasks
+    # ------------------------------------------------------------------
+
+    @task
+    def document_processing_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['document_processing_task'],  # type: ignore[index]
+            callback=update_document_result,
+        )
+
     @task
     def screening_task(self) -> Task:
         return Task(
-            config=self.tasks_config['screening_task'],
+            config=self.tasks_config['screening_task'],  # type: ignore[index]
             callback=update_screening_result,
         )
 
+    # ------------------------------------------------------------------
+    # Crew
+    # ------------------------------------------------------------------
+
     @crew
     def crew(self) -> Crew:
-        """Creates the KYC screening crew with a single agent."""
         return Crew(
             agents=self.agents,
             tasks=self.tasks,

@@ -1,12 +1,12 @@
-crewai
-crewai-tools
+crewai>=0.80.0
+crewai-tools>=0.14.0
 boto3
 python-dotenv
 tavily-python
 bedrock-agentcore<=0.1.5
-langchain-community
+langchain-community>=0.3.0
 langchain-tavily
-langchain-openai
+langchain-openai>=0.2.0
 duckduckgo-search
 ddgs
 bedrock_agentcore_starter_toolkit

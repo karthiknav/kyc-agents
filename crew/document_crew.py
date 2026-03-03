@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from crew.document_processing_crew import DocumentProcessingCrew
+from crew.crew import KYCCrew
 import boto3
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
@@ -47,7 +47,7 @@ def agent_invocation(payload):
 
         logger.info("KYC document processing for caseId: %s", case_id)
 
-        result = DocumentProcessingCrew().crew().kickoff(inputs={"caseId": case_id})
+        result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
 
         logger.info("Result: %s", result.raw)
         return {"result": result.raw}
