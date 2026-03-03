@@ -74,6 +74,14 @@ def update_document_result(task_output):
     documents_summary = task_output.get("documents_summary", "")
     name = task_output.get("name", "Unknown")
 
+    # Build identity for DynamoDB (fullName, dateOfBirth, nationality)
+    identity = {
+        "fullName": task_output.get("fullName") or name or "Unknown",
+        "dateOfBirth": task_output.get("dateOfBirth") or task_output.get("identity", {}).get("dateOfBirth", ""),
+        "nationality": task_output.get("nationality") or task_output.get("identity", {}).get("nationality", ""),
+    }
+    logger.info("Document result identity: fullName=%s, dateOfBirth=%s, nationality=%s", identity["fullName"], identity["dateOfBirth"], identity["nationality"])
+
     if not case_id or not comparison_result or not comparison_summary:
         logger.info(
             "Results incomplete: case_id=%s, comparison_result=%s, comparison_summary=%s",
@@ -154,9 +162,6 @@ def update_document_result(task_output):
                 "#documentProcessing": "documentProcessing",
             },
             ExpressionAttributeValues={":documentProcessing": document_processing_stage},
-        )
-        logger.info(
-            "update_document_result success: case_id=%s, status=%s", case_id, status
         )
     except Exception as e:
         logger.exception("update_document_result DynamoDB error: %s", e)

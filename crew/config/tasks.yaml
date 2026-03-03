@@ -21,9 +21,7 @@ orchestrator_task:
     - "reason": list of strings describing the decision factors
     - "recommendation_summary": explanation of the outcome
   agent: orchestrator_agent
-  context:
-    - document_processing_task
-    - screening_task
+  
 
 document_processing_task:
   description: >

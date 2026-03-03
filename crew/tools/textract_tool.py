@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 _MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
-_POLL_MAX_RETRIES = 20
+_POLL_MAX_RETRIES = 50
 _POLL_SLEEP_SECONDS = 3
 
 

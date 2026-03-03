@@ -53,14 +53,7 @@ def agent_invocation(payload):
         logger.info("KYC screening for caseId: %s", case_id)
 
         # Run only the sanctions screening agent and task
-        kyc_crew = KYCCrew()
-        crew_instance = Crew(
-            agents=[kyc_crew.kyc_screening_agent()],
-            tasks=[kyc_crew.screening_task()],
-            process=Process.sequential,
-            verbose=True,
-        )
-        result = crew_instance.kickoff(inputs={"caseId": case_id})
+        result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
 
         logger.info("Result: %s", result.raw)
         output = {"result": result.raw}

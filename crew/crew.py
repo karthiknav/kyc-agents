@@ -88,7 +88,7 @@ class KYCCrew():
     def screening_task(self) -> Task:
         return Task(
             config=self.tasks_config['screening_task'],  # type: ignore[index]
-            callback=update_screening_result,
+            callback=update_screening_result
         )
 
     @task
@@ -96,6 +96,7 @@ class KYCCrew():
         return Task(
             config=self.tasks_config['orchestrator_task'],  # type: ignore[index]
             callback=update_orchestrator_result,
+            context=[self.document_processing_task(), self.screening_task()]
         )
 
     # ------------------------------------------------------------------
@@ -105,8 +106,8 @@ class KYCCrew():
     @crew
     def crew(self) -> Crew:
         return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
+            agentss=[self.document_processing_agent(), self.kyc_screening_agent(), self.orchestrator_agent()],
+            tasks=[self.document_processing_task(), self.screening_task(), self.orchestrator_task()],
             process=Process.sequential,
             verbose=True,
         )

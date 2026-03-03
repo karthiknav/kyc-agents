@@ -68,8 +68,10 @@ class ScreeningAnalysisTool(BaseTool):
             identity = case.get("identity") or {}
             name = identity.get("fullName", "Unknown") if isinstance(identity, dict) else "Unknown"
         
-        # Use LLM for analysis of search results
-        analysis_result, analysis_summary, search_results_summary = self._analyze_with_llm(search_results_text)
+        # Use LLM for analysis of search results (pass name so LLM can match results to this person)
+        analysis_result, analysis_summary, search_results_summary = self._analyze_with_llm(
+            search_results_text, person_name=name
+        )
 
         out = json.dumps({
             "case_id": case_id,
@@ -81,30 +83,44 @@ class ScreeningAnalysisTool(BaseTool):
         logger.info("produce_screening_analysis output: analysis_result=%s", analysis_result)
         return out
 
-    def _analyze_with_llm(self, search_results: str):
+    def _analyze_with_llm(self, search_results: str, person_name: str = "Unknown"):
         """Use LLM to analyze search results and determine screening outcome (OK, NOK, AMBIGUOUS)."""
         # Ensure string for slicing (agent may pass dict)
         text = search_results if isinstance(search_results, str) else str(search_results)
         text_truncated = text[:12000] if len(text) > 12000 else text
-        logger.info("_analyze_with_llm: input length=%s (truncated to %s)", len(text), len(text_truncated))
+        logger.info(
+            "_analyze_with_llm: person_name=%s, input length=%s (truncated to %s)",
+            person_name, len(text), len(text_truncated),
+        )
         llm = ChatOpenAI(
             model="gpt-4o-mini",
             temperature=0,
         )
         prompt = f"""You are a KYC (Know Your Customer) compliance analyst.
-Analyze the following web search results about a person for adverse media, sanctions, PEP (Politically Exposed Person), fraud, criminal activity, or other compliance risks.
+
+**Person being screened (from case details):** "{person_name}"
+
+Your task: Determine whether the web search results below contain adverse media, sanctions, PEP (Politically Exposed Person), fraud, criminal activity, or other compliance risks **that actually refer to this specific person** ("{person_name}").
+
+**Matching rules:**
+- **Match the results to the name above.** Only treat content as adverse if it clearly refers to or implicates **"{person_name}"** (the person being screened). Same or similar names can refer to different people — only flag as adverse when the context (e.g. role, location, dates) indicates it is the same individual.
+- If results mention adverse topics but are about **other people** (different person with same/similar name, or unrelated individuals/entities), return **OK** — the findings are not about the person being screened.
+- If results are generic, about unrelated topics, or mention the name only in passing without clearly identifying "{person_name}" in an adverse context, return **OK**.
+- Return **NOK** only when there is clear evidence that **"{person_name}"** (this specific person) is linked to adverse activity.
+- When in doubt whether the content refers to "{person_name}" or to someone else, prefer **AMBIGUOUS**; do not assume that any search hit is about this person.
 
 Search results:
 {text_truncated}
 
 Respond with a JSON object containing exactly these keys:
-1. "analysis_result": one of "OK" (no adverse findings), "NOK" (clear adverse findings), or "AMBIGUOUS" (unclear or investigatory content requiring manual review)
-2. "analysis_summary": a 5-10 sentence summary explaining your reasoning
-3. "search_results_summary": a 5-10 sentence summary of the key information found in the web search results (main sources, topics, and any notable findings)
+1. "analysis_result": one of "OK" (no adverse findings for "{person_name}", or results not about this person), "NOK" (clear adverse findings that refer to "{person_name}"), or "AMBIGUOUS" (unclear whether content refers to "{person_name}" — manual review needed)
+2. "analysis_summary": a 5-10 sentence summary explaining your reasoning, including whether the results actually match and refer to "{person_name}" (the person being screened)
+3. "search_results_summary": a 5-10 sentence summary of the key information in the search results (main sources, topics, and whether they relate to "{person_name}")
 
-Example:
-{{"analysis_result": "OK", "analysis_summary": "No adverse findings in search results.", "search_results_summary": "Search returned news articles and public records. No sanctions or adverse media identified. Subject appears in business and professional contexts only."}}
-{{"analysis_result": "NOK", "analysis_summary": "Adverse findings: convicted of fraud in 2018.", "search_results_summary": "Multiple sources report conviction for financial fraud. Subject was charged in 2018 and sentenced to..."}}
+Examples:
+{{"analysis_result": "OK", "analysis_summary": "Search results mention adverse events but do not reference or implicate the person being screened. Articles refer to other individuals or unrelated entities.", "search_results_summary": "Search returned news and public records. Content does not identify the subject as involved in adverse activity."}}
+{{"analysis_result": "OK", "analysis_summary": "No adverse findings. Results are generic or about different people with similar names.", "search_results_summary": "Results include general news; no clear link to the screened person."}}
+{{"analysis_result": "NOK", "analysis_summary": "Adverse findings: multiple sources confirm this person was convicted of fraud in 2018.", "search_results_summary": "Multiple sources report conviction for financial fraud for the subject. Court records and news cite the same individual."}}
 
 Your response (JSON only, no markdown):"""
 
