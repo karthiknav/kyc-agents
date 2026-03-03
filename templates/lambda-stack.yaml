@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'KYC Main Stack - DynamoDB cases, SQS queue, Lambda triggered on KYC initiation'
+
+Parameters:
+  AgentArn:
+    Type: String
+    Description: ARN of the Bedrock Agent (passed to Lambda as AGENT_ARN environment variable)
+
+  KycCasesTableName:
+    Type: String
+    Description: DynamoDB table name for KYC cases (passed to Lambda as KYC_CASES_TABLE)
+
+  KycLambdaExecutionRoleArn:
+    Type: String
+    Description: ARN of the IAM role for the KYC processor Lambda (from roles stack export KycLambdaExecutionRoleArn)
+
+  LambdaSourceBucket:
+    Type: String
+    Description: S3 bucket containing the KYC processor Lambda deployment package
+
+  LambdaSourceKey:
+    Type: String
+    Description: S3 key for the KYC processor Lambda zip file
+
+  KycLambdaTimeout:
+    Type: Number
+    Default: 60
+    Description: Lambda timeout in seconds
+    MinValue: 10
+    MaxValue: 900
+
+  KycInitiatedQueueArn:
+    Type: String
+    Description: ARN of the SQS queue for KYC-initiated events (from main stack output KycInitiatedQueueArn)
+
+Resources:
+  # Lambda triggered by SQS when KYC is initiated
+  KycProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-kyc-processor"
+      Runtime: python3.11
+      Handler: kyc-processor.handler
+      Role: !Ref KycLambdaExecutionRoleArn
+      Timeout: !Ref KycLambdaTimeout
+      Environment:
+        Variables:
+          AGENT_ARN: !Ref AgentArn
+          KYC_CASES_TABLE: !Ref KycCasesTableName
+      Code:
+        S3Bucket: !Ref LambdaSourceBucket
+        S3Key: !Ref LambdaSourceKey
+
+  # Event source mapping - Lambda is triggered by SQS messages
+  KycProcessorEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !Ref KycInitiatedQueueArn
+      FunctionName: !Ref KycProcessorFunction
+      BatchSize: 10
+
+Outputs:
+  KycProcessorFunctionArn:
+    Description: ARN of the KYC processor Lambda (triggered by SQS, has AGENT_ARN env var)
+    Value: !GetAtt KycProcessorFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-KycProcessorFunctionArn"

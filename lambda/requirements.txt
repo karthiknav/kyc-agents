@@ -1,0 +1,3 @@
+# KYC processor Lambda dependencies
+# boto3 is provided by Lambda runtime; list it here to pin version or add below
+boto3>=1.28.0

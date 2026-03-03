@@ -9,7 +9,7 @@ Parameters:
   
   AgentName:
     Type: String
-    Default: 'basic_agent'
+    Default: 'runtime'
     Description: Name of the agent
 
   RolesStackName:
@@ -233,11 +233,11 @@ Resources:
       Description: !Sub "Basic agent runtime for ${AWS::StackName}"
 
 Outputs:
-  AgentRuntimeId:
+  AgentRuntimeArn:
     Description: ID of the created agent runtime
-    Value: !GetAtt AgentRuntime.AgentRuntimeId
+    Value: !GetAtt AgentRuntime.AgentRuntimeArn
     Export:
-      Name: !Sub "${AWS::StackName}-AgentRuntimeId"
+      Name: !Sub "${AWS::StackName}-AgentRuntimeArn"
 
   ECRRepositoryUri:
     Description: URI of the ECR repository
