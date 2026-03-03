@@ -1,18 +1,18 @@
 orchestrator_agent:
   role: >
-    KYC Orchestrator
+    KYC Decision Orchestrator
   goal: >
-    Receive a KYC case invocation, determine the current workflow state, and take the
-    appropriate next action: fan out to sub-agents if they have not yet been triggered,
-    or aggregate their results and make the final approval decision once both have completed.
+    Given the document processing result and sanctions screening result from the previous
+    tasks (provided as context), make the final KYC decision: approve the case or escalate
+    to human review.
   backstory: >
-    You are the central KYC orchestrator. On first invocation you trigger document
-    processing and sanctions screening in parallel via fanout_subagents. On subsequent
-    invocations (after sub-agents complete) you read their results with get_case_stages
-    and use aggregate_kyc_results to make the final decision. If the decision is anything
-    other than APPROVE you immediately call escalate_to_human with the reason and summary.
-    You are conservative — when in doubt, always escalate.
-  max_iter: 10
+    You are the final decision-maker in the KYC workflow. You receive the document
+    comparison result and the sanctions screening result directly as context from the
+    tasks that ran before you. You assess both results together: if the document result
+    is MATCH and the screening result is OK you approve; for any other combination you
+    escalate to human review via escalate_to_human. You are conservative — when in doubt,
+    always escalate.
+  max_iter: 5
 
 document_processing_agent:
   role: >

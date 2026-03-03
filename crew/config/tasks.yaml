@@ -1,43 +1,29 @@
 orchestrator_task:
   description: >
-    Given caseId {caseId}, orchestrate the full KYC workflow:
+    Given caseId {caseId} and the outputs of the document processing and screening
+    tasks provided as context, make the final KYC decision:
 
-    STEP 1 — Determine current state:
-      Use get_case_details to fetch the case, then use get_case_stages to read the stages map.
+    1. Read the document comparison result (MATCH / PARTIAL_MATCH / MISMATCH) and
+       the screening analysis result (OK / NOK / AMBIGUOUS) from the context.
 
-    STEP 2 — Branch based on state:
+    2. If document result is MATCH AND screening result is OK: approve the case.
+       Return JSON with action "APPROVED".
 
-      A) If stages.orchestrator does NOT exist (first invocation):
-         Call fanout_subagents with the case_id to trigger document_processor and sanctions
-         sub-agents in parallel. Return JSON: {{"case_id": ..., "action": "FANNED_OUT",
-         "status": "AWAITING_SUBAGENTS"}}.
-
-      B) If stages.orchestrator.status == "AWAITING_SUBAGENTS" and BOTH stages.documentProcessing
-         AND stages.screening are present (sub-agents have completed):
-         Call aggregate_kyc_results with case_id, the documentProcessing stage JSON, and the
-         screening stage JSON to get the final decision.
-         - If decision == "APPROVE": return JSON with action "APPROVED".
-         - If decision == "ESCALATE": call escalate_to_human with case_id, reason, and
-           escalation_summary from the aggregate result. Return JSON with action "ESCALATED".
-
-      C) If stages.orchestrator.status == "AWAITING_SUBAGENTS" but one or both sub-agent
-         stages are still missing (sub-agents still running):
-         Return JSON: {{"case_id": ..., "action": "WAITING", "status": "AWAITING_SUBAGENTS",
-         "missing": [...list of missing stages...]}}.
-
-      D) If stages.orchestrator.status is already "ESCALATED" or case status is
-         "PENDING_HUMAN_REVIEW": return JSON indicating case is already escalated.
+    3. For any other combination: escalate. Call escalate_to_human with the case_id,
+       a reason list summarising both results, and an escalation_summary.
+       Return JSON with action "ESCALATED".
 
   expected_output: >
     Valid JSON object with at minimum these keys:
     - "case_id": the case ID (string)
-    - "action": one of "FANNED_OUT", "APPROVED", "ESCALATED", "WAITING", "ALREADY_ESCALATED"
-    - "status": current orchestrator status string
-    For APPROVE/ESCALATE actions also include:
+    - "action": one of "APPROVED" or "ESCALATED"
     - "decision": "APPROVE" or "ESCALATE"
     - "reason": list of strings describing the decision factors
     - "recommendation_summary": explanation of the outcome
   agent: orchestrator_agent
+  context:
+    - document_processing_task
+    - screening_task
 
 document_processing_task:
   description: >

@@ -1,36 +1,26 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'KYC Main Stack - DynamoDB cases, SQS queue, Lambda triggered on KYC initiation'
+Description: 'KYC Lambda Stack — SQS-triggered Lambda that invokes the KYC AgentCore runtime'
 
 Parameters:
-  SanctionsAgentArn:
+  AgentArn:
     Type: String
-    Description: ARN of the Bedrock AgentCore runtime for the sanctions screening agent
-
-  DocProcessorAgentArn:
-    Type: String
-    Default: ""
-    Description: ARN of the Bedrock AgentCore runtime for the document processing agent (optional)
-
-  OrchestratorAgentArn:
-    Type: String
-    Default: ""
-    Description: ARN of the Bedrock AgentCore runtime for the orchestrator agent (optional)
+    Description: ARN of the Bedrock AgentCore runtime for the KYC agent
 
   KycCasesTableName:
     Type: String
-    Description: DynamoDB table name for KYC cases (passed to Lambda as KYC_CASES_TABLE)
+    Description: DynamoDB table name for KYC cases
 
   KycLambdaExecutionRoleArn:
     Type: String
-    Description: ARN of the IAM role for the KYC processor Lambda (from roles stack export KycLambdaExecutionRoleArn)
+    Description: ARN of the IAM role for the KYC processor Lambda
 
   LambdaSourceBucket:
     Type: String
-    Description: S3 bucket containing the KYC processor Lambda deployment package
+    Description: S3 bucket containing the Lambda deployment package
 
   LambdaSourceKey:
     Type: String
-    Description: S3 key for the KYC processor Lambda zip file
+    Description: S3 key for the Lambda zip file
 
   KycLambdaTimeout:
     Type: Number
@@ -41,10 +31,9 @@ Parameters:
 
   KycInitiatedQueueArn:
     Type: String
-    Description: ARN of the SQS queue for KYC-initiated events (from main stack output KycInitiatedQueueArn)
+    Description: ARN of the SQS queue for KYC-initiated events
 
 Resources:
-  # Lambda triggered by SQS when KYC is initiated
   KycProcessorFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -55,15 +44,12 @@ Resources:
       Timeout: !Ref KycLambdaTimeout
       Environment:
         Variables:
-          SANCTIONS_AGENT_ARN: !Ref SanctionsAgentArn
-          DOC_PROCESSOR_AGENT_ARN: !Ref DocProcessorAgentArn
-          ORCHESTRATOR_AGENT_ARN: !Ref OrchestratorAgentArn
+          KYC_AGENT_ARN: !Ref AgentArn
           KYC_CASES_TABLE: !Ref KycCasesTableName
       Code:
         S3Bucket: !Ref LambdaSourceBucket
         S3Key: !Ref LambdaSourceKey
 
-  # Event source mapping - Lambda is triggered by SQS messages
   KycProcessorEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -73,7 +59,7 @@ Resources:
 
 Outputs:
   KycProcessorFunctionArn:
-    Description: ARN of the KYC processor Lambda (triggered by SQS, routes to agent by targetAgent field)
+    Description: ARN of the KYC processor Lambda
     Value: !GetAtt KycProcessorFunction.Arn
     Export:
       Name: !Sub "${AWS::StackName}-KycProcessorFunctionArn"

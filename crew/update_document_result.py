@@ -162,17 +162,3 @@ def update_document_result(task_output):
         logger.exception("update_document_result DynamoDB error: %s", e)
         return
 
-    # Publish SQS message to notify the orchestrator
-    queue_url = os.environ.get("KYC_QUEUE_URL", "")
-    if not queue_url:
-        logger.warning("KYC_QUEUE_URL not set — skipping orchestrator notification")
-        return
-    try:
-        sqs = boto3.client("sqs")
-        message = {"caseId": case_id, "targetAgent": "orchestrator"}
-        sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(message))
-        logger.info(
-            "update_document_result: SQS message sent to orchestrator for case_id=%s", case_id
-        )
-    except Exception as e:
-        logger.exception("update_document_result SQS error: %s", e)
