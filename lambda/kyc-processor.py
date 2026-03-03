@@ -26,21 +26,46 @@ def _invoke_agent_fire_and_forget(agentcore_client, agent_arn: str, payload: dic
 
 
 def handler(event, context):
-    agent_arn = os.environ.get("AGENT_ARN")
+    sanctions_agent_arn = os.environ.get("SANCTIONS_AGENT_ARN")
+    doc_processor_agent_arn = os.environ.get("DOC_PROCESSOR_AGENT_ARN", "")
+    orchestrator_agent_arn = os.environ.get("ORCHESTRATOR_AGENT_ARN", "")
     table_name = os.environ.get("KYC_CASES_TABLE")
     region = os.environ.get("AWS_REGION", "us-east-1")
-    if not agent_arn:
-        raise ValueError("AGENT_ARN environment variable is required")
+
+    if not sanctions_agent_arn:
+        raise ValueError("SANCTIONS_AGENT_ARN environment variable is required")
+
+    agent_arn_map = {
+        "sanctions": sanctions_agent_arn,
+        "document_processor": doc_processor_agent_arn,
+        "orchestrator": orchestrator_agent_arn,
+    }
 
     agentcore_client = boto3.client("bedrock-agentcore", region_name=region)
-    logger.info("AGENT_ARN=%s KYC_CASES_TABLE=%s", agent_arn, table_name)
+    logger.info(
+        "SANCTIONS_AGENT_ARN=%s DOC_PROCESSOR_AGENT_ARN=%s ORCHESTRATOR_AGENT_ARN=%s KYC_CASES_TABLE=%s",
+        sanctions_agent_arn, doc_processor_agent_arn, orchestrator_agent_arn, table_name,
+    )
 
     for record in event.get("Records", []):
         try:
             body = json.loads(record.get("body", "{}"))
             case_id = body.get("caseId")
-            logger.info("Invoking agent for caseId=%s (fire-and-forget)", case_id)
-            payload = {"prompt": case_id or ""}
+            target_agent = body.get("targetAgent", "sanctions")
+
+            agent_arn = agent_arn_map.get(target_agent)
+            if not agent_arn:
+                logger.warning(
+                    "Unknown or unconfigured targetAgent=%s for caseId=%s — skipping record",
+                    target_agent, case_id,
+                )
+                continue
+
+            logger.info(
+                "Invoking agent targetAgent=%s for caseId=%s (fire-and-forget)",
+                target_agent, case_id,
+            )
+            payload = {"caseId": case_id or ""}
             _invoke_agent_fire_and_forget(agentcore_client, agent_arn, payload)
         except Exception as e:
             logger.exception("Error processing record: %s", e)

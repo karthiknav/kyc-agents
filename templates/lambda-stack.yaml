@@ -2,9 +2,19 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'KYC Main Stack - DynamoDB cases, SQS queue, Lambda triggered on KYC initiation'
 
 Parameters:
-  AgentArn:
+  SanctionsAgentArn:
     Type: String
-    Description: ARN of the Bedrock Agent (passed to Lambda as AGENT_ARN environment variable)
+    Description: ARN of the Bedrock AgentCore runtime for the sanctions screening agent
+
+  DocProcessorAgentArn:
+    Type: String
+    Default: ""
+    Description: ARN of the Bedrock AgentCore runtime for the document processing agent (optional)
+
+  OrchestratorAgentArn:
+    Type: String
+    Default: ""
+    Description: ARN of the Bedrock AgentCore runtime for the orchestrator agent (optional)
 
   KycCasesTableName:
     Type: String
@@ -45,7 +55,9 @@ Resources:
       Timeout: !Ref KycLambdaTimeout
       Environment:
         Variables:
-          AGENT_ARN: !Ref AgentArn
+          SANCTIONS_AGENT_ARN: !Ref SanctionsAgentArn
+          DOC_PROCESSOR_AGENT_ARN: !Ref DocProcessorAgentArn
+          ORCHESTRATOR_AGENT_ARN: !Ref OrchestratorAgentArn
           KYC_CASES_TABLE: !Ref KycCasesTableName
       Code:
         S3Bucket: !Ref LambdaSourceBucket
@@ -61,7 +73,7 @@ Resources:
 
 Outputs:
   KycProcessorFunctionArn:
-    Description: ARN of the KYC processor Lambda (triggered by SQS, has AGENT_ARN env var)
+    Description: ARN of the KYC processor Lambda (triggered by SQS, routes to agent by targetAgent field)
     Value: !GetAtt KycProcessorFunction.Arn
     Export:
       Name: !Sub "${AWS::StackName}-KycProcessorFunctionArn"
