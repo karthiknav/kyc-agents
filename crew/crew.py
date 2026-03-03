@@ -1,5 +1,5 @@
-from crewai import Agent, Crew, Process, Task
-from crewai.project import CrewBase, agent, crew, task
+from crewai import Agent, Task
+from crewai.project import CrewBase, agent, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
 
@@ -102,14 +102,29 @@ class KYCCrew():
         )
 
     # ------------------------------------------------------------------
-    # Crew
+    # LOCAL DEV ONLY — not used in production deployments.
+    #
+    # In production each agent runs in its own isolated Bedrock AgentCore
+    # container (document_crew.py, orchestrator_crew.py, research_crew.py)
+    # and is triggered independently via SQS.  Those wrappers instantiate
+    # KYCCrew() but build their own single-agent Crew, so this method is
+    # never called at runtime.
+    #
+    # To run the full KYC flow locally in a single process (no AWS infra):
+    #
+    #   from crew.crew import KYCCrew
+    #   result = KYCCrew().crew().kickoff(inputs={"caseId": "<your-case-id>"})
+    #
+    # NOTE: The sequential process means orchestrator → document → screening
+    # runs inline rather than via async fanout, so fanout/aggregation tool
+    # behaviour will differ from the real distributed flow.
     # ------------------------------------------------------------------
 
-    @crew
-    def crew(self) -> Crew:
-        return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            process=Process.sequential,
-            verbose=True,
-        )
+    # @crew
+    # def crew(self) -> Crew:
+    #     return Crew(
+    #         agents=self.agents,
+    #         tasks=self.tasks,
+    #         process=Process.sequential,
+    #         verbose=True,
+    #     )
