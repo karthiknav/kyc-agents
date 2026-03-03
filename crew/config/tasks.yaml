@@ -1,3 +1,48 @@
+orchestrator_task:
+  description: >
+    Given caseId {caseId} and the outputs of the document processing and screening
+    tasks provided as context, make the final KYC decision:
+
+    1. Read the document comparison result (MATCH / PARTIAL_MATCH / MISMATCH) and
+       the screening analysis result (OK / NOK / AMBIGUOUS) from the context.
+
+    2. If document result is MATCH AND screening result is OK: approve the case.
+       Return JSON with action "APPROVED".
+
+    3. For any other combination: escalate. Call escalate_to_human with the case_id,
+       a reason list summarising both results, and an escalation_summary.
+       Return JSON with action "ESCALATED".
+
+  expected_output: >
+    Valid JSON object with at minimum these keys:
+    - "case_id": the case ID (string)
+    - "action": one of "APPROVED" or "ESCALATED"
+    - "decision": "APPROVE" or "ESCALATE"
+    - "reason": list of strings describing the decision factors
+    - "recommendation_summary": explanation of the outcome
+  agent: orchestrator_agent
+  
+
+document_processing_task:
+  description: >
+    Given caseId {caseId}:
+    1. Use get_case_details to fetch identity info (fullName, DOB, etc.) from DynamoDB.
+    2. Use get_case_files to get the list of uploaded document S3 references.
+    3. Use extract_document_text for each document (once per s3_bucket/s3_key pair).
+    4. Use compare_identity_documents with the case_details JSON and a JSON array of
+       all Textract extraction results to produce the final comparison analysis.
+    Return valid JSON with case_id, name, comparison_result, discrepancies, comparison_summary,
+    and documents_summary.
+  expected_output: >
+    Valid JSON object with exactly these keys:
+    - "case_id": the case ID (string)
+    - "name": full name from identity.fullName (string)
+    - "comparison_result": one of "MATCH", "PARTIAL_MATCH", "MISMATCH" (string)
+    - "discrepancies": list of strings describing mismatches (array, empty if MATCH)
+    - "comparison_summary": explanation of the comparison outcome (string)
+    - "documents_summary": brief summary of each document processed (string)
+  agent: document_processing_agent
+
 screening_task:
   description: >
     Given caseId {caseId}:

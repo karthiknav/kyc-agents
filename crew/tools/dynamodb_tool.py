@@ -47,9 +47,8 @@ class GetCaseDetailsTool(BaseTool):
             full_name = identity.get("fullName", "Unknown") if isinstance(identity, dict) else "Unknown"
 
             # Build a readable summary including case_id and name from identity.fullName
-            case_id_val = item.get("caseId")
+            case_id_val = item.get("CaseId")
             result = {
-                "case_id": case_id_val,
                 "caseId": case_id_val,
                 "identity": {
                     "fullName": full_name,

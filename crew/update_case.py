@@ -149,3 +149,5 @@ def update_screening_result(task_output):
         logger.info("update_screening_result success: case_id=%s, status=%s, final_decision=%s", case_id, status, final_decision)
     except Exception as e:
         logger.exception("update_screening_result error: %s", e)
+        return
+

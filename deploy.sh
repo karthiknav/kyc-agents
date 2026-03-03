@@ -47,7 +47,7 @@ echo "✓ Agent source uploaded: s3://$KYC_RESULTS_BUCKET/$ZIP_KEY"
 
 
 
-# Deploy agent/main stack
+# Deploy agent stack
 echo ""
 echo "[4/6] Deploying agent stack..."
 aws cloudformation deploy \
@@ -64,7 +64,7 @@ aws cloudformation deploy \
     --region "$REGION"
 echo "✓ Agent stack ready"
 
-# Get queue ARN from main stack (output key KycInitiatedQueueArn) and Agent ARN from agent stack
+# Resolve ARNs needed by the Lambda stack
 echo ""
 echo "[5/6] Resolving queue and agent ARNs..."
 KYC_INITIATED_QUEUE_ARN=$(aws cloudformation describe-stacks \
@@ -73,14 +73,14 @@ KYC_INITIATED_QUEUE_ARN=$(aws cloudformation describe-stacks \
     --output text \
     --region "$REGION" 2>/dev/null || true)
 if [ -z "$KYC_INITIATED_QUEUE_ARN" ] || [ "$KYC_INITIATED_QUEUE_ARN" == "None" ]; then
-  echo "Warning: KycInitiatedQueueArn not found in $MAIN_STACK; Lambda stack may need it. Deploy main stack first if it defines the queue."
+  echo "Warning: KycInitiatedQueueArn not found in $MAIN_STACK. Deploy main stack first."
 fi
-AGENT_ARN=$(aws cloudformation describe-stacks \
+KYC_AGENT_ARN=$(aws cloudformation describe-stacks \
     --stack-name "$AGENT_STACK" \
     --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' \
     --output text \
     --region "$REGION" 2>/dev/null || true)
-if [ -z "$AGENT_ARN" ] || [ "$AGENT_ARN" == "None" ]; then
+if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" == "None" ]; then
   echo "Warning: AgentRuntimeArn not found in $AGENT_STACK."
 fi
 KYC_LAMBDA_EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks \
@@ -89,7 +89,7 @@ KYC_LAMBDA_EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks \
     --output text \
     --region "$REGION" 2>/dev/null || true)
 if [ -z "$KYC_LAMBDA_EXECUTION_ROLE_ARN" ] || [ "$KYC_LAMBDA_EXECUTION_ROLE_ARN" == "None" ]; then
-  echo "Warning: KycLambdaExecutionRoleArn not found in $ROLES_STACK. Deploy roles stack with KYC Lambda role first."
+  echo "Warning: KycLambdaExecutionRoleArn not found in $ROLES_STACK."
 fi
 
 # Package and upload Lambda code
@@ -117,7 +117,7 @@ aws cloudformation deploy \
     --stack-name "$LAMBDA_STACK" \
     --template-file templates/lambda-stack.yaml \
     --parameter-overrides \
-        AgentArn="$AGENT_ARN" \
+        AgentArn="$KYC_AGENT_ARN" \
         KycCasesTableName="$KYC_CASES_TABLE" \
         KycLambdaExecutionRoleArn="$KYC_LAMBDA_EXECUTION_ROLE_ARN" \
         LambdaSourceBucket="$KYC_RESULTS_BUCKET" \
