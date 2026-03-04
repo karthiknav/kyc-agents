@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import uuid
@@ -6,13 +7,15 @@ from datetime import datetime
 from typing import Optional, List
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="KYC Agentic AI Backend")
 
@@ -29,7 +32,14 @@ app.add_middleware(
 S3_BUCKET = os.getenv("KYC_DOCUMENTS_BUCKET", "kyc-documents")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 DYNAMODB_TABLE = os.getenv("KYC_CASES_TABLE", "KycCases")
-SQS_QUEUE_NAME = os.getenv("SQS_QUEUE_NAME", "kyc-submissions")
+# SQS: queue name (use get_queue_url to resolve URL when sending). From SQS_QUEUE_NAME or derived from KYC_INITIATED_QUEUE_ARN.
+SQS_QUEUE_NAME = os.getenv("SQS_QUEUE_NAME") or os.getenv("KYC_INITIATED_QUEUE_NAME", "kyc-submissions")
+_queue_arn = os.getenv("KYC_INITIATED_QUEUE_ARN", "")
+if _queue_arn.startswith("arn:aws:sqs:") and not os.getenv("SQS_QUEUE_NAME") and not os.getenv("KYC_INITIATED_QUEUE_NAME"):
+    _parts = _queue_arn.split(":", 5)
+    if len(_parts) >= 6:
+        SQS_QUEUE_NAME = _parts[5] 
+
 
 # Boto3 client kwargs: when running in Lambda (no AWS_ENDPOINT_URL), use role; otherwise use test creds for local
 _aws_kwargs = {"region_name": AWS_REGION}
@@ -40,15 +50,13 @@ sqs_client = boto3.client("sqs", **_aws_kwargs)
 dynamodb = boto3.resource("dynamodb", **_aws_kwargs)
 
 def get_submissions_table():
-    table = dynamodb.Table(DYNAMODB_TABLE)
-    
-    try:
-        # Check if table exists
-        table.load()
-    except Exception:
-        print(f"Table {DYNAMODB_TABLE} missing, creating now...")
+    """Return the KYC cases DynamoDB table. Lambda needs dynamodb:Scan (and Get/Put/Update/Query/BatchGetItem)."""
+    return dynamodb.Table(DYNAMODB_TABLE)
 
-    return table
+
+def _get_sqs_queue_url() -> str:
+    """Resolve SQS QueueUrl from queue name (Lambda needs sqs:GetQueueUrl and sqs:SendMessage)."""
+    return sqs_client.get_queue_url(QueueName=SQS_QUEUE_NAME)["QueueUrl"]
 
 class LoginRequest(BaseModel):
     email: str
@@ -91,7 +99,7 @@ def generate_presigned_urls(s3_paths: dict) -> dict:
                         url = url.replace("localstack:4566", "localhost:4566")
                     document_urls[key] = url
                 except Exception as e:
-                    print(f"Error generating URL for {s3_key}: {e}")
+                    logger.warning("Error generating URL for %s: %s", s3_key, e)
     return document_urls
 
 @app.on_event("startup")
@@ -104,37 +112,36 @@ async def startup_event():
             s3_client.list_buckets()
             try:
                 s3_client.create_bucket(Bucket=S3_BUCKET)
-                print(f"Bucket {S3_BUCKET} created.")
+                logger.info("Bucket %s created.", S3_BUCKET)
             except Exception as e:
-                # print(f"Bucket might exist: {e}")
-                pass 
-            print(f"Bucket {S3_BUCKET} ready.")
+                logger.debug("Bucket might already exist: %s", e) 
+            logger.info("Bucket %s ready.", S3_BUCKET)
 
             # Check/Create DynamoDB
             existing_tables = dynamodb.meta.client.list_tables()['TableNames']
-            print(f"Existing tables: {existing_tables}")
+            logger.info("Existing tables: %s", existing_tables)
             
             
             # Final verification
             final_tables = dynamodb.meta.client.list_tables()['TableNames']
-            print(f"Final tables check: {final_tables}")
+            logger.info("Final tables check: %s", final_tables)
             if DYNAMODB_TABLE in final_tables:
-                print("Startup sync complete.")
+                logger.info("Startup sync complete.")
                 # Ensure SQS queue exists
                 try:
                     sqs_client.create_queue(QueueName=SQS_QUEUE_NAME)
-                    print(f"SQS Queue {SQS_QUEUE_NAME} created/ready.")
+                    logger.info("SQS Queue %s created/ready.", SQS_QUEUE_NAME)
                 except Exception as e:
-                    print(f"Error ensuring SQS queue: {e}")
+                    logger.warning("Error ensuring SQS queue: %s", e)
                 break
             else:
-                print("Table still missing after creation, retrying...")
+                logger.info("Table still missing after creation, retrying...")
                 
         except Exception as e:
-            print(f"AWS not ready (attempt {i+1}/{max_retries}): {e}")
+            logger.warning("AWS not ready (attempt %s/%s): %s", i + 1, max_retries, e)
             await asyncio.sleep(5)
     else:
-        print("Failed to initialize AWS resources correctly.")
+        logger.error("Failed to initialize AWS resources correctly.")
 
 @app.post("/login", response_model=UserResponse)
 async def login(request: LoginRequest):
@@ -142,24 +149,21 @@ async def login(request: LoginRequest):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    # Check for existing submission using GSI
+    # Find case for this user (KYC cases table only; no GSI — use Scan with filter)
     submission = None
     try:
         table = get_submissions_table()
-        response = table.query(
-            IndexName='UserLookupIndex',
-            KeyConditionExpression=Key('user_id').eq(user["user_id"])
-        )
-        items = response.get('Items', [])
+        response = table.scan(FilterExpression=Attr("user_id").eq(user["user_id"]))
+        items = response.get("Items", [])
+        while response.get("LastEvaluatedKey"):
+            response = table.scan(
+                FilterExpression=Attr("user_id").eq(user["user_id"]),
+                ExclusiveStartKey=response["LastEvaluatedKey"],
+            )
+            items.extend(response.get("Items", []))
         submission = items[0] if items else None
     except Exception as e:
-        # Gracefully handle missing table or index
-        print(f"Note: Could not query submissions (table might not be ready): {e}")
-        try:
-            tables = dynamodb.meta.client.list_tables()['TableNames']
-            print(f"Debug - Available tables during login: {tables}")
-        except:
-            pass
+        logger.info("Could not look up submission: %s", e)
         submission = None
     
     login_status = "not_started"
@@ -202,7 +206,7 @@ async def login(request: LoginRequest):
                     document_urls[f.get("type")] = url
                     f["url"] = url # Add URL to the file object itself
                 except Exception as e:
-                    print(f"Error generating URL for {s3_key}: {e}")
+                    logger.warning("Error generating URL for %s: %s", s3_key, e)
 
     return {
         "email": user["email"], 
@@ -222,14 +226,16 @@ async def login(request: LoginRequest):
 async def get_submission(userId: str):
     try:
         table = get_submissions_table()
-        response = table.query(
-            IndexName='UserLookupIndex',
-            KeyConditionExpression=Key('user_id').eq(userId)
-        )
-        items = response.get('Items', [])
+        response = table.scan(FilterExpression=Attr("user_id").eq(userId))
+        items = response.get("Items", [])
+        while response.get("LastEvaluatedKey"):
+            response = table.scan(
+                FilterExpression=Attr("user_id").eq(userId),
+                ExclusiveStartKey=response["LastEvaluatedKey"],
+            )
+            items.extend(response.get("Items", []))
         if not items:
             return {"status": "not_found"}
-        
         submission = items[0]
         
         # Generate pre-signed URLs
@@ -258,7 +264,7 @@ async def get_submission(userId: str):
             "document_urls": document_urls
         }
     except Exception as e:
-        print(f"Error fetching submission: {e}")
+        logger.exception("Error fetching submission")
         raise HTTPException(status_code=500, detail=f"Failed to fetch submission: {str(e)}")
 
 @app.post("/submit-kyc")
@@ -317,29 +323,19 @@ async def submit_kyc(
             }
         }
         
-        print(f"DEBUG: Processing submission for user {userId}")
-        print(f"DEBUG: Form data: fullName={fullName}, address={address}, passport={passportNumber}, expiry={passportExpiry}, dob={dateOfBirth}, nationality={nationality}")
-        print(f"DEBUG: Files: id={id_file.filename}, addr={address_file.filename}, inc={income_file.filename}")
+        logger.info("Processing submission for user %s", userId)
+        logger.debug(
+            "Form data: fullName=%s, address=%s, passport=%s, expiry=%s, dob=%s, nationality=%s",
+            fullName, address, passportNumber, passportExpiry, dateOfBirth, nationality,
+        )
+        logger.debug("Files: id=%s, addr=%s, inc=%s", id_file.filename, address_file.filename, income_file.filename)
         
         table = get_submissions_table()
-        try:
-            # Final check of tables before PutItem
-            all_tables = dynamodb.meta.client.list_tables()['TableNames']
-            print(f"DEBUG: Tables found immediately before PutItem: {all_tables}")
-            
-            table.put_item(Item=submission_data)
-            print(f"DEBUG: PutItem successful for {case_id}")
-        except Exception as e:
-            print(f"PutItem failed for {case_id}: {e}")
-            tables = dynamodb.meta.client.list_tables()['TableNames']
-            print(f"Debug - Available tables during ERROR: {tables}")
-            raise e
+        table.put_item(Item=submission_data)
 
-        # 3. Emit event to SQS
+        # 3. Emit event to SQS (queue URL from ARN or queue name)
         try:
-            queue_url_response = sqs_client.get_queue_url(QueueName=SQS_QUEUE_NAME)
-            queue_url = queue_url_response['QueueUrl']
-            
+            queue_url = _get_sqs_queue_url()
             sqs_client.send_message(
                 QueueUrl=queue_url,
                 MessageBody=json.dumps({
@@ -347,12 +343,12 @@ async def submit_kyc(
                     "userId": userId,
                     "fullName": fullName,
                     "timestamp": timestamp,
-                    "status": "PROCESSING"
-                })
+                    "status": "INITIATED",
+                }),
             )
-            print(f"DEBUG: SQS message sent for {case_id}")
+            logger.info("SQS message sent for case %s", case_id)
         except Exception as e:
-            print(f"DEBUG: Failed to send SQS message: {e}")
+            logger.warning("Failed to send SQS message: %s", e)
 
         return {
             "status": "success",
@@ -361,20 +357,27 @@ async def submit_kyc(
             "data": submission_data
         }
     except Exception as e:
-        print(f"Submission error: {e}")
+        logger.exception("Submission error")
         raise HTTPException(status_code=500, detail=f"Failed to process KYC: {str(e)}")
 
 @app.get("/submissions")
 async def get_submissions():
     try:
         table = get_submissions_table()
-        # Use SubmissionsByTimeIndex to get all submissions of type 'Individual' sorted by createdAt
-        response = table.query(
-            IndexName='SubmissionsByTimeIndex',
-            KeyConditionExpression=Key('type').eq('Individual'),
-            ScanIndexForward=False # Sort descending by createdAt
+        # No GSI: scan KYC cases table for type='Individual', then sort by createdAt
+        response = table.scan(FilterExpression=Attr("type").eq("Individual"))
+        items = response.get("Items", [])
+        while response.get("LastEvaluatedKey"):
+            response = table.scan(
+                FilterExpression=Attr("type").eq("Individual"),
+                ExclusiveStartKey=response["LastEvaluatedKey"],
+            )
+            items.extend(response.get("Items", []))
+        submissions = sorted(
+            items,
+            key=lambda x: x.get("createdAt") or "",
+            reverse=True,
         )
-        submissions = response.get('Items', [])
         
         for document in submissions:
             # Generate pre-signed URLs for documents in new structure
@@ -394,11 +397,11 @@ async def get_submissions():
                             document["document_urls"][f.get("type")] = url
                             f["url"] = url
                         except Exception as e:
-                            print(f"Error generating URL for {s3_key}: {e}")
+                            logger.warning("Error generating URL for %s: %s", s3_key, e)
             
         return submissions
     except Exception as e:
-        print(f"Error fetching submissions: {e}")
+        logger.exception("Error fetching submissions")
         raise HTTPException(status_code=500, detail="Failed to fetch submissions")
 
 @app.get("/analytics/summary")
@@ -426,7 +429,7 @@ async def get_analytics_summary():
             "escalations": escalations
         }
     except Exception as e:
-        print(f"Error fetching analytics: {e}")
+        logger.exception("Error fetching analytics")
         raise HTTPException(status_code=500, detail="Failed to fetch analytics")
 
 @app.get("/health")

@@ -77,6 +77,11 @@ KYC_INITIATED_QUEUE_ARN=$(aws cloudformation describe-stacks \
 if [ -z "$KYC_INITIATED_QUEUE_ARN" ] || [ "$KYC_INITIATED_QUEUE_ARN" == "None" ]; then
   echo "Warning: KycInitiatedQueueArn not found in $MAIN_STACK. Deploy main stack first."
 fi
+# Queue name for API Lambda (backend uses get_queue_url(QueueName=...)); derive from ARN if not exported
+KYC_INITIATED_QUEUE_NAME=$(aws cloudformation describe-stacks --stack-name "$MAIN_STACK" --query 'Stacks[0].Outputs[?OutputKey==`KycInitiatedQueueName`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
+if [ -z "$KYC_INITIATED_QUEUE_NAME" ] || [ "$KYC_INITIATED_QUEUE_NAME" == "None" ]; then
+  KYC_INITIATED_QUEUE_NAME="${KYC_INITIATED_QUEUE_ARN##*:}"
+fi
 KYC_AGENT_ARN=$(aws cloudformation describe-stacks \
     --stack-name "$AGENT_STACK" \
     --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' \
@@ -164,7 +169,7 @@ aws cloudformation deploy \
         BackendSourceBucket="$KYC_RESULTS_BUCKET" \
         BackendSourceKey="$BACKEND_ZIP" \
         KycCasesTableName="$KYC_CASES_TABLE" \
-        KycInitiatedQueueArn="$KYC_INITIATED_QUEUE_ARN" \
+        KycInitiatedQueueName="$KYC_INITIATED_QUEUE_NAME" \
     --region "$REGION"
 echo "✓ API stack ready"
 API_ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$API_STACK" --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
@@ -173,29 +178,29 @@ if [ -n "$API_ENDPOINT" ] && [ "$API_ENDPOINT" != "None" ]; then
 fi
 
 # Package frontend and deploy UI stack (S3 + CloudFront)
-echo ""
-echo "[8/8] Packaging frontend and deploying UI stack..."
-FRONTEND_DIST="$("$SCRIPT_DIR/package_frontend.sh")"
-aws cloudformation deploy \
-    --stack-name "$UI_STACK" \
-    --template-file templates/ui-stack.yaml \
-    --region "$REGION"
-UI_BUCKET=$(aws cloudformation describe-stacks \
-    --stack-name "$UI_STACK" \
-    --query 'Stacks[0].Outputs[?OutputKey==`StaticBucketName`].OutputValue' \
-    --output text \
-    --region "$REGION")
-aws s3 sync "$FRONTEND_DIST" "s3://$UI_BUCKET/" --delete --region "$REGION"
-echo "✓ Frontend synced to s3://$UI_BUCKET/"
-DIST_ID=$(aws cloudformation describe-stacks --stack-name "$UI_STACK" --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
-if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
-  aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" 2>/dev/null || true
-  echo "✓ CloudFront invalidation requested"
-fi
-UI_URL=$(aws cloudformation describe-stacks --stack-name "$UI_STACK" --query 'Stacks[0].Outputs[?OutputKey==`WebsiteUrl`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
-if [ -n "$UI_URL" ] && [ "$UI_URL" != "None" ]; then
-  echo "  KYC UI: $UI_URL"
-fi
+# echo ""
+# echo "[8/8] Packaging frontend and deploying UI stack..."
+# FRONTEND_DIST="$("$SCRIPT_DIR/package_frontend.sh")"
+# aws cloudformation deploy \
+#     --stack-name "$UI_STACK" \
+#     --template-file templates/ui-stack.yaml \
+#     --region "$REGION"
+# UI_BUCKET=$(aws cloudformation describe-stacks \
+#     --stack-name "$UI_STACK" \
+#     --query 'Stacks[0].Outputs[?OutputKey==`StaticBucketName`].OutputValue' \
+#     --output text \
+#     --region "$REGION")
+# aws s3 sync "$FRONTEND_DIST" "s3://$UI_BUCKET/" --delete --region "$REGION"
+# echo "✓ Frontend synced to s3://$UI_BUCKET/"
+# DIST_ID=$(aws cloudformation describe-stacks --stack-name "$UI_STACK" --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
+# if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
+#   aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" 2>/dev/null || true
+#   echo "✓ CloudFront invalidation requested"
+# fi
+# UI_URL=$(aws cloudformation describe-stacks --stack-name "$UI_STACK" --query 'Stacks[0].Outputs[?OutputKey==`WebsiteUrl`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
+# if [ -n "$UI_URL" ] && [ "$UI_URL" != "None" ]; then
+#   echo "  KYC UI: $UI_URL"
+# fi
 
 echo ""
 echo "=========================================="

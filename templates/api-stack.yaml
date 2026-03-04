@@ -18,9 +18,9 @@ Parameters:
     Type: String
     Description: DynamoDB table name for KYC cases (passed to Lambda as KYC_CASES_TABLE)
 
-  KycInitiatedQueueArn:
+  KycInitiatedQueueName:
     Type: String
-    Description: ARN of the SQS queue for KYC-initiated events (passed to Lambda as KYC_INITIATED_QUEUE_ARN)
+    Description: Name of the SQS queue for KYC-initiated events (passed to Lambda as SQS_QUEUE_NAME for get_queue_url)
 
 Resources:
   BackendApiFunction:
@@ -35,7 +35,7 @@ Resources:
         Variables:
           KYC_CASES_TABLE: !Ref KycCasesTableName
           KYC_DOCUMENTS_BUCKET: !Ref BackendSourceBucket
-          SQS_QUEUE_NAME: !Ref KycInitiatedQueueArn
+          SQS_QUEUE_NAME: !Ref KycInitiatedQueueName
       Code:
         S3Bucket: !Ref BackendSourceBucket
         S3Key: !Ref BackendSourceKey
