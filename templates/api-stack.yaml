@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'KYC Backend API — API Gateway + Lambda (FastAPI) using existing KYC Lambda execution role'
+
+Parameters:
+  BackendLambdaRoleArn:
+    Type: String
+    Description: ARN of the IAM role for the backend Lambda (e.g. KycLambdaExecutionRoleArn from roles stack)
+
+  BackendSourceBucket:
+    Type: String
+    Description: S3 bucket containing the backend Lambda deployment package
+
+  BackendSourceKey:
+    Type: String
+    Description: S3 key for the backend Lambda zip file
+
+  KycCasesTableName:
+    Type: String
+    Description: DynamoDB table name for KYC cases (passed to Lambda as KYC_CASES_TABLE)
+
+  KycInitiatedQueueArn:
+    Type: String
+    Description: ARN of the SQS queue for KYC-initiated events (passed to Lambda as KYC_INITIATED_QUEUE_ARN)
+
+Resources:
+  BackendApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-backend-api"
+      Runtime: python3.11
+      Handler: main.handler
+      Role: !Ref BackendLambdaRoleArn
+      Timeout: 30
+      Environment:
+        Variables:
+          KYC_CASES_TABLE: !Ref KycCasesTableName
+          KYC_DOCUMENTS_BUCKET: !Ref BackendSourceBucket
+          SQS_QUEUE_NAME: !Ref KycInitiatedQueueArn
+      Code:
+        S3Bucket: !Ref BackendSourceBucket
+        S3Key: !Ref BackendSourceKey
+
+  BackendApiRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      Description: KYC Backend API (FastAPI via Lambda)
+
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref BackendApiRestApi
+      ParentId: !GetAtt BackendApiRestApi.RootResourceId
+      PathPart: "{proxy+}"
+
+  ProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref BackendApiRestApi
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      RequestParameters:
+        method.request.path.proxy: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendApiFunction.Arn}/invocations"
+        RequestParameters:
+          integration.request.path.proxy: method.request.path.proxy
+
+  RootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref BackendApiRestApi
+      ResourceId: !GetAtt BackendApiRestApi.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendApiFunction.Arn}/invocations"
+
+  ApiGatewayInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BackendApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BackendApiRestApi}/*"
+
+  BackendApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ProxyMethod
+      - RootMethod
+    Properties:
+      RestApiId: !Ref BackendApiRestApi
+      Description: Backend API deployment
+
+  BackendApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref BackendApiRestApi
+      DeploymentId: !Ref BackendApiDeployment
+      StageName: prod
+
+Outputs:
+  ApiEndpoint:
+    Description: Base URL of the KYC Backend API
+    Value: !Sub "https://${BackendApiRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiEndpoint"
+  BackendApiFunctionArn:
+    Description: ARN of the backend API Lambda function
+    Value: !GetAtt BackendApiFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BackendApiFunctionArn"

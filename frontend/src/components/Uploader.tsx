@@ -1,0 +1,528 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { API_BASE_URL } from '../config.js';
+
+type DocStatus = 'idle' | 'uploaded' | 'processing' | 'verified' | 'failed';
+
+interface DocSection {
+    id: string;
+    name: string;
+    requirement: string;
+    status: DocStatus;
+    fileName?: string;
+    fileSize?: string;
+    icon: string;
+    iconClass: string;
+}
+
+interface UserDetails {
+    fullName: string;
+    address: string;
+    passportNumber: string;
+    passportExpiry: string;
+    dateOfBirth: string;
+    nationality: string;
+}
+
+interface UploaderProps {
+    userId: string;
+    initialStatus: string;
+    initialSubmissionId: string | undefined;
+}
+
+const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmissionId }) => {
+    const [currentStep, setCurrentStep] = useState(1);
+    const [docs, setDocs] = useState<DocSection[]>([
+        { id: 'id', name: 'Government-Issued ID', requirement: "Passport, National ID, or Driver's License", status: 'idle', icon: '🪪', iconClass: 'id' },
+        { id: 'address', name: 'Proof of Address', requirement: 'Utility bill, bank statement (< 3 months)', status: 'idle', icon: '🏠', iconClass: 'address' },
+        { id: 'income', name: 'Proof of Income', requirement: 'Salary slips, tax return', status: 'idle', icon: '💰', iconClass: 'income' }
+    ]);
+
+    const [userDetails, setUserDetails] = useState<UserDetails>({
+        fullName: '',
+        address: '',
+        passportNumber: '',
+        passportExpiry: '',
+        dateOfBirth: '1990-01-01',
+        nationality: 'NL'
+    });
+
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [hasSubmitted, setHasSubmitted] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [dragActive, setDragActive] = useState<Record<string, boolean>>({});
+    const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+    const uploadedFiles = useRef<Record<string, File>>({});
+    const [submissionStages, setSubmissionStages] = useState<any>(null);
+    const [caseStatus, setCaseStatus] = useState<string>(initialStatus);
+    const [caseId, setCaseId] = useState<string | undefined>(initialSubmissionId);
+    const pollingInterval = useRef<any>(null);
+
+    const fetchStatus = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/submission/${userId}`);
+            if (response.ok) {
+                const data = await response.json();
+                setCaseStatus(data.status);
+                setSubmissionStages(data.stages);
+                if (data.caseId) setCaseId(data.caseId);
+
+                if (data.status === 'APPROVED' || data.status === 'REJECTED') {
+                    if (pollingInterval.current) {
+                        clearInterval(pollingInterval.current);
+                        pollingInterval.current = null;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching status:', error);
+        }
+    };
+
+    useEffect(() => {
+        if (currentStep === 3 && caseStatus !== 'APPROVED' && caseStatus !== 'REJECTED') {
+            fetchStatus(); // Initial fetch
+            pollingInterval.current = setInterval(fetchStatus, 5000);
+        } else if (pollingInterval.current) {
+            clearInterval(pollingInterval.current);
+            pollingInterval.current = null;
+        }
+
+        return () => {
+            if (pollingInterval.current) {
+                clearInterval(pollingInterval.current);
+            }
+        };
+    }, [currentStep, caseStatus]);
+
+    const handleFile = (id: string, file: File) => {
+        const sizeInMB = (file.size / (1024 * 1024)).toFixed(1);
+        uploadedFiles.current[id] = file;
+        setDocs(prev => prev.map(doc => {
+            if (doc.id === id) {
+                return {
+                    ...doc,
+                    status: 'uploaded',
+                    fileName: file.name,
+                    fileSize: `${sizeInMB} MB`
+                };
+            }
+            return doc;
+        }));
+    };
+
+    const onDrag = (e: React.DragEvent, id: string, active: boolean) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(prev => ({ ...prev, [id]: active }));
+    };
+
+    const onDrop = (e: React.DragEvent, id: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(prev => ({ ...prev, [id]: false }));
+
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleFile(id, e.dataTransfer.files[0]);
+        }
+    };
+
+    const handleUploadClick = (id: string) => {
+        fileInputRefs.current[id]?.click();
+    };
+
+    const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
+        if (e.target.files && e.target.files[0]) {
+            handleFile(id, e.target.files[0]);
+        }
+    };
+
+
+    const handleSubmit = async () => {
+        setIsSubmitting(true);
+        setHasSubmitted(true);
+        setCurrentStep(3); // Move to verification step
+
+        const formData = new FormData();
+        formData.append('userId', userId);
+        formData.append('fullName', userDetails.fullName);
+        formData.append('address', userDetails.address);
+        formData.append('passportNumber', userDetails.passportNumber);
+        formData.append('passportExpiry', userDetails.passportExpiry);
+        formData.append('dateOfBirth', userDetails.dateOfBirth);
+        formData.append('nationality', userDetails.nationality);
+
+        formData.append('id_file', uploadedFiles.current['id'] as Blob);
+        formData.append('address_file', uploadedFiles.current['address'] as Blob);
+        formData.append('income_file', uploadedFiles.current['income'] as Blob);
+
+        // Simulate processing states visually while waiting for server
+        setDocs(prev => prev.map(doc => ({ ...doc, status: 'processing' })));
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/submit-kyc`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to submit KYC');
+            }
+
+            const result = await response.json();
+            console.log('Submission success:', result);
+            setIsSubmitting(false);
+
+        } catch (error) {
+            console.error('Submission failed:', error);
+            setDocs(prev => prev.map(doc => ({ ...doc, status: 'failed' })));
+            setIsSubmitting(false);
+        }
+    };
+
+    const statusCounts = {
+        verified: docs.filter(d => d.status === 'verified').length,
+        total: docs.length,
+        uploaded: docs.filter(d => d.status !== 'idle').length
+    };
+
+    const allUploaded = statusCounts.uploaded === statusCounts.total;
+    const detailsFilled = userDetails.fullName && userDetails.address && userDetails.passportNumber && userDetails.passportExpiry;
+
+    useEffect(() => {
+        setProgress(Math.round((statusCounts.verified / statusCounts.total) * 100));
+    }, [statusCounts.verified]);
+
+    useEffect(() => {
+        if (initialStatus !== 'not_started') {
+            setCurrentStep(3);
+            setHasSubmitted(true);
+            setCaseStatus(initialStatus);
+            // If it was already verified, we update the docs state
+            if (initialStatus === 'APPROVED' || initialStatus === 'verified') {
+                setDocs(prev => prev.map(doc => ({ ...doc, status: 'verified' })));
+            } else if (initialStatus === 'PROCESSING' || initialStatus === 'pending') {
+                setDocs(prev => prev.map(doc => ({ ...doc, status: 'processing' })));
+            }
+        }
+    }, [initialStatus]);
+
+    const steps = [
+        { label: 'Personal Info', id: 1 },
+        { label: 'Documents', id: 2 },
+        { label: 'Verification', id: 3 },
+    ];
+
+    return (
+        <div className="app-view active">
+            <div className="uploader-content">
+                <div className="uploader-header">
+                    <h1>KYC Document Submission</h1>
+                    <p>Follow the steps to complete your identity verification. Our AI agent will process your submission securely.</p>
+                </div>
+
+                {/* Main Progress Indicator */}
+                <div className="steps">
+                    {steps.map((step, idx) => (
+                        <React.Fragment key={step.id}>
+                            <div className={`step-item ${currentStep === step.id ? 'active' : ''} ${currentStep > step.id ? 'done' : ''}`}>
+                                <div className="step-num">{currentStep > step.id ? '✓' : step.id}</div>
+                                <div className="step-label">{step.label}</div>
+                            </div>
+                            {idx < steps.length - 1 && (
+                                <div className={`step-line ${currentStep > step.id ? 'done' : ''}`}></div>
+                            )}
+                        </React.Fragment>
+                    ))}
+                </div>
+
+                {/* Step 1: User Details */}
+                {currentStep === 1 && (
+                    <div className="user-details-form" style={{ padding: '32px', background: 'var(--bg-card)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        <h3 style={{ marginBottom: '24px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ color: 'var(--accent-blue)' }}>Step 1:</span> Personal Profile
+                        </h3>
+                        <div className="form-group">
+                            <label>Full Name</label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="John Doe"
+                                value={userDetails.fullName}
+                                onChange={(e) => setUserDetails({ ...userDetails, fullName: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Residential Address</label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="123 Main St, City, Country"
+                                value={userDetails.address}
+                                onChange={(e) => setUserDetails({ ...userDetails, address: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-row" style={{ gap: '16px', marginBottom: '16px' }}>
+                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                                <label>Date of Birth</label>
+                                <input
+                                    type="date"
+                                    className="form-input"
+                                    value={userDetails.dateOfBirth}
+                                    onChange={(e) => setUserDetails({ ...userDetails, dateOfBirth: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                                <label>Nationality</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="NL"
+                                    value={userDetails.nationality}
+                                    onChange={(e) => setUserDetails({ ...userDetails, nationality: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                        <div className="form-row" style={{ gap: '16px', marginBottom: 0 }}>
+                            <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
+                                <label>Passport / ID Number</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="A12345678"
+                                    value={userDetails.passportNumber}
+                                    onChange={(e) => setUserDetails({ ...userDetails, passportNumber: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                                <label>Expiry Date</label>
+                                <input
+                                    type="date"
+                                    className="form-input"
+                                    value={userDetails.passportExpiry}
+                                    onChange={(e) => setUserDetails({ ...userDetails, passportExpiry: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                        <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                                className="login-btn"
+                                style={{ maxWidth: '200px', opacity: detailsFilled ? 1 : 0.5 }}
+                                disabled={!detailsFilled}
+                                onClick={() => setCurrentStep(2)}
+                            >
+                                Next: Documents →
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 2: Document Uploads */}
+                {currentStep === 2 && (
+                    <div className="upload-section">
+                        <div className="section-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ fontSize: '18px' }}>
+                                <span style={{ color: 'var(--accent-blue)' }}>Step 2:</span> Identity Documents
+                            </h3>
+                            <button className="sso-btn" style={{ width: 'auto', padding: '6px 12px' }} onClick={() => setCurrentStep(1)}>
+                                ← Edit Info
+                            </button>
+                        </div>
+                        <div className="upload-grid">
+                            {docs.map(doc => (
+                                <div key={doc.id} className="upload-card">
+                                    <div className="upload-card-header">
+                                        <div className="left">
+                                            <div className={`doc-icon ${doc.iconClass}`}>{doc.icon}</div>
+                                            <div>
+                                                <div className="doc-name">{doc.name}</div>
+                                                <div className="doc-req">{doc.requirement}</div>
+                                            </div>
+                                        </div>
+                                        {doc.status === 'verified' && <span className="status-chip verified">✓ Verified</span>}
+                                        {doc.status === 'processing' && <span className="status-chip processing">⟳ Processing</span>}
+                                        {doc.status === 'failed' && <span className="status-chip failed">✕ Re-upload</span>}
+                                        {doc.status === 'uploaded' && <span className="status-chip" style={{ background: 'var(--accent-blue-dim)', color: 'var(--accent-blue)' }}>Ready</span>}
+                                        {doc.status === 'idle' && <span className="status-chip pending">○ Pending</span>}
+                                    </div>
+
+                                    {doc.status === 'idle' ? (
+                                        <div
+                                            className={`upload-zone ${dragActive[doc.id] ? 'dragging' : ''}`}
+                                            onDragEnter={(e) => onDrag(e, doc.id, true)}
+                                            onDragLeave={(e) => onDrag(e, doc.id, false)}
+                                            onDragOver={(e) => onDrag(e, doc.id, true)}
+                                            onDrop={(e) => onDrop(e, doc.id)}
+                                            onClick={() => handleUploadClick(doc.id)}
+                                        >
+                                            <input
+                                                type="file"
+                                                ref={el => { fileInputRefs.current[doc.id] = el; }}
+                                                style={{ display: 'none' }}
+                                                onChange={(e) => handleFileInputChange(e, doc.id)}
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                            />
+                                            <div style={{ flex: 1, textAlign: 'center' }}>
+                                                <div className="icon">⬆️</div>
+                                                <div className="text">Drag & drop or click</div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="file-preview">
+                                                <div className="file-icon">📄</div>
+                                                <div className="file-info">
+                                                    <div className="file-name">{doc.fileName}</div>
+                                                    <div className="file-size">{doc.status === 'failed' ? 'Failed' : doc.fileSize}</div>
+                                                </div>
+                                                <div className="file-actions">
+                                                    <button onClick={() => setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'idle' } : d))}>
+                                                        Replace
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ textAlign: 'center', marginTop: '32px' }}>
+                            <button
+                                className="login-btn"
+                                style={{
+                                    maxWidth: '300px',
+                                    opacity: allUploaded ? 1 : 0.5,
+                                    cursor: allUploaded ? 'pointer' : 'not-allowed'
+                                }}
+                                onClick={handleSubmit}
+                                disabled={!allUploaded}
+                            >
+                                {allUploaded ? 'Submit for Verification' : `Upload All Documents (${statusCounts.uploaded}/${statusCounts.total})`}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 3: Verification */}
+                {currentStep === 3 && (
+                    <div className="overall-status" style={{ padding: '40px', background: 'var(--bg-card)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                        {caseStatus === 'APPROVED' ? (
+                            <>
+                                <div className="big-icon">✅</div>
+                                <h3>Identity Verified Successfully</h3>
+                                <p>Thank you, {userDetails.fullName}. Your KYC application has been approved.</p>
+                                <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
+                                    <div className="upload-card" style={{ borderLeft: '4px solid var(--accent-green)' }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className="doc-icon verified">🪪</div>
+                                                <div>
+                                                    <div className="doc-name">Document Verification</div>
+                                                    <div className="doc-req">Completed successfully</div>
+                                                </div>
+                                            </div>
+                                            <span className="status-chip verified">✓ Success</span>
+                                        </div>
+                                    </div>
+                                    <div className="upload-card" style={{ borderLeft: '4px solid var(--accent-green)' }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className="doc-icon verified">🔎</div>
+                                                <div>
+                                                    <div className="doc-name">Person Screening</div>
+                                                    <div className="doc-req">No matches found in watchlists</div>
+                                                </div>
+                                            </div>
+                                            <span className="status-chip verified">✓ Success</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        ) : caseStatus === 'REJECTED' ? (
+                            <>
+                                <div className="big-icon">❌</div>
+                                <h3>Verification Rejected</h3>
+                                <p>We're sorry, but your KYC application could not be approved at this time.</p>
+                            </>
+                        ) : (
+                            <>
+                                <div className="big-icon">{isSubmitting ? '🤖' : '⏳'}</div>
+                                <h3>{isSubmitting ? 'AI Agents are Working' : 'Verification In Progress'}</h3>
+                                <p>We are running automated checks on your submission. This usually takes less than a minute.</p>
+
+                                <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
+                                    {/* Document Verification Stage */}
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.documentVerification?.status === 'SUCCESS' ? 'var(--accent-green)' : 'var(--accent-blue)'}` }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className={`doc-icon ${submissionStages?.documentVerification?.status === 'SUCCESS' ? 'verified' : 'processing'}`}>🪪</div>
+                                                <div>
+                                                    <div className="doc-name">Document Verification</div>
+                                                    <div className="doc-req">Analyzing ID authenticity and OCR extraction</div>
+                                                </div>
+                                            </div>
+                                            {submissionStages?.documentVerification?.status === 'SUCCESS' ? (
+                                                <span className="status-chip verified">✓ Completed</span>
+                                            ) : (
+                                                <span className="status-chip processing">⟳ In Progress</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Person Screening Stage */}
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.personScreening?.status === 'SUCCESS' ? 'var(--accent-green)' : submissionStages?.documentVerification?.status === 'SUCCESS' ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className={`doc-icon ${submissionStages?.personScreening?.status === 'SUCCESS' ? 'verified' : submissionStages?.documentVerification?.status === 'SUCCESS' ? 'processing' : ''}`}>🔎</div>
+                                                <div>
+                                                    <div className="doc-name">Person Screening</div>
+                                                    <div className="doc-req">Cross-referencing against global sanctions lists</div>
+                                                </div>
+                                            </div>
+                                            {submissionStages?.personScreening?.status === 'SUCCESS' ? (
+                                                <span className="status-chip verified">✓ Completed</span>
+                                            ) : submissionStages?.documentVerification?.status === 'SUCCESS' ? (
+                                                <span className="status-chip processing">⟳ In Progress</span>
+                                            ) : (
+                                                <span className="status-chip pending">○ Waiting</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="processing-bar" style={{ maxWidth: '100%', margin: '40px 0 20px' }}>
+                                    <div className="fill" style={{
+                                        width: submissionStages?.personScreening?.status === 'SUCCESS' ? '100%' :
+                                            submissionStages?.documentVerification?.status === 'SUCCESS' ? '66%' : '33%',
+                                        background: 'var(--accent-blue)',
+                                        transition: 'width 1s ease-in-out'
+                                    }}></div>
+                                </div>
+
+                                <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
+                                    {docs.map(doc => (
+                                        doc.status === 'failed' && (
+                                            <div key={doc.id} className="ai-result" style={{ borderLeftColor: 'var(--accent-red)' }}>
+                                                <div className="ai-label" style={{ color: 'var(--accent-red)' }}>🤖 Needs Attention: {doc.name}</div>
+                                                <div className="check-item"><span className="fail">✕</span> Image quality insufficient</div>
+                                                <button
+                                                    className="sso-btn"
+                                                    style={{ marginTop: '10px', width: 'auto' }}
+                                                    onClick={() => { setCurrentStep(2); setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'idle' } : d)); }}
+                                                >
+                                                    Retry Upload
+                                                </button>
+                                            </div>
+                                        )
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                        <div className="ref-id" style={{ marginTop: '30px' }}>CASE ID: {caseId || `PENDING`}</div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default Uploader;

@@ -10,6 +10,8 @@ ROLES_STACK="${INFRA_STACK_NAME}-roles"
 MAIN_STACK="${INFRA_STACK_NAME}-main"
 AGENT_STACK="${INFRA_STACK_NAME}-agentcore"
 LAMBDA_STACK="${INFRA_STACK_NAME}-lambda"
+API_STACK="${INFRA_STACK_NAME}-api"
+UI_STACK="${INFRA_STACK_NAME}-ui"
 
 KYC_RESULTS_BUCKET=$(aws cloudformation describe-stacks \
     --stack-name "$STORAGE_STACK" \
@@ -125,6 +127,75 @@ aws cloudformation deploy \
         KycInitiatedQueueArn="$KYC_INITIATED_QUEUE_ARN" \
     --region "$REGION"
 echo "✓ Lambda stack ready"
+
+# Package and upload backend API (FastAPI) for API Gateway + Lambda
+echo ""
+echo "[7/7] Packaging and uploading backend API..."
+BACKEND_ZIP="backend-api-$(date +%s).zip"
+TMP_BACKEND=$(mktemp -d 2>/dev/null || echo "$SCRIPT_DIR/.backend_build_$$")
+mkdir -p "$TMP_BACKEND"
+# Install for Lambda (Linux x86_64, Python 3.11) so native deps like pydantic_core are included
+pip install -q -r "$SCRIPT_DIR/backend/requirements.txt" -t "$TMP_BACKEND" --upgrade \
+  --platform manylinux2014_x86_64 --python-version 3.11 --implementation cp --only-binary=:all:
+cp "$SCRIPT_DIR/backend/main.py" "$TMP_BACKEND/"
+if command -v zip >/dev/null 2>&1; then
+  (cd "$TMP_BACKEND" && zip -r "$SCRIPT_DIR/$BACKEND_ZIP" . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*" >/dev/null 2>&1)
+else
+  (cd "$TMP_BACKEND" && python -c "
+import zipfile, pathlib
+p = pathlib.Path('.')
+with zipfile.ZipFile('_backend_pkg.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
+    for f in sorted(p.rglob('*')):
+        if f.is_file() and '__pycache__' not in str(f) and '.pyc' not in str(f) and '.dist-info' not in str(f) and f.name != '_backend_pkg.zip':
+            zf.write(f, f.as_posix())
+")
+  mv "$TMP_BACKEND/_backend_pkg.zip" "$SCRIPT_DIR/$BACKEND_ZIP"
+fi
+rm -rf "$TMP_BACKEND"
+aws s3 cp "$SCRIPT_DIR/$BACKEND_ZIP" "s3://$KYC_RESULTS_BUCKET/$BACKEND_ZIP" --region "$REGION"
+rm -f "$SCRIPT_DIR/$BACKEND_ZIP"
+echo "✓ Backend API package uploaded: s3://$KYC_RESULTS_BUCKET/$BACKEND_ZIP"
+
+aws cloudformation deploy \
+    --stack-name "$API_STACK" \
+    --template-file templates/api-stack.yaml \
+    --parameter-overrides \
+        BackendLambdaRoleArn="$KYC_LAMBDA_EXECUTION_ROLE_ARN" \
+        BackendSourceBucket="$KYC_RESULTS_BUCKET" \
+        BackendSourceKey="$BACKEND_ZIP" \
+        KycCasesTableName="$KYC_CASES_TABLE" \
+        KycInitiatedQueueArn="$KYC_INITIATED_QUEUE_ARN" \
+    --region "$REGION"
+echo "✓ API stack ready"
+API_ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$API_STACK" --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
+if [ -n "$API_ENDPOINT" ] && [ "$API_ENDPOINT" != "None" ]; then
+  echo "  Backend API: $API_ENDPOINT"
+fi
+
+# Package frontend and deploy UI stack (S3 + CloudFront)
+echo ""
+echo "[8/8] Packaging frontend and deploying UI stack..."
+FRONTEND_DIST="$("$SCRIPT_DIR/package_frontend.sh")"
+aws cloudformation deploy \
+    --stack-name "$UI_STACK" \
+    --template-file templates/ui-stack.yaml \
+    --region "$REGION"
+UI_BUCKET=$(aws cloudformation describe-stacks \
+    --stack-name "$UI_STACK" \
+    --query 'Stacks[0].Outputs[?OutputKey==`StaticBucketName`].OutputValue' \
+    --output text \
+    --region "$REGION")
+aws s3 sync "$FRONTEND_DIST" "s3://$UI_BUCKET/" --delete --region "$REGION"
+echo "✓ Frontend synced to s3://$UI_BUCKET/"
+DIST_ID=$(aws cloudformation describe-stacks --stack-name "$UI_STACK" --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
+if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
+  aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" 2>/dev/null || true
+  echo "✓ CloudFront invalidation requested"
+fi
+UI_URL=$(aws cloudformation describe-stacks --stack-name "$UI_STACK" --query 'Stacks[0].Outputs[?OutputKey==`WebsiteUrl`].OutputValue' --output text --region "$REGION" 2>/dev/null || true)
+if [ -n "$UI_URL" ] && [ "$UI_URL" != "None" ]; then
+  echo "  KYC UI: $UI_URL"
+fi
 
 echo ""
 echo "=========================================="
