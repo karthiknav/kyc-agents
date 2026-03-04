@@ -33,6 +33,7 @@ def handler(event, context):
 
     agentcore_client = boto3.client("bedrock-agentcore", region_name=region)
 
+    failed = 0
     for record in event.get("Records", []):
         try:
             body = json.loads(record.get("body", "{}"))
@@ -40,7 +41,13 @@ def handler(event, context):
             logger.info("Invoking KYC agent for caseId=%s", case_id)
             _invoke_agent_fire_and_forget(agentcore_client, agent_arn, {"caseId": case_id})
         except Exception as e:
-            logger.exception("Error processing record: %s", e)
-            raise
+            # Log but do not re-raise: otherwise SQS keeps redelivering the same message
+            # and Lambda is invoked again in a loop (visibility timeout → retry → fail → repeat).
+            try:
+                case_id = json.loads(record.get("body", "{}")).get("caseId", "?")
+            except Exception:
+                case_id = "?"
+            logger.exception("Error processing SQS record (caseId=%s): %s", case_id, e)
+            failed += 1
 
-    return {"statusCode": 200}
+    return {"statusCode": 200, "failed": failed}

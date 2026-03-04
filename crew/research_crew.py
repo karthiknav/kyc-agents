@@ -30,8 +30,11 @@ try:
     tavily_api_key = get_ssm_parameter("/ops-orchestrator/tavily-api-key")
     os.environ["TAVILY_API_KEY"] = tavily_api_key
     logger.info("✅ TAVILY_API_KEY environment variable set")
+    serpapi_key = get_ssm_parameter("/ops-orchestrator/serpapi-api-key")
+    os.environ["SERPAPI_API_KEY"] = serpapi_key
+    logger.info("✅ SERPAPI_API_KEY environment variable set")
 except Exception as e:
-    logger.error("❌ Failed to set OPENAI_API_KEY or TAVILY_API_KEY: %s", e)
+    logger.error("❌ Failed to set API keys from SSM: %s", e)
 
 
 app = BedrockAgentCoreApp()
@@ -65,9 +68,9 @@ def agent_invocation(payload):
 
 
 if __name__ == "__main__":
-    app.run()
-    # payload = {"caseId": "1234"}
-    # logger.info("Testing locally with payload: %s", payload)
-    # response = agent_invocation(payload)
-    # logger.info("Response: %s", response)
+    #app.run()
+    payload = {"caseId": "1234"}
+    logger.info("Testing locally with payload: %s", payload)
+    response = agent_invocation(payload)
+    logger.info("Response: %s", response)
 

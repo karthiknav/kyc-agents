@@ -11,7 +11,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
 
 # If no files match a glob, expand to nothing instead of literal "crew/*"
 shopt -s nullglob 2>/dev/null || true
@@ -59,7 +60,7 @@ with zipfile.ZipFile('_agent_package.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
 " || { echo "Error: python zip failed" >&2; exit 1; }
   mv "$TEMP_DIR/_agent_package.zip" "$SCRIPT_DIR/$ZIP_NAME" || { echo "Error: failed to move zip" >&2; exit 1; }
 fi
-cd "$SCRIPT_DIR"
+cd "$REPO_ROOT"
 
 echo "  Created: $ZIP_NAME" >&2
 echo "  Contents: Dockerfile, requirements.txt, crew/" >&2

@@ -1,10 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'KYC UI — S3 bucket for static files + CloudFront distribution'
 
+Parameters:
+  AcmCertificateArn:
+    Type: String
+    Default: ''
+    Description: 'ARN of the ACM certificate for CloudFront (optional; omit for default *.cloudfront.net cert)'
+
+Conditions:
+  UseAcmCert: !Not [!Equals [!Ref AcmCertificateArn, '']]
+
 Resources:
   StaticBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
     Properties:
       # Name derived from stack; must be lowercase for S3
       BucketName: !Sub "${AWS::StackName}-static"
@@ -72,6 +80,11 @@ Resources:
             - HEAD
             - OPTIONS
           Compress: true
+          DefaultTTL: 86400
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 200
@@ -81,6 +94,12 @@ Resources:
             ResponseCode: 200
             ResponsePagePath: /index.html
             ErrorCachingMinTTL: 0
+        ViewerCertificate: !If
+          - UseAcmCert
+          - AcmCertificateArn: !Ref AcmCertificateArn
+            MinimumProtocolVersion: TLSv1.2_2021
+            SslSupportMethod: sni-only
+          - CloudFrontDefaultCertificate: true
         PriceClass: PriceClass_100
 
 Outputs:
