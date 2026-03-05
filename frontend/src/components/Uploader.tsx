@@ -47,6 +47,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     });
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submissionError, setSubmissionError] = useState<string | null>(null);
     const [hasSubmitted, setHasSubmitted] = useState(false);
     const [progress, setProgress] = useState(0);
     const [dragActive, setDragActive] = useState<Record<string, boolean>>({});
@@ -139,6 +140,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
+        setSubmissionError(null);
         setHasSubmitted(true);
         setCurrentStep(3); // Move to verification step
 
@@ -164,16 +166,19 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                 body: formData,
             });
 
+            const result = await response.json().catch(() => ({}));
+
             if (!response.ok) {
-                throw new Error('Failed to submit KYC');
+                const message = (result?.detail ?? result?.message ?? 'Submission failed') as string;
+                throw new Error(message);
             }
 
-            const result = await response.json();
             console.log('Submission success:', result);
             setIsSubmitting(false);
 
         } catch (error) {
             console.error('Submission failed:', error);
+            setSubmissionError(error instanceof Error ? error.message : 'Submission failed');
             setDocs(prev => prev.map(doc => ({ ...doc, status: 'failed' })));
             setIsSubmitting(false);
         }
@@ -503,11 +508,11 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                         doc.status === 'failed' && (
                                             <div key={doc.id} className="ai-result" style={{ borderLeftColor: 'var(--accent-red)' }}>
                                                 <div className="ai-label" style={{ color: 'var(--accent-red)' }}>🤖 Needs Attention: {doc.name}</div>
-                                                <div className="check-item"><span className="fail">✕</span> Image quality insufficient</div>
+                                                <div className="check-item"><span className="fail">✕</span> {submissionError ?? 'Submission failed. Please retry or check your documents.'}</div>
                                                 <button
                                                     className="sso-btn"
                                                     style={{ marginTop: '10px', width: 'auto' }}
-                                                    onClick={() => { setCurrentStep(2); setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'idle' } : d)); }}
+                                                    onClick={() => { setSubmissionError(null); setCurrentStep(2); setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'idle' } : d)); }}
                                                 >
                                                     Retry Upload
                                                 </button>

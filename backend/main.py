@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional, List
 
 import boto3
+from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,13 +35,12 @@ S3_BUCKET = os.getenv("KYC_DOCUMENTS_BUCKET", "kyc-documents")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 DYNAMODB_TABLE = os.getenv("KYC_CASES_TABLE", "KycCases")
 # SQS: queue name (use get_queue_url to resolve URL when sending). From SQS_QUEUE_NAME or derived from KYC_INITIATED_QUEUE_ARN.
-SQS_QUEUE_NAME = os.getenv("SQS_QUEUE_NAME") or os.getenv("KYC_INITIATED_QUEUE_NAME", "kyc-submissions")
+SQS_QUEUE_NAME = os.getenv("SQS_QUEUE_NAME") or os.getenv("KYC_INITIATED_QUEUE_NAME")
 _queue_arn = os.getenv("KYC_INITIATED_QUEUE_ARN", "")
-if _queue_arn.startswith("arn:aws:sqs:") and not os.getenv("SQS_QUEUE_NAME") and not os.getenv("KYC_INITIATED_QUEUE_NAME"):
+if not SQS_QUEUE_NAME and _queue_arn.startswith("arn:aws:sqs:"):
     _parts = _queue_arn.split(":", 5)
     if len(_parts) >= 6:
-        SQS_QUEUE_NAME = _parts[5] 
-
+        SQS_QUEUE_NAME = _parts[5]
 
 # Boto3 client kwargs: when running in Lambda (no AWS_ENDPOINT_URL), use role; otherwise use test creds for local
 _aws_kwargs = {"region_name": AWS_REGION}
@@ -56,8 +56,26 @@ def get_submissions_table():
 
 
 def _get_sqs_queue_url() -> str:
-    """Resolve SQS QueueUrl from queue name (Lambda needs sqs:GetQueueUrl and sqs:SendMessage)."""
-    return sqs_client.get_queue_url(QueueName=SQS_QUEUE_NAME)["QueueUrl"]
+    """Resolve SQS QueueUrl from queue name. IAM needs sqs:GetQueueUrl and sqs:SendMessage (no DescribeQueue)."""
+    if not SQS_QUEUE_NAME or not SQS_QUEUE_NAME.strip():
+        raise ValueError(
+            "SQS_QUEUE_NAME (or KYC_INITIATED_QUEUE_NAME / KYC_INITIATED_QUEUE_ARN) is not set. "
+            "Set SQS_QUEUE_NAME in the API Lambda environment."
+        )
+    try:
+        resp = sqs_client.get_queue_url(QueueName=SQS_QUEUE_NAME.strip())
+        return resp["QueueUrl"]
+    except ClientError as e:
+        err_code = e.response.get("Error", {}).get("Code", "")
+        if err_code in ("AWS.SimpleQueueService.NonExistentQueue", "QueueDoesNotExist"):
+            logger.error("SQS queue does not exist: %s", SQS_QUEUE_NAME)
+            raise ValueError(f"SQS queue '{SQS_QUEUE_NAME}' does not exist. Create the queue or fix the name.") from e
+        if err_code == "AccessDeniedException":
+            logger.error("SQS GetQueueUrl denied. Ensure the Lambda role has sqs:GetQueueUrl and sqs:SendMessage.")
+        raise
+    except Exception as e:
+        logger.exception("SQS get_queue_url failed for queue %s", SQS_QUEUE_NAME)
+        raise
 
 class LoginRequest(BaseModel):
     email: str
@@ -128,12 +146,13 @@ async def startup_event():
             logger.info("Final tables check: %s", final_tables)
             if DYNAMODB_TABLE in final_tables:
                 logger.info("Startup sync complete.")
-                # Ensure SQS queue exists
-                try:
-                    sqs_client.create_queue(QueueName=SQS_QUEUE_NAME)
-                    logger.info("SQS Queue %s created/ready.", SQS_QUEUE_NAME)
-                except Exception as e:
-                    logger.warning("Error ensuring SQS queue: %s", e)
+                # Ensure SQS queue exists (only if queue name is configured)
+                if SQS_QUEUE_NAME:
+                    try:
+                        sqs_client.create_queue(QueueName=SQS_QUEUE_NAME)
+                        logger.info("SQS Queue %s created/ready.", SQS_QUEUE_NAME)
+                    except Exception as e:
+                        logger.warning("Error ensuring SQS queue: %s", e)
                 break
             else:
                 logger.info("Table still missing after creation, retrying...")
@@ -337,6 +356,7 @@ async def submit_kyc(
         # 3. Emit event to SQS (queue URL from ARN or queue name)
         try:
             queue_url = _get_sqs_queue_url()
+            logger.info("Sending SQS message to queue %s", queue_url)
             sqs_client.send_message(
                 QueueUrl=queue_url,
                 MessageBody=json.dumps({
@@ -349,7 +369,7 @@ async def submit_kyc(
             )
             logger.info("SQS message sent for case %s", case_id)
         except Exception as e:
-            logger.warning("Failed to send SQS message: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to send message to SQS: {str(e)}")
 
         return {
             "status": "success",
