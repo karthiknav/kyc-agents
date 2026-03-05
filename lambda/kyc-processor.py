@@ -24,6 +24,42 @@ def _invoke_agent_fire_and_forget(agentcore_client, agent_arn: str, payload: dic
             pass
 
 
+def _parse_body(record) -> tuple[dict, str]:
+    """
+    Parse SQS message body. Supports:
+    - Direct JSON from backend: {"caseId": "CASE-XXX", ...}
+    - SNS-wrapped: {"Type": "Notification", "Message": "{\"caseId\":\"CASE-XXX\",...}"}
+    Returns (body_dict, case_id).
+    """
+    raw = record.get("body", "{}")
+    try:
+        body = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON in SQS body: %s", raw[:200] if raw else "(empty)")
+        return {}, ""
+
+    # SNS subscription: payload is in Message as a string
+    if body.get("Type") == "Notification" and isinstance(body.get("Message"), str):
+        try:
+            body = json.loads(body["Message"])
+        except json.JSONDecodeError:
+            logger.warning("SNS Message field is not valid JSON: %s", body.get("Message", "")[:200])
+            return body, ""
+
+    case_id = (
+        body.get("caseId")
+        or body.get("case_id")
+        or body.get("CaseId")
+        or ""
+    )
+    if isinstance(case_id, str):
+        case_id = case_id.strip()
+    else:
+        case_id = str(case_id) if case_id is not None else ""
+
+    return body, case_id
+
+
 def handler(event, context):
     agent_arn = os.environ.get("KYC_AGENT_ARN")
     region = os.environ.get("AWS_REGION", "us-east-1")
@@ -35,16 +71,28 @@ def handler(event, context):
 
     failed = 0
     for record in event.get("Records", []):
+        # Log record detail so we can see what came from the event (SQS)
+        logger.info(
+            "SQS record from event: messageId=%s eventSourceArn=%s body_preview=%s",
+            record.get("messageId"),
+            record.get("eventSourceARN", "")[:120] if record.get("eventSourceARN") else None,
+            (record.get("body") or "")[:300],
+        )
         try:
-            body = json.loads(record.get("body", "{}"))
-            case_id = body.get("caseId", "")
+            body, case_id = _parse_body(record)
+            if not case_id:
+                logger.warning(
+                    "SQS message missing caseId (skipping agent invocation). MessageId=%s body_keys=%s",
+                    record.get("messageId", "?"),
+                    list(body.keys()) if body else "empty",
+                )
+                failed += 1
+                continue
             logger.info("Invoking KYC agent for caseId=%s", case_id)
             _invoke_agent_fire_and_forget(agentcore_client, agent_arn, {"caseId": case_id})
         except Exception as e:
-            # Log but do not re-raise: otherwise SQS keeps redelivering the same message
-            # and Lambda is invoked again in a loop (visibility timeout → retry → fail → repeat).
             try:
-                case_id = json.loads(record.get("body", "{}")).get("caseId", "?")
+                _, case_id = _parse_body(record)
             except Exception:
                 case_id = "?"
             logger.exception("Error processing SQS record (caseId=%s): %s", case_id, e)

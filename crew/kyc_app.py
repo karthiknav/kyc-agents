@@ -55,7 +55,8 @@ def agent_invocation(payload):
 
 
 if __name__ == "__main__":
-    payload = {"caseId": "test-case-id"}
-    logger.info("Testing locally with payload: %s", payload)
-    response = agent_invocation(payload)
-    logger.info("Response: %s", response)
+    app.run()
+    # payload = {"caseId": "test-case-id"}
+    # logger.info("Testing locally with payload: %s", payload)
+    # response = agent_invocation(payload)
+    # logger.info("Response: %s", response)

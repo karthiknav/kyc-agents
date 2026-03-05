@@ -10,8 +10,7 @@ orchestrator_agent:
     comparison result and the sanctions screening result directly as context from the
     tasks that ran before you. You assess both results together: if the document result
     is MATCH and the screening result is OK you approve; for any other combination you
-    escalate to human review via escalate_to_human. You are conservative — when in doubt,
-    always escalate.
+    escalate to human review via escalate_to_human. 
   max_iter: 5
 
 document_processing_agent:

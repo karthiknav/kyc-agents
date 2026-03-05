@@ -1,34 +1,123 @@
-#!/bin/bash
-# Build the frontend (Vite/React) for deployment.
-# Produces frontend/dist/ — deploy.sh uses this for S3 sync to the UI stack bucket.
-# Usage: ./package_frontend.sh
-# Output (stdout): absolute path to the dist directory (for deploy scripts).
+#!/usr/bin/env python3
+"""
+Deploy UI to S3 for CloudFront hosting.
+Gets API Gateway URL from API stack, builds UI with VITE_API_BASE, uploads dist/ to S3.
+"""
+import os
+import sys
+import subprocess
+import shutil
+import boto3
+from pathlib import Path
 
-set -e
+# Script is in infra/; ui/ is at repo root (sibling of infra/)
+ROOT = Path(__file__).resolve().parents[1]
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FRONTEND_DIR="$SCRIPT_DIR/frontend"
-DIST_DIR="$FRONTEND_DIR/dist"
+def get_api_gateway_url(region: str, stack_name: str) -> str:
+    """Get ApiGatewayUrl output from API stack."""
+    cfn = boto3.client("cloudformation", region_name=region)
+    try:
+        resp = cfn.describe_stacks(StackName=stack_name)
+        outputs = resp["Stacks"][0].get("Outputs", [])
+        for o in outputs:
+            if o["OutputKey"] == "ApiGatewayUrl":
+                return o["OutputValue"].rstrip("/")
+    except Exception as e:
+        print(f"❌ Failed to get API Gateway URL from {stack_name}: {e}")
+        sys.exit(1)
+    print(f"❌ ApiGatewayUrl not found in stack {stack_name}")
+    sys.exit(1)
 
-if [ ! -f "$FRONTEND_DIR/package.json" ]; then
-  echo "Error: frontend/package.json not found" >&2
-  exit 1
-fi
+def get_ui_bucket_name(region: str, stack_name: str) -> str:
+    """Get UiBucketName output from UI stack."""
+    cfn = boto3.client("cloudformation", region_name=region)
+    try:
+        resp = cfn.describe_stacks(StackName=stack_name)
+        outputs = resp["Stacks"][0].get("Outputs", [])
+        for o in outputs:
+            if o["OutputKey"] == "UiBucketName":
+                return o["OutputValue"]
+    except Exception as e:
+        print(f"❌ Failed to get UiBucketName from {stack_name}: {e}")
+        sys.exit(1)
+    print(f"❌ UiBucketName not found in stack {stack_name}")
+    sys.exit(1)
 
-echo "Building frontend..." >&2
-cd "$FRONTEND_DIR"
-if [ -f "package-lock.json" ]; then
-  npm ci --silent 2>/dev/null || npm install --silent
-else
-  npm install --silent
-fi
-# Use npx so vite is found on Windows when PATH doesn't include node_modules/.bin
-npx vite build
+def deploy():
+    env = os.getenv("ENVIRONMENT", "agentcore")
+    region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+    api_stack_name = f"resume-analyzer-agents-strands-{env}-api"
+    ui_stack_name = f"resume-analyzer-agents-strands-{env}-ui"
 
-if [ ! -d "$DIST_DIR" ]; then
-  echo "Error: build did not produce $DIST_DIR" >&2
-  exit 1
-fi
+    api_url = get_api_gateway_url(region, api_stack_name)
+    api_base = f"{api_url}/api"
+    print(f"📡 API base URL: {api_base}")
 
-echo "Frontend built: $DIST_DIR" >&2
-echo "$DIST_DIR"
+    bucket_name = get_ui_bucket_name(region, ui_stack_name)
+    print(f"🪣 UI bucket: {bucket_name}")
+
+    ui_dir = ROOT / "ui"
+    if not ui_dir.exists():
+        print("❌ ui/ directory not found")
+        sys.exit(1)
+
+    npm_path = shutil.which("npm") or (shutil.which("npm.cmd") if os.name == "nt" else None)
+    if not npm_path:
+        print("❌ npm not found in PATH")
+        sys.exit(1)
+
+    def run_npm(args: list[str], env_override: dict | None = None) -> subprocess.CompletedProcess:
+        env = os.environ.copy()
+        if env_override:
+            env.update(env_override)
+        return subprocess.run(
+            [npm_path, *args],
+            cwd=ui_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    # Install dependencies (includes TypeScript) so tsc is available for build
+    print("📦 Installing UI dependencies (npm install)...")
+    result = run_npm(["install"])
+    if result.returncode != 0:
+        print(result.stderr or result.stdout)
+        sys.exit(1)
+    print("✅ Dependencies installed")
+
+    # Build with VITE_API_BASE (Git Bash + Windows compatible)
+    env_vars = {"VITE_API_BASE": api_base}
+    print("🔨 Building UI...")
+    result = run_npm(["run", "build"], env_override=env_vars)
+    if result.returncode != 0:
+        print(result.stderr or result.stdout)
+        sys.exit(1)
+    print("✅ Build complete")
+
+    dist_dir = ui_dir / "dist"
+    if not dist_dir.exists():
+        print("❌ ui/dist/ not found after build")
+        sys.exit(1)
+
+    # Upload dist/* to S3
+    s3 = boto3.client("s3", region_name=region)
+    for f in dist_dir.rglob("*"):
+        if f.is_file():
+            key = str(f.relative_to(dist_dir)).replace("\\", "/")
+            content_type = "text/html" if f.suffix == ".html" else None
+            if f.suffix == ".js":
+                content_type = "application/javascript"
+            elif f.suffix == ".css":
+                content_type = "text/css"
+            elif f.suffix in (".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"):
+                content_type = f"image/{f.suffix[1:]}" if f.suffix != ".svg" else "image/svg+xml"
+            extra = {"ContentType": content_type} if content_type else {}
+            s3.upload_file(str(f), bucket_name, key, ExtraArgs=extra)
+            print(f"  📤 {key}")
+
+    print("✅ UI deployed to S3")
+    print("💡 Invalidate CloudFront cache if needed: aws cloudfront create-invalidation --distribution-id <ID> --paths '/*'")
+
+if __name__ == "__main__":
+    deploy()
