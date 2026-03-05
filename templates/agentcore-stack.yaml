@@ -16,10 +16,6 @@ Parameters:
     Type: String
     Description: Name of the roles stack to import IAM roles from
 
-  VpcStackName:
-    Type: String
-    Description: Name of the VPC stack to import network resources from
-
   SourceZipKey:
     Type: String
     Default: 'agent-source.zip'
@@ -34,19 +30,6 @@ Parameters:
     Description: S3 bucket name for KYC results/reports (passed to agent as KYC_RESULTS_BUCKET)
 
 Resources:
-  AgentRuntimeSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for Agent Runtime
-      VpcId: !ImportValue
-        Fn::Sub: "${VpcStackName}-VpcId"
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: !Sub "${AWS::StackName}-agent-runtime-sg"
-
   ECRRepository:
     Type: AWS::ECR::Repository
     Properties:
@@ -222,14 +205,7 @@ Resources:
       RoleArn: !ImportValue
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:
-        NetworkMode: VPC
-        NetworkModeConfig:
-          Subnets: !Split
-            - ','
-            - !ImportValue
-                Fn::Sub: '${VpcStackName}-PrivateSubnetIds'
-          SecurityGroups:
-            - !Ref AgentRuntimeSecurityGroup
+        NetworkMode: PUBLIC
       Description: !Sub "Basic agent runtime for ${AWS::StackName}"
 
 Outputs:

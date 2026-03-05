@@ -8,7 +8,7 @@ VPC_STACK="${INFRA_STACK_NAME}-vpc"
 STORAGE_STACK="${INFRA_STACK_NAME}-storage"
 ROLES_STACK="${INFRA_STACK_NAME}-roles"
 MAIN_STACK="${INFRA_STACK_NAME}-main"
-AGENT_STACK="${INFRA_STACK_NAME}-agentcore"
+AGENT_STACK="${INFRA_STACK_NAME}-agentcore-runtime"
 LAMBDA_STACK="${INFRA_STACK_NAME}-lambda"
 API_STACK="${INFRA_STACK_NAME}-api"
 UI_STACK="${INFRA_STACK_NAME}-ui"
@@ -59,7 +59,6 @@ aws cloudformation deploy \
     --template-file "$REPO_ROOT/templates/agentcore-stack.yaml" \
     --parameter-overrides \
         AgentName="kyc_agent" \
-        VpcStackName="$VPC_STACK" \
         RolesStackName="$ROLES_STACK" \
         SourceZipKey="$ZIP_KEY" \
         KycCasesTableName="$KYC_CASES_TABLE" \
@@ -92,6 +91,7 @@ KYC_AGENT_ARN=$(aws cloudformation describe-stacks \
 if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" == "None" ]; then
   echo "Warning: AgentRuntimeArn not found in $AGENT_STACK."
 fi
+echo "KYC Agent ARN: $KYC_AGENT_ARN"
 KYC_LAMBDA_EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks \
     --stack-name "$ROLES_STACK" \
     --query 'Stacks[0].Outputs[?OutputKey==`KycLambdaExecutionRoleArn`].OutputValue' \
