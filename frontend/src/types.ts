@@ -8,6 +8,9 @@ export interface VerificationStage {
     error: string | null;
     version: number;
     matchesFound?: string[];
+    result?: string;
+    summary?: string;
+    recommendation_summary?: string;
 }
 
 export interface User {
@@ -27,8 +30,9 @@ export interface User {
     kyc_logs?: Array<{ time: string; event: string; agent: string }>;
     document_urls?: Record<string, string>;
     stages?: {
-        documentVerification: VerificationStage;
-        personScreening: VerificationStage;
+        documentProcessing: VerificationStage;
+        screening: VerificationStage;
+        orchestrator: VerificationStage;
     };
     finalDecision?: string;
 }
@@ -49,8 +53,9 @@ export interface KycSubmission {
         passportExpiry: string;
     };
     stages: {
-        documentVerification: VerificationStage;
-        personScreening: VerificationStage;
+        documentProcessing: VerificationStage;
+        screening: VerificationStage;
+        orchestrator: VerificationStage;
     };
     document_urls: Record<string, string>;
     finalDecision: string;

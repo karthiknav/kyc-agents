@@ -1,0 +1,66 @@
+{
+    "caseId": "CASE-8E901EF1",
+    "user_id": "USR002",
+    "createdAt": "2026-03-05T10:58:15Z",
+    "status": "PENDING_HUMAN_REVIEW",
+    "statusUpdatedAt": "2026-03-05T10:58:15Z",
+    "type": "Individual",
+    "files": [
+        {
+            "bucket": "kyc-agent-storage-agent-source",
+            "key": "cases/CASE-D223B4FC/passport_passport.pdf",
+            "type": "passport"
+        },
+        {
+            "bucket": "kyc-agent-storage-agent-source",
+            "key": "cases/CASE-D223B4FC/address_license.pdf",
+            "type": "address"
+        },
+        {
+            "bucket": "kyc-agent-storage-agent-source",
+            "key": "cases/CASE-D223B4FC/income_license.pdf",
+            "type": "income"
+        }
+    ],
+    "identity": {
+        "address": "123 Main Street",
+        "dateOfBirth": "1990-12-05",
+        "fullName": "Alex Morgan Lee",
+        "nationality": "UTO (Mock)",
+        "passportExpiry": "2029-11-05",
+        "passportNumber": "123456"
+    },
+    "stages": {
+        "documentProcessing": {
+            "discrepancies": [
+                "dateOfBirth differs: DB=1990-12-05, doc=1990-05-12"
+            ],
+            "reportS3": {
+                "bucket": "kyc-agent-storage-agent-source",
+                "key": "cases/CASE-D223B4FC/document-processing-report.md"
+            },
+            "result": "PARTIAL_MATCH",
+            "summary": "The full name and nationality match between the database record and the extracted documents. However, there is a discrepancy in the date of birth; the database record states December 5, 1990, while the documents indicate May 12, 1990. This inconsistency is significant enough to classify the comparison as a partial match.",
+            "updatedAt": "2026-03-05T10:58:49Z"
+        },
+        "orchestrator": {
+            "decidedAt": "2026-03-05T10:59:05Z",
+            "decision": "ESCALATE",
+            "reason": [
+                "Document comparison result is PARTIAL_MATCH",
+                "Screening result is OK"
+            ],
+            "recommendation_summary": "The document comparison revealed a partial match due to a date of birth discrepancy between the database and documents, although the sanctions screening was clear. This inconsistency warrants escalation to human review for further validation.",
+            "status": "ESCALATED"
+        },
+        "screening": {
+            "reportS3": {
+                "bucket": "kyc-agent-storage-agent-source",
+                "key": "cases/CASE-D223B4FC/screening-report.md"
+            },
+            "result": "OK",
+            "summary": "The search results do not contain any adverse findings that specifically refer to 'Alex Morgan Lee'. The content primarily discusses legal matters involving other individuals or general topics related to law and compliance without linking them to the person being screened.",
+            "updatedAt": "2026-03-05T10:59:01Z"
+        }
+    }
+}
