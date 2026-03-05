@@ -141,7 +141,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                     <div className="agent-reasoning" style={{ marginBottom: '20px' }}>
                                         <div className="ar-header">🤖 Agent Findings</div>
                                         <div className="ar-text">
-                                            Passport verified. MRZ match. Risk level: Low. Trajectory: <strong>Auto-Approve</strong>.
+                                            {selectedSubmission.stages?.orchestrator?.recommendation_summary || 'No findings available'}
                                         </div>
                                     </div>
                                     <div className="section-title">Verification Documents</div>
