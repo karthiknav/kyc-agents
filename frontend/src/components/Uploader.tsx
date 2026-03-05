@@ -456,16 +456,16 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
                                 <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
                                     {/* Document Verification Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.documentVerification?.status === 'SUCCESS' ? 'var(--accent-green)' : 'var(--accent-blue)'}` }}>
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'var(--accent-green)' : 'var(--accent-blue)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${submissionStages?.documentVerification?.status === 'SUCCESS' ? 'verified' : 'processing'}`}>🪪</div>
+                                                <div className={`doc-icon ${submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'verified' : 'processing'}`}>🪪</div>
                                                 <div>
                                                     <div className="doc-name">Document Verification</div>
                                                     <div className="doc-req">Analyzing ID authenticity and OCR extraction</div>
                                                 </div>
                                             </div>
-                                            {submissionStages?.documentVerification?.status === 'SUCCESS' ? (
+                                            {submissionStages?.documentProcessing?.status === 'SUCCESS' ? (
                                                 <span className="status-chip verified">✓ Completed</span>
                                             ) : (
                                                 <span className="status-chip processing">⟳ In Progress</span>
@@ -474,18 +474,18 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                     </div>
 
                                     {/* Person Screening Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.personScreening?.status === 'SUCCESS' ? 'var(--accent-green)' : submissionStages?.documentVerification?.status === 'SUCCESS' ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.screening?.status === 'SUCCESS' ? 'var(--accent-green)' : submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'var(--accent-blue)' : 'var(--border)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${submissionStages?.personScreening?.status === 'SUCCESS' ? 'verified' : submissionStages?.documentVerification?.status === 'SUCCESS' ? 'processing' : ''}`}>🔎</div>
+                                                <div className={`doc-icon ${submissionStages?.screening?.status === 'SUCCESS' ? 'verified' : submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'processing' : ''}`}>🔎</div>
                                                 <div>
                                                     <div className="doc-name">Person Screening</div>
                                                     <div className="doc-req">Cross-referencing against global sanctions lists</div>
                                                 </div>
                                             </div>
-                                            {submissionStages?.personScreening?.status === 'SUCCESS' ? (
+                                            {submissionStages?.screening?.status === 'SUCCESS' ? (
                                                 <span className="status-chip verified">✓ Completed</span>
-                                            ) : submissionStages?.documentVerification?.status === 'SUCCESS' ? (
+                                            ) : submissionStages?.documentProcessing?.status === 'SUCCESS' ? (
                                                 <span className="status-chip processing">⟳ In Progress</span>
                                             ) : (
                                                 <span className="status-chip pending">○ Waiting</span>
@@ -496,8 +496,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
                                 <div className="processing-bar" style={{ maxWidth: '100%', margin: '40px 0 20px' }}>
                                     <div className="fill" style={{
-                                        width: submissionStages?.personScreening?.status === 'SUCCESS' ? '100%' :
-                                            submissionStages?.documentVerification?.status === 'SUCCESS' ? '66%' : '33%',
+                                        width: submissionStages?.screening?.status === 'SUCCESS' ? '100%' :
+                                            submissionStages?.documentProcessing?.status === 'SUCCESS' ? '66%' : '33%',
                                         background: 'var(--accent-blue)',
                                         transition: 'width 1s ease-in-out'
                                     }}></div>
