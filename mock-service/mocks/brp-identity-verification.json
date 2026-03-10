@@ -1,0 +1,41 @@
+{
+  "id": "brp-identity-verification",
+  "name": "BRP Identity Document Verification (NL)",
+  "description": "Simulates Dutch BRP Personen API for identity document verification. Modeled after the Haal Centraal BRP Personen API maintained by RvIG.",
+  "method": "POST",
+  "path": "/api/v1/brp/personen/document-lookup",
+  "request": {
+    "body": {
+      "documentType": { "type": "string", "required": true, "enum": ["paspoort", "identiteitskaart", "rijbewijs"] },
+      "documentNumber": { "type": "string", "required": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "persistenceKey": "{{documentType}}_{{documentNumber}}",
+    "schema": {
+      "burgerservicenummer": "{{faker.string.numeric(9)}}",
+      "naam": {
+        "voornamen": "{{faker.person.firstName}}",
+        "voorvoegsel": "",
+        "geslachtsnaam": "{{faker.person.lastName}}",
+        "volledigeNaam": "{{faker.person.fullName}}"
+      },
+      "geboorte": {
+        "datum": "{{faker.date.birthdate}}",
+        "plaats": "{{faker.location.city}}",
+        "land": "Nederland"
+      },
+      "geslacht": "{{faker.helpers.arrayElement(['M','V','O'])}}",
+      "nationaliteiten": [{ "nationaliteit": "Nederlandse" }],
+      "document": {
+        "soort": "{{request.documentType}}",
+        "nummer": "{{request.documentNumber}}",
+        "datumUitgifte": "{{faker.date.past}}",
+        "datumEindeGeldigheid": "{{faker.date.future}}"
+      },
+      "status": "VERIFIED",
+      "verificationTimestamp": "{{now}}"
+    }
+  }
+}
