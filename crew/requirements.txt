@@ -11,3 +11,4 @@ langchain-openai>=0.2.0
 duckduckgo-search
 ddgs
 bedrock_agentcore_starter_toolkit
+requests
