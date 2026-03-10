@@ -10,6 +10,7 @@ from crew.tools.get_case_files_tool import GetCaseFilesTool
 from crew.tools.screening_analysis_tool import ScreeningAnalysisTool
 from crew.tools.search_person_tool import SearchPersonTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
+from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
 from crew.update_case import update_screening_result
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
@@ -35,6 +36,7 @@ class KYCCrew():
                 GetCaseDetailsTool(),
                 GetCaseFilesTool(),
                 ExtractDocumentTextTool(),
+                VerifyIdentityDocumentTool(),
                 CompareIdentityDocumentsTool(),
             ],
         )
