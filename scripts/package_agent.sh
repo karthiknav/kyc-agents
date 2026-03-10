@@ -48,7 +48,8 @@ find "$TEMP_DIR/crew" -type f -name "*.pyc" -delete 2>/dev/null || true
 echo "  Creating zip..." >&2
 cd "$TEMP_DIR"
 if command -v zip >/dev/null 2>&1; then
-  zip -r "$SCRIPT_DIR/$ZIP_NAME" . -x "*.DS_Store" || { echo "Error: zip failed" >&2; exit 1; }
+  # Keep stdout clean: deploy.sh captures stdout to get the zip name.
+  zip -r "$SCRIPT_DIR/$ZIP_NAME" . -x "*.DS_Store" >/dev/null || { echo "Error: zip failed" >&2; exit 1; }
 else
   python -c "
 import zipfile, pathlib

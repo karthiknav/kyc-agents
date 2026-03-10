@@ -40,18 +40,20 @@ echo "Region: $REGION"
 echo "=========================================="
 
 
-#Package and upload agent source
+Package and upload agent source
 echo ""
 echo "[3/5] Packaging and uploading agent source..."
 echo "Script directory: $SCRIPT_DIR"
-ZIP_KEY="$("$SCRIPT_DIR/package_agent.sh")"
+ZIP_KEY="$("$SCRIPT_DIR/package_agent.sh" | tail -n 1)"
+echo "Generated zip key: $ZIP_KEY"
+echo "Uploading agent source to s3://$KYC_RESULTS_BUCKET/$ZIP_KEY..."
 aws s3 cp "$SCRIPT_DIR/$ZIP_KEY" "s3://$KYC_RESULTS_BUCKET/$ZIP_KEY" --region "$REGION"
 rm -f "$SCRIPT_DIR/$ZIP_KEY"
 echo "✓ Agent source uploaded: s3://$KYC_RESULTS_BUCKET/$ZIP_KEY"
 
 
 
-# Deploy agent stack
+Deploy agent stack
 echo ""
 echo "[4/6] Deploying agent stack..."
 aws cloudformation deploy \
@@ -143,8 +145,10 @@ BACKEND_ZIP="backend-api-$(date +%s).zip"
 TMP_BACKEND=$(mktemp -d 2>/dev/null || echo "$SCRIPT_DIR/.backend_build_$$")
 mkdir -p "$TMP_BACKEND"
 # Install for Lambda (Linux x86_64, Python 3.11) so native deps like pydantic_core are included
-pip install -q -r "$REPO_ROOT/backend/requirements.txt" -t "$TMP_BACKEND" --upgrade \
-  --platform manylinux2014_x86_64 --python-version 3.11 --implementation cp --only-binary=:all:
+uv pip install -q -r "$REPO_ROOT/backend/requirements.txt" -t "$TMP_BACKEND" --upgrade \
+  --python-platform manylinux_2_17_x86_64 \
+  --python-version 3.11 \
+  --only-binary=:all:
 cp "$REPO_ROOT/backend/main.py" "$TMP_BACKEND/"
 if command -v zip >/dev/null 2>&1; then
   (cd "$TMP_BACKEND" && zip -r "$SCRIPT_DIR/$BACKEND_ZIP" . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*" >/dev/null 2>&1)

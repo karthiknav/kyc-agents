@@ -18,13 +18,15 @@
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. **Create a virtual environment and install dependencies:**
+2. **Create a virtual environment:**
 
    From the project root:
    ```bash
    cd crew
-   uv venv
-   uv pip install -r requirements.txt
+   # Python 3.10+ is required (CrewAI currently requires <=3.13).
+   # On macOS, /usr/bin/python3 is often 3.9.x, so explicitly pick a newer Python.
+   uv python install 3.13
+   uv venv --python 3.13
    ```
 
 3. **Activate the environment:**
@@ -49,95 +51,122 @@
    source .venv/Scripts/activate
    ```
 
----
-
-### Option 2: Using venv only
-
-Python’s built-in `venv` module:
-
-1. **Create a virtual environment** (from the `crew` directory):
+4. **Install requirements:**
 
    ```bash
-   cd crew
-   python -m venv .venv
+   uv pip install -r requirements.txt
    ```
 
-2. **Activate the environment:**
-
-   **Windows (PowerShell):**
-   ```powershell
-   .\.venv\Scripts\Activate.ps1
-   ```
-
-   **Windows (cmd):**
-   ```cmd
-   .\.venv\Scripts\activate.bat
-   ```
-
-   **macOS/Linux:**
-   ```bash
-   source .venv/bin/activate
-   ```
-
-   **Windows (Git Bash):**
-   ```bash
-   source .venv/Scripts/activate
-   ```
-
-3. **Install requirements:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
----
 
 ### Requirements
 
-Dependencies are listed in `crew/requirements.txt`. After setup, run your scripts with the virtual environment activated.
+Dependencies are listed in `crew/requirements.txt`.
+
+If dependency resolution fails with a message like "current Python version (3.9.x) does not satisfy Python>=3.10", recreate the venv with a newer interpreter:
+
+```bash
+cd crew
+rm -rf .venv
+uv python install 3.13
+uv venv --python 3.13
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
 
 ---
 
-## Running the agent locally
+## Components
 
-Run the KYC screening agent from the **project root** (`kyc-agents`):
+This repo contains multiple components with separate dependency sets. For Python components, prefer **one virtual environment per component** (`crew/.venv`, `backend/.venv`, etc.) to avoid dependency conflicts.
 
-1. **Activate the virtual environment** (from the project root, if the venv is in `crew/`):
+If `uv venv --python 3.13` fails because Python 3.13 isn’t available, run `uv python install 3.13` first.
 
-   **Windows (PowerShell):**
-   ```powershell
-   crew\.venv\Scripts\Activate.ps1
-   ```
+### 1) Agent (CrewAI) — `crew/`
 
-   **macOS/Linux:**
-   ```bash
-   source crew/.venv/bin/activate
-   ```
+**Install & run locally** (from repo root):
 
-2. **Set environment variables** (or use a `.env` file in the project root):
-   - `OPENAI_API_KEY` – required for the screening analysis LLM
-   - `TAVILY_API_KEY` – required for web search
-   - Optional: `KYC_CASES_TABLE` (DynamoDB table name, default `kyc-cases`), `KYC_RESULTS_BUCKET` (S3 bucket for reports, default `kyc-results`)
+```bash
+cd crew
+uv python install 3.13
+uv venv --python 3.13
+source .venv/bin/activate
+uv pip install -r requirements.txt
 
-   For local runs without AWS SSM, create a `.env` with these keys or export them in your shell.
+# run
+python -m crew.research_crew
+```
 
-3. **Run the agent:**
+**Environment variables** (export them or put them in a `.env` file):
+- `OPENAI_API_KEY` – required for the screening analysis LLM
+- `TAVILY_API_KEY` – required for web search
+- Optional: `KYC_CASES_TABLE` (DynamoDB table name, default `kyc-cases`), `KYC_RESULTS_BUCKET` (S3 bucket for reports, default `kyc-results`)
 
-   From the project root:
-   ```bash
-   python -m crew.research_crew
-   ```
-
-   This runs a local test with a default payload (`caseId: "01HR9B5J7Z6J7PD5B6PKQJ2MM4"`). To use a different case ID, edit the payload in `crew/research_crew.py`.
-
----
-
-### Tavily Search (API key)
-
-The crew uses [Tavily](https://tavily.com) for web search. Set your API key before running:
+**Tavily key**:
 
 ```bash
 export TAVILY_API_KEY=your-api-key
 ```
 
-Get a key at [app.tavily.com](https://app.tavily.com).
+### 2) Lambda processor — `lambda/`
+
+For deployment, `scripts/deploy.sh` packages `lambda/` and deploys it via CloudFormation. You typically **don’t need a local venv** for the lambda unless you want to run/debug it locally.
+
+Optional local install (from repo root):
+
+```bash
+cd lambda
+uv venv --python 3.13
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+### 3) Backend API (FastAPI) — `backend/`
+
+Local dev (from repo root):
+
+```bash
+cd backend
+uv venv --python 3.13
+source .venv/bin/activate
+uv pip install -r requirements.txt
+
+python -m uvicorn main:app --reload --port 8000
+```
+
+### 4) Frontend (Vite + React) — `frontend/`
+
+Local dev (from repo root):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+By default the UI calls `http://localhost:8000`. To point the UI at a deployed API, set `VITE_API_BASE_URL`, for example:
+
+```bash
+VITE_API_BASE_URL=https://your-api.example.com npm run dev
+```
+
+---
+
+## Deploy (scripts)
+
+Deployment is automated via shell scripts in `scripts/`. On macOS/Linux you may need to mark them as executable.
+
+```bash
+cd scripts
+# Mark all shell scripts executable (deploy.sh calls other scripts like package_agent.sh)
+chmod +x *.sh
+
+# 1) Deploy base infrastructure (VPC, storage, IAM roles, main resources)
+./deploy-base.sh
+
+# 2) Deploy agent runtime, lambdas, API, and UI (uses default region us-east-1)
+./deploy.sh 
+```
+
+Notes:
+- Requires `aws` CLI configured with credentials/permissions to deploy CloudFormation and related resources.
+- If you prefer not to `chmod`, you can run: `bash deploy-base.sh` and `bash deploy.sh`.
