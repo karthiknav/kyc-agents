@@ -15,6 +15,7 @@ def _format_document_report(
     comparison_summary: str,
     discrepancies: list,
     documents_summary: str,
+    government_verification_summary: str,
     updated_at: str,
 ) -> str:
     """Format document processing output as a markdown report."""
@@ -52,6 +53,12 @@ def _format_document_report(
         "",
         comparison_summary,
         "",
+        "---",
+        "",
+        "## Government verification (BRP)",
+        "",
+        government_verification_summary or "_No government verification data available._",
+        "",
     ]
     return "\n".join(lines)
 
@@ -72,6 +79,7 @@ def update_document_result(task_output):
     comparison_summary = task_output.get("comparison_summary")
     discrepancies = task_output.get("discrepancies", [])
     documents_summary = task_output.get("documents_summary", "")
+    government_verification_summary = task_output.get("government_verification_summary", "")
     name = task_output.get("name", "Unknown")
 
     # Build identity for DynamoDB (fullName, dateOfBirth, nationality)
@@ -112,6 +120,7 @@ def update_document_result(task_output):
         comparison_summary=comparison_summary,
         discrepancies=discrepancies,
         documents_summary=documents_summary,
+        government_verification_summary=government_verification_summary,
         updated_at=now,
     )
 
@@ -138,6 +147,7 @@ def update_document_result(task_output):
         "updatedAt": now,
         "summary": comparison_summary,
         "discrepancies": discrepancies,
+        "governmentVerificationSummary": government_verification_summary,
     }
     if report_s3:
         document_processing_stage["reportS3"] = report_s3
