@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Storage Stack - S3 bucket and DynamoDB KYC cases table'
+
+Parameters:
+  StackName:
+    Type: String
+    Description: Base name for the stack
+
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${StackName}"
+
+  # DynamoDB table for KYC cases - CaseId as primary key (used by main-stack Lambda)
+  KycCasesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${StackName}-kyc-cases"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: CaseId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: CaseId
+          KeyType: HASH
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-kyc-cases"
+
+Outputs:
+  SourceBucketName:
+    Description: Name of the source bucket
+    Value: !Ref SourceBucket
+    Export:
+      Name: !Sub "${StackName}-SourceBucketName"
+
+  KycCasesTableName:
+    Description: DynamoDB table name for KYC cases (CaseId primary key)
+    Value: !Ref KycCasesTable
+    Export:
+      Name: !Sub "${StackName}-KycCasesTableName"
+
+  KycCasesTableArn:
+    Description: ARN of the KYC cases DynamoDB table
+    Value: !GetAtt KycCasesTable.Arn
+    Export:
+      Name: !Sub "${StackName}-KycCasesTableArn"

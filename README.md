@@ -148,3 +148,25 @@ By default the UI calls `http://localhost:8000`. To point the UI at a deployed A
 ```bash
 VITE_API_BASE_URL=https://your-api.example.com npm run dev
 ```
+
+---
+
+## Deploy (scripts)
+
+Deployment is automated via shell scripts in `scripts/`. On macOS/Linux you may need to mark them as executable.
+
+```bash
+cd scripts
+# Mark all shell scripts executable (deploy.sh calls other scripts like package_agent.sh)
+chmod +x *.sh
+
+# 1) Deploy base infrastructure (VPC, storage, IAM roles, main resources)
+./deploy-base.sh
+
+# 2) Deploy agent runtime, lambdas, API, and UI (uses default region us-east-1)
+./deploy.sh 
+```
+
+Notes:
+- Requires `aws` CLI configured with credentials/permissions to deploy CloudFormation and related resources.
+- If you prefer not to `chmod`, you can run: `bash deploy-base.sh` and `bash deploy.sh`.

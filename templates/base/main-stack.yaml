@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'KYC Main Stack - SQS queue'
+
+
+Resources:
+  # SQS queue - middleware/FastAPI publishes here when KYC is initiated
+  KycInitiatedQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-kyc-initiated"
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 345600
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-kyc-initiated"
+
+Outputs:
+  KycInitiatedQueueName:
+    Description: Name of the SQS queue for KYC-initiated events
+    Value: !Sub "${AWS::StackName}-kyc-initiated"
+    Export:
+      Name: !Sub "${AWS::StackName}-KycInitiatedQueueName"
+
+  KycInitiatedQueueUrl:
+    Description: SQS queue URL for middleware/FastAPI to publish when KYC is initiated
+    Value: !Ref KycInitiatedQueue
+    Export:
+      Name: !Sub "${AWS::StackName}-KycInitiatedQueueUrl"
+
+  KycInitiatedQueueArn:
+    Description: ARN of the KYC initiated SQS queue
+    Value: !GetAtt KycInitiatedQueue.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-KycInitiatedQueueArn"

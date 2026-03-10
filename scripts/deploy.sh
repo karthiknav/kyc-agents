@@ -44,7 +44,9 @@ echo "=========================================="
 echo ""
 echo "[3/5] Packaging and uploading agent source..."
 echo "Script directory: $SCRIPT_DIR"
-ZIP_KEY="$("$SCRIPT_DIR/package_agent.sh")"
+ZIP_KEY="$("$SCRIPT_DIR/package_agent.sh" | tail -n 1)"
+echo "Generated zip key: $ZIP_KEY"
+echo "Uploading agent source to s3://$KYC_RESULTS_BUCKET/$ZIP_KEY..."
 aws s3 cp "$SCRIPT_DIR/$ZIP_KEY" "s3://$KYC_RESULTS_BUCKET/$ZIP_KEY" --region "$REGION"
 rm -f "$SCRIPT_DIR/$ZIP_KEY"
 echo "✓ Agent source uploaded: s3://$KYC_RESULTS_BUCKET/$ZIP_KEY"
@@ -143,7 +145,7 @@ BACKEND_ZIP="backend-api-$(date +%s).zip"
 TMP_BACKEND=$(mktemp -d 2>/dev/null || echo "$SCRIPT_DIR/.backend_build_$$")
 mkdir -p "$TMP_BACKEND"
 # Install for Lambda (Linux x86_64, Python 3.11) so native deps like pydantic_core are included
-pip install -q -r "$REPO_ROOT/backend/requirements.txt" -t "$TMP_BACKEND" --upgrade \
+uv pip install -q -r "$REPO_ROOT/backend/requirements.txt" -t "$TMP_BACKEND" --upgrade \
   --platform manylinux2014_x86_64 --python-version 3.11 --implementation cp --only-binary=:all:
 cp "$REPO_ROOT/backend/main.py" "$TMP_BACKEND/"
 if command -v zip >/dev/null 2>&1; then
