@@ -25,7 +25,7 @@ class KYCCrew():
     llm = LLM(
 
         #model="bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0",
-        model=os.getenv("MODEL", "bedrock/anthropic. anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        model=os.getenv("MODEL", "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         region_name=os.getenv("AWS_REGION_NAME", "us-east-1"),
@@ -40,6 +40,7 @@ class KYCCrew():
         return Agent(
             config=self.agents_config['document_processing_agent'],  # type: ignore[index]
             verbose=True,
+            use_system_prompt=False,  # Bedrock models often don't support system messages
             tools=[
                 GetCaseDetailsTool(),
                 GetCaseFilesTool(),
@@ -59,6 +60,7 @@ class KYCCrew():
         return Agent(
             config=self.agents_config['kyc_screening_agent'],  # type: ignore[index]
             verbose=True,
+            use_system_prompt=False,  # Bedrock models often don't support system messages
             tools=[
                 GetCaseDetailsTool(),
                 SearchPersonTool(),
@@ -76,6 +78,7 @@ class KYCCrew():
         return Agent(
             config=self.agents_config['orchestrator_agent'],  # type: ignore[index]
             verbose=True,
+            use_system_prompt=False,  # Bedrock models often don't support system messages
             tools=[
                 GetCaseDetailsTool(),
                 EscalateToHumanTool(),
