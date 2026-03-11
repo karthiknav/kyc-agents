@@ -5,3 +5,10 @@ __pycache__/
 
 # Claude Code
 .claude/
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/vcs.xml
+/crew/venv/lib/python3.12/*
+/crew/venv/bin
+/crew/venv/pyvenv.cfg

@@ -1,3 +1,4 @@
+# storage-stack.yaml (fixed)
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Storage Stack - S3 bucket and DynamoDB KYC cases table'
 
@@ -10,13 +11,14 @@ Resources:
   SourceBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${StackName}"
+      # Globally unique, deterministic bucket name
+      BucketName: !Sub "${StackName}-${AWS::AccountId}-${AWS::Region}"
 
-  # DynamoDB table for KYC cases - CaseId as primary key (used by main-stack Lambda)
   KycCasesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub "${StackName}-kyc-cases"
+      # Reduce risk of collisions within your account/region across environments
+      TableName: !Sub "${StackName}-kyc-cases-${AWS::AccountId}-${AWS::Region}"
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: CaseId
