@@ -31,7 +31,7 @@ class GetCaseDetailsTool(BaseTool):
         if not case_id:
             return "Error: case_id is required."
 
-        table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
+        table_name = os.environ.get("KYC_CASES_TABLE", "kyc-agent-storage-kyc-cases")
         logger.info("get_case_details table_name: %s", table_name)
         try:
             dynamodb = boto3.resource("dynamodb")

@@ -1,10 +1,11 @@
 """Tool to analyze case details and search results and produce a screening analysis."""
 import json
 import logging
+import os
 from typing import Type
 
+import boto3
 from crewai.tools import BaseTool
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class ScreeningAnalysisTool(BaseTool):
         return out
 
     def _analyze_with_llm(self, search_results: str, person_name: str = "Unknown"):
-        """Use LLM to analyze search results and determine screening outcome (OK, NOK, AMBIGUOUS)."""
+        """Use Bedrock LLM to analyze search results and determine screening outcome (OK, NOK, AMBIGUOUS)."""
         # Ensure string for slicing (agent may pass dict)
         text = search_results if isinstance(search_results, str) else str(search_results)
         text_truncated = text[:12000] if len(text) > 12000 else text
@@ -92,10 +93,7 @@ class ScreeningAnalysisTool(BaseTool):
             "_analyze_with_llm: person_name=%s, input length=%s (truncated to %s)",
             person_name, len(text), len(text_truncated),
         )
-        llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0,
-        )
+        # Bedrock model: use inference profile ID (no "bedrock/" prefix for boto3)
         prompt = f"""You are a KYC (Know Your Customer) compliance analyst.
 
 **Person being screened (from case details):** "{person_name}"
@@ -125,9 +123,19 @@ Examples:
 Your response (JSON only, no markdown):"""
 
         try:
-            response = llm.invoke(prompt)
-            logger.info("LLM response: %s", response)
-            content = response.content.strip()
+            client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION_NAME", "us-east-1"))
+            response = client.converse(
+                modelId="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"maxTokens": 2048, "temperature": 0.0},
+            )
+            # Converse API returns output.message.content[].text
+            content_parts = []
+            for block in response.get("output", {}).get("message", {}).get("content", []):
+                if "text" in block:
+                    content_parts.append(block["text"])
+            content = "".join(content_parts).strip()
+            logger.info("LLM response length: %s", len(content))
             # Remove markdown code block if present
             if content.startswith("```"):
                 lines = content.split("\n")

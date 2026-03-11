@@ -1,8 +1,10 @@
 import logging
+import os
 from typing import Type
-from pydantic import BaseModel, Field
-from langchain_tavily import TavilySearch
+
+from ddgs import DDGS
 from crewai.tools import BaseTool
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -13,16 +15,19 @@ class SearchInput(BaseModel):
 
 class SearchTool(BaseTool):
     name: str = "search_internet"
-    description: str = "Search the internet for the given query. Use this to find current information on any topic."
-    search: TavilySearch = Field(default_factory=TavilySearch)
+    description: str = "Search the internet for the given query using DuckDuckGo."
     args_schema: Type[SearchInput] = SearchInput
 
     def _run(self, query: str) -> str:
-        """Search the internet for the given query."""
+        """Search the internet for the given query via DuckDuckGo."""
         logger.warning("SearchTool received: query=%r", query)
         if not query:
             return "Error: no query provided."
         try:
-            return self.search.invoke({"query": query})
+            max_results = int(os.getenv("SEARCH_MAX_RESULTS", "5"))
+            ddg = DDGS()
+            results = list(ddg.text(query, max_results=max_results))
+            return str(results)
         except Exception as e:
+            logger.exception("DuckDuckGo search failed")
             return f"Error performing search: {str(e)}"

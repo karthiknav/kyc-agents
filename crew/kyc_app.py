@@ -15,25 +15,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_ssm_parameter(name: str, with_decryption: bool = True) -> str:
-    """Get a parameter value from AWS Systems Manager Parameter Store."""
-    ssm = boto3.client("ssm")
-    response = ssm.get_parameter(Name=name, WithDecryption=with_decryption)
-    return response["Parameter"]["Value"]
-
-
-logger.info("Setting up environment variables from SSM Parameter Store...")
-try:
-    tavily_api_key = get_ssm_parameter("/ops-orchestrator/tavily-api-key")
-    os.environ["TAVILY_API_KEY"] = tavily_api_key
-    logger.info("✅ TAVILY_API_KEY environment variable set")
-    serpapi_key = get_ssm_parameter("/ops-orchestrator/serpapi-api-key")
-    os.environ["SERPAPI_API_KEY"] = serpapi_key
-    logger.info("✅ SERPAPI_API_KEY environment variable set")
-except Exception as e:
-    logger.error("❌ Failed to set API keys from SSM: %s", e)
-
-
 app = BedrockAgentCoreApp()
 
 

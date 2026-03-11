@@ -3,12 +3,17 @@ from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
 import os
+
+# Monkey-patch CrewAI so Bedrock tool calls get arguments from tool_call["input"]
+from crew.bedrock_tool_args_patch import apply_bedrock_tool_args_patch
+apply_bedrock_tool_args_patch()
+
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
 from crew.tools.screening_analysis_tool import ScreeningAnalysisTool
-from crew.tools.search_person_tool import SearchPersonTool
+from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
 from crew.update_case import update_screening_result
@@ -25,10 +30,7 @@ class KYCCrew():
     # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
     # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
     llm = LLM(
-        model=os.getenv("MODEL", "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"),
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION_NAME", "us-east-1"),
+        model="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
     )
 
     # ------------------------------------------------------------------
@@ -61,7 +63,7 @@ class KYCCrew():
             verbose=True,
             tools=[
                 GetCaseDetailsTool(),
-                SearchPersonTool(),
+                SearchTool(),
                 ScreeningAnalysisTool(),
             ],
             llm=self.llm,

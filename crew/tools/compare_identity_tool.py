@@ -1,10 +1,11 @@
 """Tool to compare extracted document identity fields against the DB record using an LLM."""
 import json
 import logging
+import os
 from typing import Type
 
+import boto3
 from crewai.tools import BaseTool
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -109,9 +110,8 @@ class CompareIdentityDocumentsTool(BaseTool):
             len(db_identity_text), len(docs_text), len(docs_truncated),
             len(govt_text) if govt_text else 0,
         )
-
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-
+        # Bedrock model: use inference profile ID (no "bedrock/" prefix for boto3)
+        model_id = os.getenv("MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
         prompt = f"""You are a KYC (Know Your Customer) document verification specialist.
 Compare identity fields across THREE sources:
 1. The database record (what the applicant submitted)
@@ -145,9 +145,19 @@ Example:
 Your response (JSON only, no markdown):"""
 
         try:
-            response = llm.invoke(prompt)
-            logger.info("LLM compare_identity response: %s", response)
-            content = response.content.strip()
+            client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION_NAME", "us-east-1"))
+            response = client.converse(
+                modelId=model_id,
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"maxTokens": 2048, "temperature": 0.0},
+            )
+            # Converse API returns output.message.content[].text
+            content_parts = []
+            for block in response.get("output", {}).get("message", {}).get("content", []):
+                if "text" in block:
+                    content_parts.append(block["text"])
+            content = "".join(content_parts).strip()
+            logger.info("LLM compare_identity response length: %s", len(content))
             if content.startswith("```"):
                 lines = content.split("\n")
                 content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
