@@ -1,0 +1,25 @@
+{
+  "name": "kyc-mock-service",
+  "version": "1.0.0",
+  "description": "Reusable mock service for simulating external APIs (BRP, sanctions, etc.)",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "seed": "tsx seeds/seed-test-cases.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "@faker-js/faker": "^9.2.0",
+    "better-sqlite3": "^11.6.0",
+    "glob": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -93,7 +93,22 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 
 # run
-python -m crew.research_crew
+python -m crew.kyc_app
+```
+
+**Local testing (publish a case)**
+
+With the `crew/.venv` activated, you can push a test case to DynamoDB + SQS using the publisher:
+
+```bash
+cd ../utils
+python kyc_publisher.py
+```
+
+Expected output:
+
+```
+OK: case pushed to DynamoDB and SQS
 ```
 
 **Environment variables** (export them or put them in a `.env` file):

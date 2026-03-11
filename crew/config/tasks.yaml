@@ -29,10 +29,14 @@ document_processing_task:
     1. Use get_case_details to fetch identity info (fullName, DOB, etc.) from DynamoDB.
     2. Use get_case_files to get the list of uploaded document S3 references.
     3. Use extract_document_text for each document (once per s3_bucket/s3_key pair).
-    4. Use compare_identity_documents with the case_details JSON and a JSON array of
-       all Textract extraction results to produce the final comparison analysis.
-    Return valid JSON with case_id, name, comparison_result, discrepancies, comparison_summary,
-    and documents_summary.
+    4. Use verify_identity_document for each document — extract the document type
+       (paspoort, identiteitskaart, or rijbewijs) and document number from the OCR text,
+       then call the tool to verify it against the BRP government registry.
+    5. Use compare_identity_documents with the case_details JSON, a JSON array of all
+       Textract extraction results, and a JSON array of all government verification
+       results to produce the final comparison analysis across all three sources.
+    Return valid JSON with case_id, name, comparison_result, discrepancies,
+    comparison_summary, documents_summary, and government_verification_summary.
   expected_output: >
     Valid JSON object with exactly these keys:
     - "case_id": the case ID (string)
@@ -41,6 +45,7 @@ document_processing_task:
     - "discrepancies": list of strings describing mismatches (array, empty if MATCH)
     - "comparison_summary": explanation of the comparison outcome (string)
     - "documents_summary": brief summary of each document processed (string)
+    - "government_verification_summary": summary of BRP government verification results (string)
   agent: document_processing_agent
 
 screening_task:
