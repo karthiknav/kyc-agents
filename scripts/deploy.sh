@@ -40,7 +40,7 @@ echo "Region: $REGION"
 echo "=========================================="
 
 
-Package and upload agent source
+#Package and upload agent source
 echo ""
 echo "[3/5] Packaging and uploading agent source..."
 echo "Script directory: $SCRIPT_DIR"
@@ -53,7 +53,7 @@ echo "✓ Agent source uploaded: s3://$KYC_RESULTS_BUCKET/$ZIP_KEY"
 
 
 
-Deploy agent stack
+#Deploy agent stack
 echo ""
 echo "[4/6] Deploying agent stack..."
 aws cloudformation deploy \
