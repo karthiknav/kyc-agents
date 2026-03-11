@@ -1,0 +1,19 @@
+# Elastic Beanstalk: ignore these when deploying (eb deploy).
+# We use scripts/package-for-eb to build and zip; this is for direct eb deploy.
+node_modules
+.git
+.gitignore
+data
+*.db
+.env
+.env.*
+seeds
+src
+tsconfig.json
+*.ts
+!*.d.ts
+Dockerfile
+docs
+.vscode
+*.md
+!README.md

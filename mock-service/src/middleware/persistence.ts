@@ -7,7 +7,8 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-const DATA_DIR = path.join(__dirname, '../../data');
+// Allow override for AWS (e.g. Elastic Beanstalk mounted volume at /var/app/data)
+const DATA_DIR = process.env.MOCK_DATA_DIR || path.join(__dirname, '../../data');
 const DB_PATH = path.join(DATA_DIR, 'mock-data.db');
 
 let db: Database.Database | null = null;

@@ -15,6 +15,10 @@ LAMBDA_STACK="${BASE_NAME}-lambda"
 API_STACK="${BASE_NAME}-api"
 UI_STACK="${BASE_NAME}-ui"
 
+# Mock-service (Beanstalk + artifacts bucket) - names must match deploy_mock_service.sh defaults
+MOCK_EB_STACK="${MOCK_EB_STACK:-kyc-mock-service-eb}"
+MOCK_BUCKET_STACK="${MOCK_BUCKET_STACK:-kyc-mock-service-artifacts}"
+
 stack_exists() {
     aws cloudformation describe-stacks --stack-name "$1" --region "$REGION" >/dev/null 2>&1
 }
@@ -73,10 +77,11 @@ echo "Region: $REGION"
 echo "Base:   $BASE_NAME"
 echo ""
 echo "Runtime stacks:"
-echo "  UI:     $UI_STACK"
-echo "  API:    $API_STACK"
-echo "  Lambda: $LAMBDA_STACK"
-echo "  Agent:  $AGENT_STACK"
+echo "  UI:           $UI_STACK"
+echo "  API:          $API_STACK"
+echo "  Lambda:       $LAMBDA_STACK"
+echo "  Agent:        $AGENT_STACK"
+echo "  Mock-service: $MOCK_EB_STACK (+ bucket $MOCK_BUCKET_STACK)"
 echo "Base stacks:"
 echo "  Main:    $MAIN_STACK"
 echo "  Roles:   $ROLES_STACK"
@@ -85,22 +90,28 @@ echo "  VPC:     $VPC_STACK"
 echo "=========================================="
 
 echo ""
-echo "[1/3] Emptying S3 buckets (if present)..."
+echo "[1/4] Emptying S3 buckets (if present)..."
 UI_BUCKET=$(get_stack_output "$UI_STACK" "StaticBucketName")
 STORAGE_BUCKET=$(get_stack_output "$STORAGE_STACK" "SourceBucketName")
+MOCK_ARTIFACTS_BUCKET=$(get_stack_output "$MOCK_BUCKET_STACK" "BucketName")
 empty_bucket "$UI_BUCKET"
 empty_bucket "$STORAGE_BUCKET"
+empty_bucket "$MOCK_ARTIFACTS_BUCKET"
 echo "✓ Buckets emptied"
 
 echo ""
-echo "[2/3] Deleting runtime stacks..."
+echo "[2/4] Deleting runtime stacks (including mock-service Beanstalk)..."
 delete_stack "$UI_STACK"
 delete_stack "$API_STACK"
 delete_stack "$LAMBDA_STACK"
 delete_stack "$AGENT_STACK"
+delete_stack "$MOCK_EB_STACK"
+echo ""
+echo "[3/4] Deleting mock-service artifacts bucket stack..."
+delete_stack "$MOCK_BUCKET_STACK"
 
 echo ""
-echo "[3/3] Deleting base stacks..."
+echo "[4/4] Deleting base stacks..."
 delete_stack "$MAIN_STACK"
 delete_stack "$ROLES_STACK"
 delete_stack "$STORAGE_STACK"
@@ -108,3 +119,4 @@ delete_stack "$VPC_STACK"
 
 echo ""
 echo "✓ Cleanup complete"
+echo "To delete mock-service only: empty bucket from $MOCK_BUCKET_STACK, then delete $MOCK_EB_STACK, then $MOCK_BUCKET_STACK"
