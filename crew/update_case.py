@@ -15,6 +15,8 @@ def _format_screening_report(
     analysis_summary: str,
     search_results_summary: str = "",
     updated_at: str = "",
+    severity: str = "",
+    pep_summary: str = "",
 ) -> str:
     """Format screening output as a markdown report."""
     status_emoji = {"OK": "✅", "NOK": "❌", "AMBIGUOUS": "⚠️"}
@@ -28,6 +30,19 @@ def _format_screening_report(
         "",
         "---",
         "",
+    ]
+    if severity or pep_summary:
+        lines.extend([
+            "## PEP / Sanctions API",
+            "",
+            f"**Severity:** {severity or 'none'}",
+            "",
+            pep_summary or "_No PEP/sanctions matches._",
+            "",
+            "---",
+            "",
+        ])
+    lines.extend([
         "## Search results summary",
         "",
         search_results_summary or "_No search results summary available._",
@@ -42,7 +57,7 @@ def _format_screening_report(
         "",
         analysis_summary,
         "",
-    ]
+    ])
     return "\n".join(lines)
 
 
@@ -62,6 +77,8 @@ def update_screening_result(task_output):
     analysis_result = task_output.get("analysis_result")
     analysis_summary = task_output.get("analysis_summary")
     search_results_summary = task_output.get("search_results_summary", "")
+    severity = task_output.get("severity", "")
+    pep_summary = task_output.get("pep_summary", "")
     name = task_output.get("name", "Unknown")
     if not case_id or not analysis_result or not analysis_summary:
         logger.info("Results incomplete: case_id=%s, analysis_result=%s, analysis_summary=%s", case_id, analysis_result, analysis_summary)
@@ -97,6 +114,8 @@ def update_screening_result(task_output):
         analysis_summary=analysis_summary,
         search_results_summary=search_results_summary,
         updated_at=now,
+        severity=severity,
+        pep_summary=pep_summary,
     )
 
     # Upload report to S3 and get key
@@ -122,6 +141,10 @@ def update_screening_result(task_output):
         "updatedAt": now,
         "summary": analysis_summary,
     }
+    if severity:
+        screening_stage["severity"] = severity
+    if pep_summary:
+        screening_stage["pepSummary"] = pep_summary
     if report_s3:
         screening_stage["reportS3"] = report_s3
 
