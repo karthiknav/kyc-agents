@@ -16,10 +16,10 @@ function resolveExpression(expr: string, context: TemplateContext): unknown {
     return new Date().toISOString();
   }
 
-  // {{request.*}} — value from the incoming request body
+  // {{request.*}} — value from the incoming request body (supports nested paths, e.g. request.queries.q1)
   if (trimmed.startsWith('request.')) {
-    const key = trimmed.slice('request.'.length);
-    return context.requestBody?.[key] ?? '';
+    const path = trimmed.slice('request.'.length);
+    return getNested(context.requestBody, path) ?? '';
   }
 
   // {{faker.*}} — delegate to faker resolver
@@ -99,6 +99,20 @@ function parseArgument(argStr: string): unknown {
 }
 
 /**
+ * Get a nested property from an object by dotted path. E.g. getNested(body, "queries.q1").
+ */
+function getNested(obj: unknown, path: string): unknown {
+  if (obj == null) return undefined;
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
  * Resolve a dotted property path on an object. E.g. "person.firstName" on faker.
  */
 function resolveNestedProperty(obj: any, path: string): unknown {
@@ -152,9 +166,12 @@ export function resolveSchema(schema: unknown, context: TemplateContext): unknow
 
 /**
  * Resolve the persistence key template using request body values.
+ * Supports nested paths, e.g. {{queries.q1.properties.lastName.0}}.
  */
 export function resolvePersistenceKey(template: string, requestBody: Record<string, any>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_match, key) => {
-    return String(requestBody[key] ?? key);
+  return template.replace(/\{\{([^}]+)\}\}/g, (_match, path) => {
+    const key = path.trim();
+    const value = getNested(requestBody, key);
+    return value !== undefined && value !== null ? String(value) : key;
   });
 }

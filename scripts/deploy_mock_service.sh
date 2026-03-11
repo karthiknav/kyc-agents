@@ -12,7 +12,7 @@
 #
 # Env:
 #   S3_BUCKET          - Use this bucket; if unset, deploy and use kyc-mock-service-artifacts stack
-#   S3_KEY             - S3 key for deploy.zip (default: mock-service/deploy.zip)
+#   S3_KEY             - S3 key for deploy.zip (default: mock-service/deploy-TIMESTAMP.zip so each deploy triggers EB update)
 #   STACK_NAME         - Beanstalk CFN stack name (default: kyc-mock-service-eb)
 #   MOCK_SERVICE_BUCKET_STACK - Bucket stack name when creating default bucket (default: kyc-mock-service-artifacts)
 #   DEPLOY_SKIP_PACKAGE - Set to 1 to skip packaging (use existing mock-service/deploy.zip)
@@ -27,7 +27,8 @@ DEPLOY_ZIP="$MOCK_SERVICE_DIR/deploy.zip"
 BUCKET_TEMPLATE_FILE="templates/mock-service/s3-artifacts-bucket.yaml"
 EB_TEMPLATE_FILE="templates/mock-service/elastic-beanstalk.yaml"
 
-S3_KEY="${S3_KEY:-mock-service/deploy.zip}"
+# Unique key per deploy so CloudFormation/EB picks up the new bundle (same key = no stack update, no redeploy)
+S3_KEY="${S3_KEY:-mock-service/deploy-$(date +%Y%m%d%H%M%S).zip}"
 STACK_NAME="${STACK_NAME:-kyc-mock-service-eb}"
 MOCK_SERVICE_BUCKET_STACK="${MOCK_SERVICE_BUCKET_STACK:-kyc-mock-service-artifacts}"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
@@ -70,7 +71,7 @@ else
   fi
 fi
 
-# --- 2. Upload to S3 ---
+# --- 2. Upload to S3 (unique key per run so CFN/EB redeploys the new bundle) ---
 echo "=== Uploading deploy.zip to s3://$S3_BUCKET/$S3_KEY ==="
 aws s3 cp "$DEPLOY_ZIP" "s3://$S3_BUCKET/$S3_KEY"
 

@@ -10,7 +10,7 @@ npm install
 npm run dev      # Start with hot-reload (tsx watch)
 ```
 
-**Startup seeding:** The server automatically seeds the 4 default BRP test cases on startup, so you don’t need to run the seed script for normal use. To disable (e.g. no test data): set `SEED_DEFAULT_TEST_CASES=0`. To reseed via HTTP when the server is already running: `npm run seed`.
+**Startup seeding:** The server automatically seeds the default BRP (4) and PEP (4) test cases on startup. To disable: set `SEED_DEFAULT_TEST_CASES=0`. To reseed via HTTP: `npm run seed` (local) or, for Elastic Beanstalk, from repo root: `./scripts/seed_mock_service_eb.sh` (or `MOCK_SERVICE_URL=https://your-eb-url npm run seed` from `mock-service/`).
 
 ## How It Works
 
@@ -18,7 +18,7 @@ npm run dev      # Start with hot-reload (tsx watch)
 2. The server reads all `mocks/*.json` files at startup and registers Express routes
 3. Template expressions (`{{faker.*}}`, `{{request.*}}`, `{{now}}`) are resolved at request time
 4. If `persistenceKey` is set, responses are cached in SQLite — same key = same data every time  
-5. On startup, the server seeds the default BRP test cases (clean approval, document mismatch, sanctions, PEP) so they’re available immediately; SQLite is ephemeral across restarts unless you use persistent storage (e.g. `MOCK_DATA_DIR` on a mounted volume).
+5. On startup, the server seeds the default BRP and PEP test cases so they’re available immediately; SQLite is ephemeral across restarts unless you use persistent storage (e.g. `MOCK_DATA_DIR` on a mounted volume).
 
 ## Adding a New Mock
 

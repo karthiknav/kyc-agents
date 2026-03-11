@@ -198,7 +198,23 @@ The deployed zip must include `.ebextensions` (the packaging script does this) s
 
 - The app writes the SQLite database to `data/mock-data.db` inside the deployment directory.
 - The `.ebextensions` config ensures `data/` exists and is writable.
-- Data is **ephemeral**: it is lost on redeploy or when the instance is replaced. The app seeds the four default test cases on every startup, so after each deploy you still have the same test keys (e.g. `paspoort_NL123456789`).
+- Data is **ephemeral**: it is lost on redeploy or when the instance is replaced. The app seeds the default BRP and PEP test cases on every startup, so after each deploy you still have the same test keys.
+
+### Reseeding test data (BRP + PEP)
+
+To reseed the deployed mock (e.g. after adding new test cases or if startup seeding was disabled), from the **repo root** run:
+
+```bash
+./scripts/seed_mock_service_eb.sh
+```
+
+This script resolves the Elastic Beanstalk environment URL from the CloudFormation stack (`kyc-mock-service-eb` by default) and runs the seed script against it. To use a specific URL instead:
+
+```bash
+MOCK_SERVICE_URL=https://your-env.elasticbeanstalk.com ./scripts/seed_mock_service_eb.sh
+```
+
+Or from `mock-service/`: `MOCK_SERVICE_URL=https://your-env.elasticbeanstalk.com npm run seed`.
 
 ---
 

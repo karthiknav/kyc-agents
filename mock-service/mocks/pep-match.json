@@ -1,0 +1,42 @@
+{
+  "id": "pep-match",
+  "name": "PEP (Politically Exposed Persons) Match API",
+  "description": "Simulates OpenSanctions-style PEP/sanctions screening. Accepts entity queries (Person or Company) and returns match results in FollowTheMoney entity format. Modeled after OpenSanctions match API.",
+  "method": "POST",
+  "path": "/api/v1/pep/match",
+  "request": {
+    "body": {
+      "queries": { "type": "object", "required": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "persistenceKey": "{{queries.q1.properties.lastName.0}}_{{queries.q1.properties.firstName.0}}",
+    "schema": {
+      "responses": {
+        "q1": {
+          "query": "{{request.queries.q1}}",
+          "results": [
+            {
+              "id": "NK-{{faker.string.alphanumeric(8)}}",
+              "schema": "Person",
+              "caption": "{{faker.person.fullName}}",
+              "datasets": ["pep_world"],
+              "referents": ["pep-{{faker.string.numeric(6)}}"],
+              "first_seen": "{{faker.date.past}}",
+              "last_change": "{{now}}",
+              "properties": {
+                "name": ["{{faker.person.fullName}}"],
+                "firstName": ["{{faker.person.firstName}}"],
+                "lastName": ["{{faker.person.lastName}}"],
+                "birthDate": ["{{faker.number.int({ min: 1950, max: 1990 })}}"],
+                "nationality": ["{{faker.helpers.arrayElement(['us','gb','de','nl','ru'])}}"],
+                "position": ["{{faker.helpers.arrayElement(['Politician','Government Official','Former Minister','Member of Parliament'])}}"]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
