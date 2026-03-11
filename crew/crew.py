@@ -22,9 +22,9 @@ class KYCCrew():
 
     agents: List[BaseAgent]
     tasks: List[Task]
+    # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
+    # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
     llm = LLM(
-
-        #model="bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0",
         model=os.getenv("MODEL", "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
@@ -40,7 +40,6 @@ class KYCCrew():
         return Agent(
             config=self.agents_config['document_processing_agent'],  # type: ignore[index]
             verbose=True,
-            use_system_prompt=False,  # Bedrock models often don't support system messages
             tools=[
                 GetCaseDetailsTool(),
                 GetCaseFilesTool(),
@@ -60,7 +59,6 @@ class KYCCrew():
         return Agent(
             config=self.agents_config['kyc_screening_agent'],  # type: ignore[index]
             verbose=True,
-            use_system_prompt=False,  # Bedrock models often don't support system messages
             tools=[
                 GetCaseDetailsTool(),
                 SearchPersonTool(),
@@ -78,7 +76,6 @@ class KYCCrew():
         return Agent(
             config=self.agents_config['orchestrator_agent'],  # type: ignore[index]
             verbose=True,
-            use_system_prompt=False,  # Bedrock models often don't support system messages
             tools=[
                 GetCaseDetailsTool(),
                 EscalateToHumanTool(),
