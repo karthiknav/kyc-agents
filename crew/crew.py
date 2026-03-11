@@ -12,6 +12,7 @@ from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
+from crew.tools.pep_screening_tool import PepScreeningTool
 from crew.tools.screening_analysis_tool import ScreeningAnalysisTool
 from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
@@ -63,6 +64,7 @@ class KYCCrew():
             verbose=True,
             tools=[
                 GetCaseDetailsTool(),
+                PepScreeningTool(),
                 SearchTool(),
                 ScreeningAnalysisTool(),
             ],

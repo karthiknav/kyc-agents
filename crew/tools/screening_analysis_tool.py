@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Type
+from typing import Optional, Type
 
 import boto3
 from crewai.tools import BaseTool
@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 
 class ScreeningAnalysisInput(BaseModel):
     case_details: str = Field(description="JSON string of case details from get_case_details")
-    search_results: str = Field(description="Web search results about the person from search_person")
+    search_results: str = Field(description="Web search results about the person from search_internet")
+    pep_results: str = Field(
+        default="",
+        description="Optional JSON string from pep_screening (severity HIGH/MEDIUM and pep_summary). Include when PEP was run before web search.",
+    )
 
 
 class ScreeningAnalysisTool(BaseTool):
@@ -21,19 +25,32 @@ class ScreeningAnalysisTool(BaseTool):
 
     name: str = "produce_screening_analysis"
     description: str = (
-        "Takes the output of get_case_details and search_person, analyzes them, "
-        "and produces a screening analysis result as JSON with analysis_result and analysis_summary."
+        "Takes the output of get_case_details, pep_screening (optional), and search_internet. "
+        "Analyzes them and produces a screening analysis result as JSON with analysis_result, "
+        "analysis_summary, severity (from PEP: HIGH/MEDIUM or none), and pep_summary."
     )
     args_schema: Type[ScreeningAnalysisInput] = ScreeningAnalysisInput
 
-    def _run(self, case_details: str, search_results: str) -> str:
-        """Analyze case and search results, produce screening analysis JSON."""
-        logger.info("produce_screening_analysis input: case_details len=%s, search_results len=%s",
-                    len(case_details) if case_details else 0, len(search_results) if search_results else 0)
+    def _run(self, case_details: str, search_results: str, pep_results: str = "") -> str:
+        """Analyze case, optional PEP results, and search results; produce screening analysis JSON."""
+        logger.info("produce_screening_analysis input: case_details len=%s, search_results len=%s, pep_results len=%s",
+                    len(case_details) if case_details else 0,
+                    len(search_results) if search_results else 0,
+                    len(pep_results) if pep_results else 0)
         if not case_details:
             return json.dumps({"error": "case_details is required"})
         if not search_results:
             return json.dumps({"error": "search_results is required"})
+
+        severity = None
+        pep_summary = ""
+        if pep_results and pep_results.strip():
+            try:
+                pep = json.loads(pep_results) if isinstance(pep_results, str) else pep_results
+                severity = pep.get("severity")
+                pep_summary = pep.get("pep_summary") or ""
+            except json.JSONDecodeError:
+                pass
 
         try:
             case = json.loads(case_details) if isinstance(case_details, str) else case_details
@@ -69,36 +86,57 @@ class ScreeningAnalysisTool(BaseTool):
             identity = case.get("identity") or {}
             name = identity.get("fullName", "Unknown") if isinstance(identity, dict) else "Unknown"
         
-        # Use LLM for analysis of search results (pass name so LLM can match results to this person)
+        # Use LLM for analysis (include PEP severity/summary when provided)
         analysis_result, analysis_summary, search_results_summary = self._analyze_with_llm(
-            search_results_text, person_name=name
+            search_results_text, person_name=name, pep_severity=severity, pep_summary=pep_summary
         )
 
-        out = json.dumps({
+        out_obj = {
             "case_id": case_id,
             "name": name,
             "analysis_result": analysis_result,
             "analysis_summary": analysis_summary,
             "search_results_summary": search_results_summary,
-        }, indent=2)
+        }
+        if severity is not None:
+            out_obj["severity"] = severity
+        if pep_summary:
+            out_obj["pep_summary"] = pep_summary
+        out = json.dumps(out_obj, indent=2)
         logger.info("produce_screening_analysis output: analysis_result=%s", analysis_result)
         return out
 
-    def _analyze_with_llm(self, search_results: str, person_name: str = "Unknown"):
-        """Use Bedrock LLM to analyze search results and determine screening outcome (OK, NOK, AMBIGUOUS)."""
+    def _analyze_with_llm(
+        self,
+        search_results: str,
+        person_name: str = "Unknown",
+        pep_severity: Optional[str] = None,
+        pep_summary: str = "",
+    ):
+        """Use Bedrock LLM to analyze search results and optional PEP outcome; determine screening (OK, NOK, AMBIGUOUS)."""
         # Ensure string for slicing (agent may pass dict)
         text = search_results if isinstance(search_results, str) else str(search_results)
         text_truncated = text[:12000] if len(text) > 12000 else text
         logger.info(
-            "_analyze_with_llm: person_name=%s, input length=%s (truncated to %s)",
-            person_name, len(text), len(text_truncated),
+            "_analyze_with_llm: person_name=%s, pep_severity=%s, input length=%s (truncated to %s)",
+            person_name, pep_severity, len(text), len(text_truncated),
         )
+
+        pep_block = ""
+        if pep_severity or pep_summary:
+            pep_block = f"""
+**PEP/Sanctions API result (run before web search):**
+- Severity: {pep_severity or 'none'}
+- Summary: {pep_summary or 'N/A'}
+If severity is HIGH (sanctions match), the screening outcome must reflect that. If severity is MEDIUM (PEP only), consider it in your analysis alongside web search.
+"""
+
         # Bedrock model: use inference profile ID (no "bedrock/" prefix for boto3)
         prompt = f"""You are a KYC (Know Your Customer) compliance analyst.
 
 **Person being screened (from case details):** "{person_name}"
-
-Your task: Determine whether the web search results below contain adverse media, sanctions, PEP (Politically Exposed Person), fraud, criminal activity, or other compliance risks **that actually refer to this specific person** ("{person_name}").
+{pep_block}
+Your task: Determine whether the PEP/sanctions result (if any) and the web search results below contain adverse media, sanctions, PEP (Politically Exposed Person), fraud, criminal activity, or other compliance risks **that actually refer to this specific person** ("{person_name}").
 
 **Matching rules:**
 - **Match the results to the name above.** Only treat content as adverse if it clearly refers to or implicates **"{person_name}"** (the person being screened). Same or similar names can refer to different people — only flag as adverse when the context (e.g. role, location, dates) indicates it is the same individual.

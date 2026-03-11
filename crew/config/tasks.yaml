@@ -51,16 +51,23 @@ document_processing_task:
 screening_task:
   description: >
     Given caseId {caseId}:
-    1. Use get_case_details to fetch the case from DynamoDB and extract identity.fullName and case_id.
-    2. Use search_person with the person_name (and pass case_id for propagation) to find news, sanctions, PEP, and adverse media.
-    3. Use produce_screening_analysis with the case details and search results to generate the screening analysis.
-    Return valid JSON with name, analysis_result (screening ok | screening not ok | ambiguous), and analysis_summary.
+    1. Use get_case_details to fetch the case from DynamoDB and extract identity.fullName, case_id, and optionally dateOfBirth and nationality.
+    2. Use pep_screening with the case details to call the PEP/sanctions API first. From the result:
+       - If any result has a "sanctions" dataset, flag as HIGH SEVERITY and include its summary.
+       - If any result has PEP datasets (e.g. pep_world) but no sanctions, flag as MEDIUM severity; still proceed to web search.
+       - If no PEP API results are found, proceed to web search (no severity from PEP).
+    3. Use search_internet with a query built from the person's name to find news, sanctions, PEP, and adverse media.
+    4. Use produce_screening_analysis with case details, the pep_screening result (severity and pep_summary), and the web search results to generate the final screening analysis.
+    Return valid JSON including severity (when set by PEP) and pep_summary.
   expected_output: >
-    Valid JSON object with exactly these keys:
+    Valid JSON object with at least these keys:
     - "case_id": the case ID from the case (string)
     - "name": the full name from identity.fullName (string)
     - "analysis_result": one of "OK", "NOK", "AMBIGUOUS" (string)
     - "analysis_summary": a short summary explaining the reasoning (string)
     - "search_results_summary": concise summary of key info from web search (string)
-    Example: {"case_id": "01HR9B5J7Z6J7PD5B6PKQJ2MM4", "name": "Paul Vincent", "analysis_result": "screening ok", "analysis_summary": "No adverse findings.", "search_results_summary": "Search returned no adverse media."}
+    When PEP was run, also include:
+    - "severity": "HIGH" (sanctions match), "MEDIUM" (PEP match only), or omit if no PEP matches (string, optional)
+    - "pep_summary": summary of PEP/sanctions API matches (string, optional)
+    Example: {"case_id": "01HR9B5J7Z6J7PD5B6PKQJ2MM4", "name": "Paul Vincent", "analysis_result": "NOK", "analysis_summary": "PEP API returned sanctions match.", "search_results_summary": "...", "severity": "HIGH", "pep_summary": "Sanctions match: John Doe (datasets: sanctions)."}
   agent: kyc_screening_agent
