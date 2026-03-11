@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BASE_NAME = "kyc-agent"
 TEST_TABLE_NAME = f"{_DEFAULT_BASE_NAME}-storage-kyc-cases"
 TEST_QUEUE_NAME = f"{_DEFAULT_BASE_NAME}-main-kyc-initiated"
-TEST_S3_BUCKET_NAME = f"{_DEFAULT_BASE_NAME}-storage-agent-source"
+TEST_S3_BUCKET_NAME = f"{_DEFAULT_BASE_NAME}-storage"
 TEST_REGION = "us-east-1"
 
 # Default dummy record for testing (includes dummy S3 keys under files)
@@ -28,8 +28,8 @@ DUMMY_RECORD: dict[str, Any] = {
     "status": "INITIATED",
     "statusUpdatedAt": "2026-02-26T02:18:10Z",
     "files": [
-        {"type": "passport", "bucket": "kyc-agent-storage-agent-source", "key": "cases/1234/passport.pdf"},
-        {"type": "license", "bucket": "kyc-agent-storage-agent-source", "key": "cases/1234/license.pdf"}
+        {"type": "passport", "bucket": "kyc-agent-storage", "key": "cases/1234/passport.pdf"},
+        {"type": "license", "bucket": "kyc-agent-storage", "key": "cases/1234/license.pdf"}
     ],
     "identity": {
         "fullName": "Alex Morgan Lee",

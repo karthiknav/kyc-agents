@@ -24,9 +24,6 @@ def get_ssm_parameter(name: str, with_decryption: bool = True) -> str:
 
 logger.info("Setting up environment variables from SSM Parameter Store...")
 try:
-    openai_key = get_ssm_parameter("/ops-orchestrator/openai-api-key")
-    os.environ["OPENAI_API_KEY"] = openai_key
-    logger.info("✅ OPENAI_API_KEY environment variable set")
     tavily_api_key = get_ssm_parameter("/ops-orchestrator/tavily-api-key")
     os.environ["TAVILY_API_KEY"] = tavily_api_key
     logger.info("✅ TAVILY_API_KEY environment variable set")
@@ -68,8 +65,8 @@ def agent_invocation(payload):
 
 
 if __name__ == "__main__":
-    app.run()
-    # payload = {"caseId": "1234"}
-    # logger.info("Testing locally with payload: %s", payload)
-    # response = agent_invocation(payload)
-    # logger.info("Response: %s", response)
+    #app.run()
+    payload = {"caseId": "1234"}
+    logger.info("Testing locally with payload: %s", payload)
+    response = agent_invocation(payload)
+    logger.info("Response: %s", response)

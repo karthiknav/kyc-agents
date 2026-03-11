@@ -1,8 +1,8 @@
-from crewai import Agent, Crew, Process, Task
+from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
-
+import os
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
@@ -22,6 +22,14 @@ class KYCCrew():
 
     agents: List[BaseAgent]
     tasks: List[Task]
+    llm = LLM(
+
+        #model="bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=os.getenv("MODEL", "bedrock/anthropic. anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        region_name=os.getenv("AWS_REGION_NAME", "us-east-1"),
+    )
 
     # ------------------------------------------------------------------
     # Document Processing Agent
@@ -39,6 +47,7 @@ class KYCCrew():
                 VerifyIdentityDocumentTool(),
                 CompareIdentityDocumentsTool(),
             ],
+            llm=self.llm,
         )
 
     # ------------------------------------------------------------------
@@ -55,6 +64,7 @@ class KYCCrew():
                 SearchPersonTool(),
                 ScreeningAnalysisTool(),
             ],
+            llm=self.llm,
         )
 
     # ------------------------------------------------------------------
@@ -70,6 +80,7 @@ class KYCCrew():
                 GetCaseDetailsTool(),
                 EscalateToHumanTool(),
             ],
+            llm=self.llm,
         )
 
     # ------------------------------------------------------------------
@@ -108,7 +119,7 @@ class KYCCrew():
     @crew
     def crew(self) -> Crew:
         return Crew(
-            agentss=[self.document_processing_agent(), self.kyc_screening_agent(), self.orchestrator_agent()],
+            agents=[self.document_processing_agent(), self.kyc_screening_agent(), self.orchestrator_agent()],
             tasks=[self.document_processing_task(), self.screening_task(), self.orchestrator_task()],
             process=Process.sequential,
             verbose=True,
