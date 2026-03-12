@@ -11,6 +11,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
     const [selectedSubmission, setSelectedSubmission] = useState<KycSubmission | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
     const [analytics, setAnalytics] = useState({
         total_onboardings: 0,
         pending_review: 0,
@@ -18,6 +19,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
         avg_processing_time: 0,
         escalations: 0
     });
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement;
+            if (!target.closest('.row-actions')) {
+                setOpenMenuId(null);
+            }
+        };
+
+        if (openMenuId) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [openMenuId]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -47,6 +65,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
         fetchData();
     }, []);
 
+    const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        const id = Math.random().toString(36).substring(2, 9);
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 4000);
+    };
+
     const formatDate = (isoString: string) => {
         try {
             const date = new Date(isoString);
@@ -55,6 +81,39 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
             return 'N/A';
         }
     };
+    const handleStatusUpdate = async (status: string) => {
+        if (!selectedSubmission) return;
+        const caseId = selectedSubmission.caseId || (selectedSubmission as any).CaseId;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/submissions/${caseId}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+
+            if (response.ok) {
+                // Update local state
+                const updatedSubmissions = submissions.map((sub: any) => {
+                    const subId = sub.caseId || (sub as any).CaseId;
+                    if (subId === caseId) {
+                        return { ...sub, status };
+                    }
+                    return sub;
+                });
+                setSubmissions(updatedSubmissions);
+                setSelectedSubmission({ ...selectedSubmission, status });
+                showToast(`Case ${status} successfully`, 'success');
+            } else {
+                const error = await response.json();
+                showToast(`Failed to update status: ${error.detail || 'Unknown error'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error updating status:', error);
+            showToast('Failed to connect to the server', 'error');
+        }
+    };
+
     return (
         <div className="app-view active">
             <div className="analyst-content">
@@ -248,9 +307,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         </div>
                                     </div>
                                     <div className="action-buttons" style={{ marginTop: '20px' }}>
-                                        <button className="action-btn approve">✓ Approve</button>
-                                        <button className="action-btn escalate-btn" onClick={onEscalate}>↑ Escalate</button>
-                                        <button className="action-btn reject">✕ Reject</button>
+                                        <button className="action-btn approve" onClick={() => handleStatusUpdate('APPROVED')}>✓ Approve</button>
+                                        <button className="action-btn escalate-btn" onClick={() => handleStatusUpdate('ESCALATED')}>↑ Escalate</button>
+                                        <button className="action-btn reject" onClick={() => handleStatusUpdate('REJECTED')}>✕ Reject</button>
                                     </div>
                                 </>
                             ) : (
@@ -259,6 +318,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div className="toast-container">
+                {toasts.map(toast => (
+                    <div key={toast.id} className={`toast ${toast.type}`}>
+                        <span className="toast-icon">
+                            {toast.type === 'success' && '✓'}
+                            {toast.type === 'error' && '✕'}
+                            {toast.type === 'info' && 'ℹ'}
+                        </span>
+                        <span className="toast-message">{toast.message}</span>
+                    </div>
+                ))}
             </div>
         </div>
     );
