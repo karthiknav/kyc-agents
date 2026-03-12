@@ -58,6 +58,17 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     const [caseId, setCaseId] = useState<string | undefined>(initialSubmissionId);
     const pollingInterval = useRef<any>(null);
 
+    const selectedSubmissionStageStatus = (stage: any) => {
+        return stage?.result || stage?.status || 'PENDING';
+    };
+
+    const isScreeningComplete = (screening: any) => {
+        if (!screening) return false;
+        // Check if both sub-stages are present or if the legacy status is SUCCESS/OK
+        if (screening.adverseMedia && screening.riskListScreening) return true;
+        return screening.status === 'SUCCESS' || screening.result === 'OK';
+    };
+
     const fetchStatus = async () => {
         try {
             const response = await fetch(`${API_BASE_URL}/submission/${userId}`);
@@ -456,17 +467,19 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
                                 <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
                                     {/* Document Verification Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'var(--accent-green)' : 'var(--accent-blue)'}` }}>
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'var(--accent-green)' : 'var(--accent-blue)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'verified' : 'processing'}`}>🪪</div>
+                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'verified' : 'processing'}`}>🪪</div>
                                                 <div>
                                                     <div className="doc-name">Document Verification</div>
                                                     <div className="doc-req">Analyzing ID authenticity and OCR extraction</div>
                                                 </div>
                                             </div>
-                                            {submissionStages?.documentProcessing?.status === 'SUCCESS' ? (
+                                            {selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? (
                                                 <span className="status-chip verified">✓ Completed</span>
+                                            ) : selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'PARTIAL_MATCH' ? (
+                                                <span className="status-chip" style={{ background: 'var(--accent-orange-dim)', color: 'var(--accent-orange)' }}>⚠️ Partial Match</span>
                                             ) : (
                                                 <span className="status-chip processing">⟳ In Progress</span>
                                             )}
@@ -474,18 +487,18 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                     </div>
 
                                     {/* Person Screening Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${submissionStages?.screening?.status === 'SUCCESS' ? 'var(--accent-green)' : submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${isScreeningComplete(submissionStages?.screening) ? 'var(--accent-green)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${submissionStages?.screening?.status === 'SUCCESS' ? 'verified' : submissionStages?.documentProcessing?.status === 'SUCCESS' ? 'processing' : ''}`}>🔎</div>
+                                                <div className={`doc-icon ${isScreeningComplete(submissionStages?.screening) ? 'verified' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🔎</div>
                                                 <div>
                                                     <div className="doc-name">Person Screening</div>
                                                     <div className="doc-req">Cross-referencing against global sanctions lists</div>
                                                 </div>
                                             </div>
-                                            {submissionStages?.screening?.status === 'SUCCESS' ? (
+                                            {isScreeningComplete(submissionStages?.screening) ? (
                                                 <span className="status-chip verified">✓ Completed</span>
-                                            ) : submissionStages?.documentProcessing?.status === 'SUCCESS' ? (
+                                            ) : submissionStages?.documentProcessing ? (
                                                 <span className="status-chip processing">⟳ In Progress</span>
                                             ) : (
                                                 <span className="status-chip pending">○ Waiting</span>
@@ -496,8 +509,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
                                 <div className="processing-bar" style={{ maxWidth: '100%', margin: '40px 0 20px' }}>
                                     <div className="fill" style={{
-                                        width: submissionStages?.screening?.status === 'SUCCESS' ? '100%' :
-                                            submissionStages?.documentProcessing?.status === 'SUCCESS' ? '66%' : '33%',
+                                        width: isScreeningComplete(submissionStages?.screening) ? '100%' :
+                                            submissionStages?.documentProcessing ? '66%' : '33%',
                                         background: 'var(--accent-blue)',
                                         transition: 'width 1s ease-in-out'
                                     }}></div>

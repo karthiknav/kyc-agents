@@ -1,16 +1,53 @@
 export type Role = 'uploader' | 'analyst';
 
-export interface VerificationStage {
-    status: string;
-    startedAt: string;
+export interface S3Location {
+    bucket: string;
+    key: string;
+}
+
+export interface BaseStage {
+    result: string;
+    summary: string;
     updatedAt: string;
-    detailsS3: { bucket: string; key: string };
-    error: string | null;
-    version: number;
-    matchesFound?: string[];
+    reportS3?: S3Location;
+}
+
+export interface DocumentProcessingStage extends BaseStage {
+    discrepancies?: string[];
+    governmentVerificationSummary?: string;
+}
+
+export interface ScreeningSubStage extends BaseStage {
+    rawResponseS3?: S3Location;
+}
+
+export interface AdverseMediaResult extends ScreeningSubStage {
+    searchQueries?: string[];
+}
+
+export interface RiskListResult extends ScreeningSubStage {
+    datasetsMatched?: string[];
+    pepStatus?: string;
+    sanctionsStatus?: string;
+}
+
+export interface ScreeningStage {
+    adverseMedia?: AdverseMediaResult;
+    riskListScreening?: RiskListResult;
+    // Legacy support for older items
+    status?: string;
     result?: string;
     summary?: string;
-    recommendation_summary?: string;
+}
+
+export interface OrchestratorStage {
+    status: string;
+    decision: string;
+    reason: string[];
+    recommendation_summary: string;
+    decidedAt: string;
+    // Legacy support
+    updatedAt?: string;
 }
 
 export interface User {
@@ -30,9 +67,9 @@ export interface User {
     kyc_logs?: Array<{ time: string; event: string; agent: string }>;
     document_urls?: Record<string, string>;
     stages?: {
-        documentProcessing: VerificationStage;
-        screening: VerificationStage;
-        orchestrator: VerificationStage;
+        documentProcessing?: DocumentProcessingStage;
+        screening?: ScreeningStage;
+        orchestrator?: OrchestratorStage;
     };
     finalDecision?: string;
 }
@@ -53,9 +90,9 @@ export interface KycSubmission {
         passportExpiry: string;
     };
     stages: {
-        documentProcessing: VerificationStage;
-        screening: VerificationStage;
-        orchestrator: VerificationStage;
+        documentProcessing?: DocumentProcessingStage;
+        screening?: ScreeningStage;
+        orchestrator?: OrchestratorStage;
     };
     document_urls: Record<string, string>;
     finalDecision: string;

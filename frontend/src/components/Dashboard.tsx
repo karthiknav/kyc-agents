@@ -143,7 +143,51 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         <div className="ar-text">
                                             {selectedSubmission.stages?.orchestrator?.recommendation_summary || 'No findings available'}
                                         </div>
+                                        {selectedSubmission.stages?.orchestrator?.reason && (
+                                            <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
+                                                {selectedSubmission.stages.orchestrator.reason.map((r, i) => (
+                                                    <li key={i}>{r}</li>
+                                                ))}
+                                            </ul>
+                                        )}
                                     </div>
+
+                                    {selectedSubmission.stages?.documentProcessing?.discrepancies && selectedSubmission.stages.documentProcessing.discrepancies.length > 0 && (
+                                        <div className="agent-reasoning" style={{ marginBottom: '20px', borderLeftColor: 'var(--accent-orange)' }}>
+                                            <div className="ar-header" style={{ color: 'var(--accent-orange)' }}>⚠️ Document Discrepancies</div>
+                                            <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
+                                                {selectedSubmission.stages.documentProcessing.discrepancies.map((d, i) => (
+                                                    <li key={i}>{d}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {selectedSubmission.stages?.screening && (
+                                        <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+                                            <div className="section-title" style={{ marginBottom: '10px' }}>Screening Details</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', fontSize: '12px' }}>
+                                                {selectedSubmission.stages.screening.riskListScreening && (
+                                                    <div>
+                                                        <span style={{ color: 'var(--text-muted)' }}>Risk List:</span>
+                                                        <span className={`decision-badge ${selectedSubmission.stages.screening.riskListScreening.result}`} style={{ marginLeft: '8px' }}>
+                                                            {selectedSubmission.stages.screening.riskListScreening.result}
+                                                        </span>
+                                                        <div style={{ fontSize: '11px', marginTop: '4px' }}>{selectedSubmission.stages.screening.riskListScreening.summary}</div>
+                                                    </div>
+                                                )}
+                                                {selectedSubmission.stages.screening.adverseMedia && (
+                                                    <div style={{ marginTop: '5px', borderTop: '1px solid var(--border)', paddingTop: '5px' }}>
+                                                        <span style={{ color: 'var(--text-muted)' }}>Adverse Media:</span>
+                                                        <span className={`decision-badge ${selectedSubmission.stages.screening.adverseMedia.result}`} style={{ marginLeft: '8px' }}>
+                                                            {selectedSubmission.stages.screening.adverseMedia.result}
+                                                        </span>
+                                                        <div style={{ fontSize: '11px', marginTop: '4px' }}>{selectedSubmission.stages.screening.adverseMedia.summary}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="section-title">Verification Documents</div>
                                     <div className="document-list">
                                         {['passport', 'address', 'income'].map(type => {

@@ -1,66 +1,83 @@
 {
-    "caseId": "CASE-8E901EF1",
-    "user_id": "USR002",
-    "createdAt": "2026-03-05T10:58:15Z",
-    "status": "PENDING_HUMAN_REVIEW",
-    "statusUpdatedAt": "2026-03-05T10:58:15Z",
-    "type": "Individual",
+    "caseId": "1234",
+    "createdAt": "2026-02-26T01:55:22Z",
+    "createdBy": "user-abc",
     "files": [
         {
-            "bucket": "kyc-agent-storage-agent-source",
-            "key": "cases/CASE-D223B4FC/passport_passport.pdf",
+            "bucket": "kyc-agent-storage",
+            "key": "cases/1234/passport.pdf",
             "type": "passport"
         },
         {
-            "bucket": "kyc-agent-storage-agent-source",
-            "key": "cases/CASE-D223B4FC/address_license.pdf",
-            "type": "address"
-        },
-        {
-            "bucket": "kyc-agent-storage-agent-source",
-            "key": "cases/CASE-D223B4FC/income_license.pdf",
-            "type": "income"
+            "bucket": "kyc-agent-storage",
+            "key": "cases/1234/license.pdf",
+            "type": "license"
         }
     ],
     "identity": {
-        "address": "123 Main Street",
-        "dateOfBirth": "1990-12-05",
-        "fullName": "Alex Morgan Lee",
-        "nationality": "UTO (Mock)",
-        "passportExpiry": "2029-11-05",
-        "passportNumber": "123456"
+        "dateOfBirth": "1990-05-12",
+        "fullName": "Willem van den Berg",
+        "nationality": "Netherlands"
     },
     "stages": {
         "documentProcessing": {
             "discrepancies": [
-                "dateOfBirth differs: DB=1990-12-05, doc=1990-05-12"
+                "date_of_birth differs: DB=1990-05-12, Documents/BRP=1970-01-20",
+                "nationality format differs: DB=Netherlands, BRP=Nederlandse"
             ],
+            "governmentVerificationSummary": "BRP verification confirms both documents (passport and driver's license) are authentic and registered to Willem van den Berg with BSN 111222333. Both documents show VERIFIED status. The government data matches the document data perfectly but conflicts with the database birth date. The person's identity is confirmed as Dutch national residing in Netherlands.",
             "reportS3": {
-                "bucket": "kyc-agent-storage-agent-source",
-                "key": "cases/CASE-D223B4FC/document-processing-report.md"
+                "bucket": "kyc-agent-storage",
+                "key": "cases/1234/document-processing-report.md"
             },
             "result": "PARTIAL_MATCH",
-            "summary": "The full name and nationality match between the database record and the extracted documents. However, there is a discrepancy in the date of birth; the database record states December 5, 1990, while the documents indicate May 12, 1990. This inconsistency is significant enough to classify the comparison as a partial match.",
-            "updatedAt": "2026-03-05T10:58:49Z"
+            "summary": "The full name 'Willem van den Berg' matches perfectly across all three sources. However, there is a significant discrepancy in the date of birth - the database shows 1990-05-12 while both the identity documents and BRP registry show 1970-01-20. The nationality information, while semantically equivalent, is formatted differently between sources. Document numbers (NL111222333) are consistent between the uploaded documents and BRP verification. The documents appear to belong to the same person according to the BRP, but the birth date discrepancy requires investigation.",
+            "updatedAt": "2026-03-12T16:12:45Z"
         },
         "orchestrator": {
-            "decidedAt": "2026-03-05T10:59:05Z",
+            "decidedAt": "2026-03-12T16:14:11Z",
             "decision": "ESCALATE",
             "reason": [
-                "Document comparison result is PARTIAL_MATCH",
-                "Screening result is OK"
+                "Document verification resulted in PARTIAL_MATCH with significant date of birth discrepancy",
+                "Risk screening returned HIT with PEP status identified",
+                "Despite favorable adverse media result (OK), combined document discrepancy and PEP status require manual review"
             ],
-            "recommendation_summary": "The document comparison revealed a partial match due to a date of birth discrepancy between the database and documents, although the sanctions screening was clear. This inconsistency warrants escalation to human review for further validation.",
+            "recommendation_summary": "Case escalated to human review due to document verification discrepancies (date of birth mismatch between database and official documents) and positive PEP match. While adverse media screening is clear, the combination of document discrepancy and PEP status necessitates manual verification to ensure compliance and accurate customer due diligence.",
             "status": "ESCALATED"
         },
         "screening": {
-            "reportS3": {
-                "bucket": "kyc-agent-storage-agent-source",
-                "key": "cases/CASE-D223B4FC/screening-report.md"
+            "adverseMedia": {
+                "rawResponseS3": {
+                    "bucket": "kyc-agent-storage",
+                    "key": "cases/1234/adverse-media-report.json"
+                },
+                "reportS3": {
+                    "bucket": "kyc-agent-storage",
+                    "key": "cases/1234/adverse-media-report.md"
+                },
+                "result": "OK",
+                "searchQueries": [
+                    "Willem van den Berg fraud crime money laundering arrest investigation adverse media"
+                ],
+                "summary": "The search results refer to a William Berg from Waukee, Iowa who was involved in fraud and money laundering, not Willem van den Berg. The Iowa suspect was a 52-year-old financial adviser who created fraudulent investment companies called W. Holdings of Iowa and Excel Performance Management. While there are significant adverse findings about William Berg, including FBI charges, wire fraud, and a prison sentence in 2024, these do not relate to Willem van den Berg as they clearly identify a different individual. The name similarity alone is not sufficient to establish these as adverse findings for the subject being screened.",
+                "updatedAt": "2026-03-12T16:13:51Z"
             },
-            "result": "OK",
-            "summary": "The search results do not contain any adverse findings that specifically refer to 'Alex Morgan Lee'. The content primarily discusses legal matters involving other individuals or general topics related to law and compliance without linking them to the person being screened.",
-            "updatedAt": "2026-03-05T10:59:01Z"
+            "riskListScreening": {
+                "datasetsMatched": [
+                    "pep_world"
+                ],
+                "pepStatus": "PEP",
+                "rawResponseS3": {
+                    "bucket": "kyc-agent-storage",
+                    "key": "cases/1234/risk-list-report.json"
+                },
+                "result": "HIT",
+                "sanctionsStatus": "NOT_SANCTIONED",
+                "summary": "PEP match found (datasets: pep_world).",
+                "updatedAt": "2026-03-12T16:13:01Z"
+            }
         }
-    }
+    },
+    "status": "PENDING_HUMAN_REVIEW",
+    "statusUpdatedAt": "2026-02-26T02:18:10Z"
 }

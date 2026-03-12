@@ -81,6 +81,53 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class S3Location(BaseModel):
+    bucket: str
+    key: str
+
+class DocumentProcessingStage(BaseModel):
+    result: Optional[str] = None
+    summary: Optional[str] = None
+    discrepancies: Optional[List[str]] = None
+    governmentVerificationSummary: Optional[str] = None
+    reportS3: Optional[S3Location] = None
+    updatedAt: Optional[str] = None
+
+class ScreeningResult(BaseModel):
+    result: Optional[str] = None
+    summary: Optional[str] = None
+    updatedAt: Optional[str] = None
+    reportS3: Optional[S3Location] = None
+    rawResponseS3: Optional[S3Location] = None
+
+class AdverseMediaResult(ScreeningResult):
+    searchQueries: Optional[List[str]] = None
+
+class RiskListResult(ScreeningResult):
+    datasetsMatched: Optional[List[str]] = None
+    pepStatus: Optional[str] = None
+    sanctionsStatus: Optional[str] = None
+
+class ScreeningStage(BaseModel):
+    status: Optional[str] = None
+    summary: Optional[str] = None
+    updatedAt: Optional[str] = None
+    reportS3: Optional[S3Location] = None
+    adverseMedia: Optional[AdverseMediaResult] = None
+    riskListScreening: Optional[RiskListResult] = None
+
+class OrchestratorStage(BaseModel):
+    status: Optional[str] = None
+    decision: Optional[str] = None
+    reason: Optional[List[str]] = None
+    recommendation_summary: Optional[str] = None
+    decidedAt: Optional[str] = None
+
+class CaseStages(BaseModel):
+    documentProcessing: Optional[DocumentProcessingStage] = None
+    screening: Optional[ScreeningStage] = None
+    orchestrator: Optional[OrchestratorStage] = None
+
 class UserResponse(BaseModel):
     email: str
     role: str
@@ -91,7 +138,7 @@ class UserResponse(BaseModel):
     kyc_logs: Optional[List[dict]] = None
     document_urls: Optional[dict] = None
     files: Optional[List[dict]] = None
-    stages: Optional[dict] = None
+    stages: Optional[CaseStages] = None
     finalDecision: Optional[str] = None
 
 # Mock database for login
