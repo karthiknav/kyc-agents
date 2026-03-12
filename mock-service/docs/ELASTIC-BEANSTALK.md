@@ -2,7 +2,7 @@
 
 This guide uses the included EB config and packaging scripts for a simple, non-complicated setup. SQLite is used with a writable `data/` directory (no persistent EBS/EFS).
 
-**Deploy order:** Deploy mock-service (Beanstalk) **before** the main agent stack. The agent uses the mock-service URL as `BRP_API_URL` to call the BRP document-lookup API. After the Beanstalk stack is created, get the `EnvironmentURL` output and set `BRP_API_URL` when configuring the agent runtime. Then run the full-stack deploy (`./scripts/deploy.sh`).
+**Deploy order:** Deploy mock-service (Beanstalk) **before** the main agent stack. The agent uses the mock-service base URL as `MOCK_SERVICE_URL`, and the tools append the BRP (`/api/v1/brp/personen/document-lookup`) and PEP (`/api/v1/pep/match`) paths as needed. After the Beanstalk stack is created, get the `EnvironmentURL` output and set `MOCK_SERVICE_URL` when configuring the agent runtime. Then run the full-stack deploy (`./scripts/deploy.sh`).
 
 ---
 
@@ -123,7 +123,7 @@ Packaging only (from repo root): `./scripts/package_mock_service_for_eb.sh`
 | `S3_KEY` | S3 key for the zip (default: `mock-service/deploy-TIMESTAMP.zip` so each deploy triggers EB update) |
 | `DEPLOY_SKIP_PACKAGE` | Set to `1` to skip packaging and use existing `mock-service/deploy.zip` |
 
-After the stack is `CREATE_COMPLETE` or `UPDATE_COMPLETE`, get the application URL and set it as **`BRP_API_URL`** for the agent (e.g. agent runtime environment):
+After the stack is `CREATE_COMPLETE` or `UPDATE_COMPLETE`, get the application base URL and set it as **`MOCK_SERVICE_URL`** for the agent (e.g. agent runtime environment). The tools will append the BRP/PEP paths. (Optional overrides: `BRP_API_URL` / `PEP_API_URL` can still be set to full endpoint URLs.)
 
 ```bash
 aws cloudformation describe-stacks --stack-name kyc-mock-service-eb \

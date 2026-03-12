@@ -72,7 +72,7 @@ Set `persistenceKey` to a template that produces a unique key per request. The f
 
 ## Deploying to AWS Elastic Beanstalk
 
-See **[docs/ELASTIC-BEANSTALK.md](docs/ELASTIC-BEANSTALK.md)** for EB config, SQLite setup, and CloudFormation deploy. **Deploy from repo root:** `./scripts/deploy_mock_service.sh` (templates in **`templates/mock-service/`**). Deploy mock-service first so the agent can use the Beanstalk URL as `BRP_API_URL`.
+See **[docs/ELASTIC-BEANSTALK.md](docs/ELASTIC-BEANSTALK.md)** for EB config, SQLite setup, and CloudFormation deploy. **Deploy from repo root:** `./scripts/deploy_mock_service.sh` (templates in **`templates/mock-service/`**). Deploy mock-service first so the agent can use the Beanstalk base URL as `MOCK_SERVICE_URL`.
 
 ---
 

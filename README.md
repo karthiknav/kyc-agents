@@ -178,8 +178,11 @@ chmod +x *.sh
 # 1) Deploy base infrastructure (VPC, storage, IAM roles, main resources)
 ./deploy-base.sh
 
-# 2) Deploy agent runtime, lambdas, API, and UI (uses default region us-east-1)
-./deploy.sh 
+# 2) Deploy mock-service (Elastic Beanstalk) — used by the agent as MOCK_SERVICE_URL (base URL)
+./deploy_mock_service.sh
+
+# 3) Deploy agent runtime, lambdas, API, and UI (uses default region us-east-1)
+./deploy.sh
 ```
 
 Notes:

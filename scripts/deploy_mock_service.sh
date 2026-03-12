@@ -122,8 +122,9 @@ if [ -n "$MOCK_ENV_NAME" ] && [ "$MOCK_ENV_NAME" != "None" ]; then
     --query 'Environments[0].CNAME' --output text 2>/dev/null || true)
   if [ -n "$MOCK_CNAME" ] && [ "$MOCK_CNAME" != "None" ]; then
     echo "Mock-service base URL (domain): http://$MOCK_CNAME"
-    echo "BRP_API_URL for agent:          http://$MOCK_CNAME/api/v1/brp/personen/document-lookup"
-    echo "PEP_API_URL for agent:          http://$MOCK_CNAME/api/v1/pep/match"
+    echo "MOCK_SERVICE_URL for agent:     http://$MOCK_CNAME"
+    echo "BRP endpoint:                   http://$MOCK_CNAME/api/v1/brp/personen/document-lookup"
+    echo "PEP endpoint:                   http://$MOCK_CNAME/api/v1/pep/match"
   else
     aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
       --query "Stacks[0].Outputs[?OutputKey=='EnvironmentURL'].OutputValue" --output text 2>/dev/null || true

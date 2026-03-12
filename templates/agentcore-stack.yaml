@@ -29,10 +29,10 @@ Parameters:
     Type: String
     Description: S3 bucket name for KYC results/reports (passed to agent as KYC_RESULTS_BUCKET)
 
-  BrpApiUrl:
+  MockServiceUrl:
     Type: String
     Default: ''
-    Description: 'Full URL of the BRP mock API (e.g. from mock-service Beanstalk EnvironmentURL + /api/v1/brp/personen/document-lookup). Empty = use default localhost.'
+    Description: 'Base URL of the mock-service (e.g. http(s)://<beanstalk-domain>). Empty = tools fall back to localhost.'
 
 Resources:
   ECRRepository:
@@ -209,8 +209,8 @@ Resources:
       EnvironmentVariables:
         KYC_CASES_TABLE: !Ref KycCasesTableName
         KYC_RESULTS_BUCKET: !Ref KycResultsBucketName
-        # BRP mock API URL (set by deploy.sh from mock-service Beanstalk stack output when present)
-        BRP_API_URL: !Ref BrpApiUrl
+        # Base URL for mock-service; tools append BRP/PEP paths as needed
+        MOCK_SERVICE_URL: !Ref MockServiceUrl
         # Forces runtime to redeploy when agent code changes (new image digest for :latest)
         DEPLOY_SOURCE_KEY: !Ref SourceZipKey
       RoleArn: !ImportValue

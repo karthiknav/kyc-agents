@@ -1,9 +1,9 @@
 #!/bin/bash
 # Full-stack deploy: agent, Lambda, API, UI. Requires base stacks (VPC, storage, roles, main) to exist.
 #
-# Deploy order: Deploy mock-service (Beanstalk) first so the agent can call the BRP mock API:
+# Deploy order: Deploy mock-service (Beanstalk) first so the agent can call mock endpoints (BRP + PEP):
 #   1. ./scripts/deploy_mock_service.sh   (with S3_BUCKET and STACK_NAME)
-#   2. Get the mock-service URL from the stack output and set BRP_API_URL for the agent runtime
+#   2. Get the mock-service URL from the stack output and set MOCK_SERVICE_URL for the agent runtime
 #   3. ./scripts/deploy.sh                (this script)
 
 set -e
@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Resolve mock-service (Beanstalk) base URL using EB CNAME (domain) instead of instance IP
-BRP_API_URL_VALUE=""
+MOCK_SERVICE_URL_VALUE=""
 if aws cloudformation describe-stacks --stack-name "$MOCK_EB_STACK" --region "$REGION" &>/dev/null; then
   MOCK_ENV_NAME=$(aws cloudformation describe-stacks --stack-name "$MOCK_EB_STACK" --region "$REGION" \
     --query "Stacks[0].Outputs[?OutputKey=='EnvironmentName'].OutputValue" --output text 2>/dev/null || true)
@@ -32,14 +32,14 @@ if aws cloudformation describe-stacks --stack-name "$MOCK_EB_STACK" --region "$R
     MOCK_CNAME=$(aws elasticbeanstalk describe-environments --environment-names "$MOCK_ENV_NAME" --region "$REGION" \
       --query 'Environments[0].CNAME' --output text 2>/dev/null || true)
     if [ -n "$MOCK_CNAME" ] && [ "$MOCK_CNAME" != "None" ]; then
-      BRP_API_URL_VALUE="http://${MOCK_CNAME}/api/v1/brp/personen/document-lookup"
-      echo "Using BRP_API_URL (Beanstalk domain): $BRP_API_URL_VALUE"
+      MOCK_SERVICE_URL_VALUE="http://${MOCK_CNAME}"
+      echo "Using MOCK_SERVICE_URL (Beanstalk domain): $MOCK_SERVICE_URL_VALUE"
     else
       MOCK_ENV_URL=$(aws cloudformation describe-stacks --stack-name "$MOCK_EB_STACK" --region "$REGION" \
         --query "Stacks[0].Outputs[?OutputKey=='EnvironmentURL'].OutputValue" --output text 2>/dev/null || true)
       if [ -n "$MOCK_ENV_URL" ] && [ "$MOCK_ENV_URL" != "None" ]; then
-        BRP_API_URL_VALUE="${MOCK_ENV_URL%/}/api/v1/brp/personen/document-lookup"
-        echo "Using BRP_API_URL (from stack): $BRP_API_URL_VALUE"
+        MOCK_SERVICE_URL_VALUE="${MOCK_ENV_URL%/}"
+        echo "Using MOCK_SERVICE_URL (from stack): $MOCK_SERVICE_URL_VALUE"
       fi
     fi
   fi
@@ -95,7 +95,7 @@ aws cloudformation deploy \
         ImageTag="latest" \
         KycCasesTableName="$KYC_CASES_TABLE" \
         KycResultsBucketName="$KYC_RESULTS_BUCKET" \
-        BrpApiUrl="$BRP_API_URL_VALUE" \
+    MockServiceUrl="$MOCK_SERVICE_URL_VALUE" \
     --disable-rollback \
     --region "$REGION"
 echo "✓ Agent stack ready"

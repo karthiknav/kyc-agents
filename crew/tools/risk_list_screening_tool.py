@@ -11,7 +11,12 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-PEP_API_URL_DEFAULT = "http://localhost:9000/api/v1/pep/match"
+MOCK_SERVICE_URL_DEFAULT = "http://localhost:9000"
+PEP_PATH = "/api/v1/pep/match"
+
+
+def _join_url(base: str, path: str) -> str:
+    return base.rstrip("/") + path
 
 
 class RiskListScreeningInput(BaseModel):
@@ -47,7 +52,13 @@ class RiskListScreeningTool(BaseTool):
     args_schema: Type[RiskListScreeningInput] = RiskListScreeningInput
 
     def _run(self, case_details: str) -> str:
-        api_url = (os.environ.get("PEP_API_URL") or "").strip() or PEP_API_URL_DEFAULT
+        # Backward compatible override: allow setting a full PEP endpoint URL
+        explicit = (os.environ.get("PEP_API_URL") or "").strip()
+        if explicit:
+            api_url = explicit
+        else:
+            base_url = (os.environ.get("MOCK_SERVICE_URL") or "").strip() or MOCK_SERVICE_URL_DEFAULT
+            api_url = _join_url(base_url, PEP_PATH)
 
         if not case_details or not case_details.strip():
             return json.dumps({"error": "case_details is required"})

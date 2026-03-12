@@ -10,7 +10,12 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-BRP_API_URL_DEFAULT = "http://localhost:9000/api/v1/brp/personen/document-lookup"
+MOCK_SERVICE_URL_DEFAULT = "http://localhost:9000"
+BRP_PATH = "/api/v1/brp/personen/document-lookup"
+
+
+def _join_url(base: str, path: str) -> str:
+    return base.rstrip("/") + path
 
 
 class VerifyIdentityDocumentInput(BaseModel):
@@ -37,7 +42,13 @@ class VerifyIdentityDocumentTool(BaseTool):
 
     def _run(self, document_type: str, document_number: str) -> str:
         """Call the BRP API to verify the document."""
-        api_url = (os.environ.get("BRP_API_URL") or "").strip() or BRP_API_URL_DEFAULT
+        # Backward compatible override: allow setting a full BRP endpoint URL
+        explicit = (os.environ.get("BRP_API_URL") or "").strip()
+        if explicit:
+            api_url = explicit
+        else:
+            base_url = (os.environ.get("MOCK_SERVICE_URL") or "").strip() or MOCK_SERVICE_URL_DEFAULT
+            api_url = _join_url(base_url, BRP_PATH)
 
         logger.info(
             "verify_identity_document: type=%s, number=%s, url=%s",
