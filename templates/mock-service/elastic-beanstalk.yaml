@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Elastic Beanstalk application and environment for kyc-mock-service (Node.js). Deploy zip must exist at S3 Bucket/Key before create/update."
+
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: kyc-mock-service
+    Description: "Elastic Beanstalk application name."
+
+  EnvironmentName:
+    Type: String
+    Default: mock-service-env
+    Description: "Environment name (e.g. mock-service-env)."
+
+  SolutionStackName:
+    Type: String
+    Default: "64bit Amazon Linux 2023 v6.9.0 running Node.js 20"
+    Description: "Platform solution stack. List with: aws elasticbeanstalk list-available-solution-stacks --query \"SolutionStacks[?contains(@,'Node.js 20')]\""
+
+  S3Bucket:
+    Type: String
+    Description: "S3 bucket containing the application source bundle (deploy.zip). Upload deploy.zip before stack create/update."
+
+  S3Key:
+    Type: String
+    Default: mock-service/deploy.zip
+    Description: "S3 key of the source bundle (e.g. mock-service/deploy.zip)."
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: "EC2 instance type for the environment."
+
+  EnvironmentTier:
+    Type: String
+    Default: WebServer
+    AllowedValues:
+      - WebServer
+      - Worker
+    Description: "Environment tier (WebServer for HTTP)."
+
+  SeedDefaultTestCases:
+    Type: String
+    Default: "1"
+    AllowedValues:
+      - "0"
+      - "1"
+    Description: "Set to 0 to disable startup seeding of default test cases."
+
+Resources:
+  # IAM role and instance profile required by Elastic Beanstalk (environment must have instance profile)
+  EBInstanceProfileRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ApplicationName}-eb-ec2-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+
+  EBInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${ApplicationName}-eb-ec2-profile"
+      Roles:
+        - !Ref EBInstanceProfileRole
+
+  EBApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: !Ref ApplicationName
+      Description: "KYC mock service (BRP etc.)"
+
+  EBApplicationVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    DependsOn: EBApplication
+    Properties:
+      ApplicationName: !Ref EBApplication
+      Description: "Deploy from CloudFormation"
+      SourceBundle:
+        S3Bucket: !Ref S3Bucket
+        S3Key: !Ref S3Key
+
+  EBEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    DependsOn:
+      - EBApplicationVersion
+      - EBInstanceProfile
+    Properties:
+      ApplicationName: !Ref EBApplication
+      EnvironmentName: !Ref EnvironmentName
+      SolutionStackName: !Ref SolutionStackName
+      VersionLabel: !Ref EBApplicationVersion
+      Tier:
+        Name: !Ref EnvironmentTier
+        Type: Standard
+      OptionSettings:
+        # Environment variables (equivalent to .ebextensions env)
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: NODE_ENV
+          Value: production
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SEED_DEFAULT_TEST_CASES
+          Value: !Ref SeedDefaultTestCases
+        # Single instance (no load balancer) for a simple mock; instance profile required by EB
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref EBInstanceProfile
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: !Ref InstanceType
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: SingleInstance
+        # Ensure app gets enough time to start
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: DeploymentPolicy
+          Value: AllAtOnce
+
+Outputs:
+  ApplicationName:
+    Description: Elastic Beanstalk application name
+    Value: !Ref EBApplication
+    Export:
+      Name: !Sub "${AWS::StackName}-ApplicationName"
+
+  EnvironmentName:
+    Description: Elastic Beanstalk environment name
+    Value: !Ref EBEnvironment
+    Export:
+      Name: !Sub "${AWS::StackName}-EnvironmentName"
+
+  EnvironmentURL:
+    Description: Application URL. Use after deployment completes (SingleInstance = direct CNAME).
+    Value: !Sub ["http://${Endpoint}", { Endpoint: !GetAtt EBEnvironment.EndpointURL }]
+    Export:
+      Name: !Sub "${AWS::StackName}-EnvironmentURL"
+
+  EndpointURL:
+    Description: Environment endpoint hostname (CNAME or load balancer DNS)
+    Value: !GetAtt EBEnvironment.EndpointURL
+    Export:
+      Name: !Sub "${AWS::StackName}-EndpointURL"

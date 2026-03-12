@@ -7,7 +7,11 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "seed": "tsx seeds/seed-test-cases.ts"
+    "seed": "tsx seeds/seed-test-cases.ts",
+    "package:eb": "node scripts/package-for-eb.js",
+    "package:eb:sh": "bash scripts/package-for-eb.sh",
+    "package:eb:ps1": "powershell -ExecutionPolicy Bypass -File scripts/package-for-eb.ps1",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "express": "^4.21.0",
@@ -19,6 +23,7 @@
     "@types/express": "^5.0.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
+    "archiver": "^7.0.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }

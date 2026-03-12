@@ -8,21 +8,17 @@ A reusable Express.js/TypeScript server for simulating external APIs during deve
 cd mock-service
 npm install
 npm run dev      # Start with hot-reload (tsx watch)
-npm run seed     # Seed deterministic test data (requires server running)
 ```
 
-Production:
-```bash
-npm run build    # Compile TypeScript
-npm start        # Run compiled JS
-```
+**Startup seeding:** The server automatically seeds the default BRP (4) and PEP (4) test cases on startup. To disable: set `SEED_DEFAULT_TEST_CASES=0`. To reseed via HTTP: `npm run seed` (local) or, for Elastic Beanstalk, from repo root: `./scripts/seed_mock_service_eb.sh` (or `MOCK_SERVICE_URL=https://your-eb-url npm run seed` from `mock-service/`).
 
 ## How It Works
 
 1. Drop a JSON file in `mocks/` — it defines a mock API endpoint
 2. The server reads all `mocks/*.json` files at startup and registers Express routes
 3. Template expressions (`{{faker.*}}`, `{{request.*}}`, `{{now}}`) are resolved at request time
-4. If `persistenceKey` is set, responses are cached in SQLite — same key = same data every time
+4. If `persistenceKey` is set, responses are cached in SQLite — same key = same data every time  
+5. On startup, the server seeds the default BRP and PEP test cases so they’re available immediately; SQLite is ephemeral across restarts unless you use persistent storage (e.g. `MOCK_DATA_DIR` on a mounted volume).
 
 ## Adding a New Mock
 
@@ -73,6 +69,12 @@ Set `persistenceKey` to a template that produces a unique key per request. The f
 | GET | `/admin/data/:mockId` | List all persisted records for a mock |
 | DELETE | `/admin/data/:mockId/:key` | Delete a specific record |
 | POST | `/admin/data/:mockId` | Seed a record (`{ "key": "...", "data": {...} }`) |
+
+## Deploying to AWS Elastic Beanstalk
+
+See **[docs/ELASTIC-BEANSTALK.md](docs/ELASTIC-BEANSTALK.md)** for EB config, SQLite setup, and CloudFormation deploy. **Deploy from repo root:** `./scripts/deploy_mock_service.sh` (templates in **`templates/mock-service/`**). Deploy mock-service first so the agent can use the Beanstalk URL as `BRP_API_URL`.
+
+---
 
 ## Directory Structure
 

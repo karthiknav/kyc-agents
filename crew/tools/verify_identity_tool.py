@@ -37,7 +37,7 @@ class VerifyIdentityDocumentTool(BaseTool):
 
     def _run(self, document_type: str, document_number: str) -> str:
         """Call the BRP API to verify the document."""
-        api_url = os.environ.get("BRP_API_URL", BRP_API_URL_DEFAULT)
+        api_url = (os.environ.get("BRP_API_URL") or "").strip() or BRP_API_URL_DEFAULT
 
         logger.info(
             "verify_identity_document: type=%s, number=%s, url=%s",

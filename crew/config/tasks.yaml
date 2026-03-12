@@ -4,9 +4,10 @@ orchestrator_task:
     tasks provided as context, make the final KYC decision:
 
     1. Read the document comparison result (MATCH / PARTIAL_MATCH / MISMATCH) and
-       the screening analysis result (OK / NOK / AMBIGUOUS) from the context.
+       the risk list screening result (CLEAR / HIT) and the adverse media result (OK / NOK / PENDING_REVIEW)
+       from the context.
 
-    2. If document result is MATCH AND screening result is OK: approve the case.
+    2. If document result is MATCH AND risk list result is CLEAR AND adverse media result is OK: approve the case.
        Return JSON with action "APPROVED".
 
     3. For any other combination: escalate. Call escalate_to_human with the case_id,
@@ -48,19 +49,41 @@ document_processing_task:
     - "government_verification_summary": summary of BRP government verification results (string)
   agent: document_processing_agent
 
-screening_task:
+risk_list_screening_task:
   description: >
     Given caseId {caseId}:
-    1. Use get_case_details to fetch the case from DynamoDB and extract identity.fullName and case_id.
-    2. Use search_person with the person_name (and pass case_id for propagation) to find news, sanctions, PEP, and adverse media.
-    3. Use produce_screening_analysis with the case details and search results to generate the screening analysis.
-    Return valid JSON with name, analysis_result (screening ok | screening not ok | ambiguous), and analysis_summary.
+    1. Use get_case_details to fetch the case from DynamoDB.
+    2. Use risk_list_screening with the case details to call the PEP/sanctions API.
+    Return a JSON object with result (CLEAR/HIT/ERROR), pepStatus, sanctionsStatus, datasetsMatched, summary, and rawResponse.
   expected_output: >
     Valid JSON object with exactly these keys:
     - "case_id": the case ID from the case (string)
     - "name": the full name from identity.fullName (string)
-    - "analysis_result": one of "OK", "NOK", "AMBIGUOUS" (string)
-    - "analysis_summary": a short summary explaining the reasoning (string)
-    - "search_results_summary": concise summary of key info from web search (string)
-    Example: {"case_id": "01HR9B5J7Z6J7PD5B6PKQJ2MM4", "name": "Paul Vincent", "analysis_result": "screening ok", "analysis_summary": "No adverse findings.", "search_results_summary": "Search returned no adverse media."}
-  agent: kyc_screening_agent
+    - "result": one of "CLEAR", "HIT", "ERROR" (string)
+    - "pepStatus": one of "NOT_PEP", "PEP", "UNKNOWN" (string)
+    - "sanctionsStatus": one of "NOT_SANCTIONED", "SANCTIONED", "UNKNOWN" (string)
+    - "datasetsMatched": list of dataset ids (array)
+    - "summary": short summary (string)
+    - "rawResponse": raw API response JSON (object)
+  agent: risk_list_screening_agent
+
+adverse_media_task:
+  description: >
+    Given caseId {caseId}:
+    1. Use get_case_details to fetch the case from DynamoDB and extract identity.fullName.
+    2. Run a single web search using search_internet with this query (construct it using the extracted identity.fullName):
+       "<FULL_NAME> fraud crime money laundering arrest investigation adverse media"
+    3. Build a JSON search_payload with keys:
+       - searchQueries: array containing the single query string
+       - searchResults: array with one {query, result} object (result is the raw tool output)
+    4. Call produce_adverse_media_analysis with person_name and search_payload.
+    Return JSON with result, summary, searchQueries, and rawResponse (the search_payload you built).
+  expected_output: >
+    Valid JSON object with exactly these keys:
+    - "case_id": the case ID from the case (string)
+    - "name": the full name from identity.fullName (string)
+    - "result": one of "OK", "NOK", "PENDING_REVIEW" (string)
+    - "summary": short summary (string)
+    - "searchQueries": array of search queries used (array)
+    - "rawResponse": the aggregated search_payload (object)
+  agent: adverse_media_agent
