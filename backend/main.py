@@ -151,6 +151,9 @@ class UserResponse(BaseModel):
     stages: Optional[CaseStages] = None
     finalDecision: Optional[str] = None
 
+class StatusUpdateRequest(BaseModel):
+    status: str
+
 # Mock database for login
 USERS = [
     {"user_id": "USR001", "email": "analyst@bank.nl", "password": "password123", "role": "analyst"},
@@ -514,6 +517,27 @@ async def get_analytics_summary():
     except Exception as e:
         logger.exception("Error fetching analytics")
         raise HTTPException(status_code=500, detail="Failed to fetch analytics")
+
+@app.patch("/submissions/{caseId}/status")
+async def update_submission_status(caseId: str, request: StatusUpdateRequest):
+    try:
+        timestamp = datetime.utcnow().isoformat() + "Z"
+        table = get_submissions_table()
+        
+        # 1. Update status in DynamoDB
+        table.update_item(
+            Key={'CaseId': caseId},
+            UpdateExpression="SET #s = :s, statusUpdatedAt = :t",
+            ExpressionAttributeNames={'#s': 'status'},
+            ExpressionAttributeValues={
+                ':s': request.status,
+                ':t': timestamp
+            }
+        )
+        return {"status": "success", "message": f"Status updated to {request.status}"}
+    except Exception as e:
+        logger.exception("Error updating status")
+        raise HTTPException(status_code=500, detail=f"Failed to update status: {str(e)}")
 
 @app.get("/health")
 async def health_check():
