@@ -61,6 +61,7 @@ aws cloudformation deploy \
         AgentName="kyc_agent" \
         RolesStackName="$ROLES_STACK" \
         SourceZipKey="$ZIP_KEY" \
+        ImageTag="latest" \
         KycCasesTableName="$KYC_CASES_TABLE" \
         KycResultsBucketName="$KYC_RESULTS_BUCKET" \
     --disable-rollback \
