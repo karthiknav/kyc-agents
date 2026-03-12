@@ -84,46 +84,167 @@ def update_screening_result(task_output):
         logger.info("Results incomplete: case_id=%s, analysis_result=%s, analysis_summary=%s", case_id, analysis_result, analysis_summary)
         return
 
-    # Map analysis_result (screening ok | screening not ok | ambiguous) to schema status (OK | NOT_OK | AMBIGUOUS)
-    result_map = {
-        "screening ok": "OK",
-        "screening not ok": "NOK",
-        "ambiguous": "AMBIGUOUS",
-        "ok": "OK",
-        "nok": "NOK",
-        "OK": "OK",
-        "NOK": "NOK",
-        "AMBIGUOUS": "AMBIGUOUS",
-    }
-    status = result_map.get(str(analysis_result).lower(), "AMBIGUOUS")
-    # finalDecision: LOGICALLY DERIVED from screening result
-    final_decision_map = {
-        "OK": "OK",
-        "NOK": "NOT_OK",
-        "AMBIGUOUS": "PENDING_REVIEW",
-    }
-    final_decision = final_decision_map.get(status, "PENDING_REVIEW")
+
+def update_risk_list_screening_result(task_output):
+    """Update stages.screening.riskListScreening and upload raw response JSON to S3."""
+    logger.info("update_risk_list_screening_result input: task_output=%s", task_output)
+    if hasattr(task_output, "raw"):
+        task_output = task_output.raw
+    if isinstance(task_output, str):
+        try:
+            task_output = json.loads(task_output)
+        except json.JSONDecodeError:
+            logger.error("update_risk_list_screening_result: task_output is not valid JSON")
+            return
+
+    case_id = task_output.get("case_id")
+    name = task_output.get("name", "Unknown")
+    result = task_output.get("result")
+    pep_status = task_output.get("pepStatus")
+    sanctions_status = task_output.get("sanctionsStatus")
+    datasets_matched = task_output.get("datasetsMatched", [])
+    summary = task_output.get("summary", "")
+    raw = task_output.get("rawResponse", {})
+    if not case_id or not result:
+        logger.info("Risk-list results incomplete: case_id=%s, result=%s", case_id, result)
+        return
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Build markdown report
-    report_md = _format_screening_report(
-        case_id=case_id,
-        name=name,
-        analysis_result=status,
-        analysis_summary=analysis_summary,
-        search_results_summary=search_results_summary,
-        updated_at=now,
-        severity=severity,
-        pep_summary=pep_summary,
-    )
-
-    # Upload report to S3 and get key
-    report_s3 = None
+    # Upload raw response to S3 as JSON
     bucket = os.environ.get("KYC_RESULTS_BUCKET", "kyc-results")
-    report_key = f"cases/{case_id}/screening-report.md"
+    raw_key = f"cases/{case_id}/risk-list-report.json"
+    raw_s3 = None
     try:
         s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket,
+            Key=raw_key,
+            Body=json.dumps(raw, indent=2, default=str).encode("utf-8"),
+            ContentType="application/json",
+        )
+        raw_s3 = {"bucket": bucket, "key": raw_key}
+        logger.info("Risk-list raw response uploaded to s3://%s/%s", bucket, raw_key)
+    except Exception as e:
+        logger.exception("Failed to upload risk-list raw response to S3: %s", e)
+
+    risk_list = {
+        "result": result,
+        "pepStatus": pep_status or "UNKNOWN",
+        "sanctionsStatus": sanctions_status or "UNKNOWN",
+        "datasetsMatched": datasets_matched if isinstance(datasets_matched, list) else [],
+        "summary": summary or "",
+        "updatedAt": now,
+    }
+    if raw_s3:
+        risk_list["rawResponseS3"] = raw_s3
+
+    table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
+    try:
+        dynamodb = boto3.resource("dynamodb")
+        table = dynamodb.Table(table_name)
+        # ensure stages and screening maps exist
+        table.update_item(
+            Key={"CaseId": case_id},
+            UpdateExpression="SET #stages = if_not_exists(#stages, :empty_map)",
+            ExpressionAttributeNames={"#stages": "stages"},
+            ExpressionAttributeValues={":empty_map": {}},
+        )
+        table.update_item(
+            Key={"CaseId": case_id},
+            UpdateExpression="SET #stages.#screening = if_not_exists(#stages.#screening, :empty_map)",
+            ExpressionAttributeNames={"#stages": "stages", "#screening": "screening"},
+            ExpressionAttributeValues={":empty_map": {}},
+        )
+        table.update_item(
+            Key={"CaseId": case_id},
+            UpdateExpression="SET #stages.#screening.#risk = :risk",
+            ExpressionAttributeNames={
+                "#stages": "stages",
+                "#screening": "screening",
+                "#risk": "riskListScreening",
+            },
+            ExpressionAttributeValues={":risk": risk_list},
+        )
+        logger.info("update_risk_list_screening_result success: case_id=%s, name=%s, result=%s", case_id, name, result)
+    except Exception as e:
+        logger.exception("update_risk_list_screening_result error: %s", e)
+
+
+def update_adverse_media_result(task_output):
+    """Update stages.screening.adverseMedia and upload raw response JSON to S3."""
+    logger.info("update_adverse_media_result input: task_output=%s", task_output)
+    if hasattr(task_output, "raw"):
+        task_output = task_output.raw
+    if isinstance(task_output, str):
+        try:
+            task_output = json.loads(task_output)
+        except json.JSONDecodeError:
+            logger.error("update_adverse_media_result: task_output is not valid JSON")
+            return
+
+    case_id = task_output.get("case_id")
+    name = task_output.get("name", "Unknown")
+    result = task_output.get("result")
+    summary = task_output.get("summary", "")
+    search_queries = task_output.get("searchQueries", [])
+    raw = task_output.get("rawResponse", {})
+    if not case_id or not result:
+        logger.info("Adverse media results incomplete: case_id=%s, result=%s", case_id, result)
+        return
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    bucket = os.environ.get("KYC_RESULTS_BUCKET", "kyc-results")
+    raw_key = f"cases/{case_id}/adverse-media-report.json"
+    report_key = f"cases/{case_id}/adverse-media-report.md"
+    raw_s3 = None
+    report_s3 = None
+    try:
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket,
+            Key=raw_key,
+            Body=json.dumps(raw, indent=2, default=str).encode("utf-8"),
+            ContentType="application/json",
+        )
+        raw_s3 = {"bucket": bucket, "key": raw_key}
+        logger.info("Adverse media raw response uploaded to s3://%s/%s", bucket, raw_key)
+
+        status_emoji = {"OK": "✅", "NOK": "❌", "PENDING_REVIEW": "⚠️"}
+        emoji = status_emoji.get(str(result).upper(), "❓")
+        queries_md = ""
+        if isinstance(search_queries, list) and search_queries:
+            queries_md = "\n".join([f"- `{q}`" for q in search_queries])
+        else:
+            queries_md = "_No search queries recorded._"
+
+        report_md = "\n".join(
+            [
+                "# Adverse Media Screening Report",
+                "",
+                f"**Case ID:** `{case_id}`",
+                f"**Subject:** {name}",
+                f"**Report generated:** {now}",
+                "",
+                "---",
+                "",
+                "## Search queries",
+                "",
+                queries_md,
+                "",
+                "---",
+                "",
+                "## Result",
+                "",
+                f"**Result:** {emoji} **{str(result).upper()}**",
+                "",
+                "## Summary",
+                "",
+                summary or "_No summary available._",
+                "",
+            ]
+        )
         s3.put_object(
             Bucket=bucket,
             Key=report_key,
@@ -131,46 +252,48 @@ def update_screening_result(task_output):
             ContentType="text/markdown",
         )
         report_s3 = {"bucket": bucket, "key": report_key}
-        logger.info("Screening report uploaded to s3://%s/%s", bucket, report_key)
+        logger.info("Adverse media markdown report uploaded to s3://%s/%s", bucket, report_key)
     except Exception as e:
-        logger.exception("Failed to upload screening report to S3: %s", e)
+        logger.exception("Failed to upload adverse media raw response to S3: %s", e)
 
-    # Build the screening stage object per schema
-    screening_stage = {
-        "result": status,
+    adverse_media = {
+        "result": result,
+        "summary": summary or "",
+        "searchQueries": search_queries if isinstance(search_queries, list) else [],
         "updatedAt": now,
-        "summary": analysis_summary,
     }
-    if severity:
-        screening_stage["severity"] = severity
-    if pep_summary:
-        screening_stage["pepSummary"] = pep_summary
+    if raw_s3:
+        adverse_media["rawResponseS3"] = raw_s3
     if report_s3:
-        screening_stage["reportS3"] = report_s3
+        adverse_media["reportS3"] = report_s3
 
     table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
     try:
         dynamodb = boto3.resource("dynamodb")
         table = dynamodb.Table(table_name)
-        # Step 1: ensure #stages map exists (create empty if not)
+        # ensure stages and screening maps exist
         table.update_item(
             Key={"CaseId": case_id},
             UpdateExpression="SET #stages = if_not_exists(#stages, :empty_map)",
             ExpressionAttributeNames={"#stages": "stages"},
             ExpressionAttributeValues={":empty_map": {}},
         )
-        # Step 2: set #stages.screening with status, summary, updatedAt, reportMarkdown, reportS3
         table.update_item(
             Key={"CaseId": case_id},
-            UpdateExpression="SET #stages.#screening = :screening",
+            UpdateExpression="SET #stages.#screening = if_not_exists(#stages.#screening, :empty_map)",
+            ExpressionAttributeNames={"#stages": "stages", "#screening": "screening"},
+            ExpressionAttributeValues={":empty_map": {}},
+        )
+        table.update_item(
+            Key={"CaseId": case_id},
+            UpdateExpression="SET #stages.#screening.#adv = :adv",
             ExpressionAttributeNames={
                 "#stages": "stages",
                 "#screening": "screening",
+                "#adv": "adverseMedia",
             },
-            ExpressionAttributeValues={":screening": screening_stage},
+            ExpressionAttributeValues={":adv": adverse_media},
         )
-        logger.info("update_screening_result success: case_id=%s, status=%s, final_decision=%s", case_id, status, final_decision)
+        logger.info("update_adverse_media_result success: case_id=%s, name=%s, result=%s", case_id, name, result)
     except Exception as e:
-        logger.exception("update_screening_result error: %s", e)
-        return
-
+        logger.exception("update_adverse_media_result error: %s", e)

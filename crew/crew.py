@@ -12,12 +12,12 @@ from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
-from crew.tools.pep_screening_tool import PepScreeningTool
-from crew.tools.screening_analysis_tool import ScreeningAnalysisTool
+from crew.tools.risk_list_screening_tool import RiskListScreeningTool
+from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
-from crew.update_case import update_screening_result
+from crew.update_case import update_adverse_media_result, update_risk_list_screening_result
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
 
@@ -54,19 +54,34 @@ class KYCCrew():
         )
 
     # ------------------------------------------------------------------
-    # Sanctions Screening Agent
+    # Risk List Screening Agent (PEP + sanctions API)
     # ------------------------------------------------------------------
 
     @agent
-    def kyc_screening_agent(self) -> Agent:
+    def risk_list_screening_agent(self) -> Agent:
         return Agent(
-            config=self.agents_config['kyc_screening_agent'],  # type: ignore[index]
+            config=self.agents_config['risk_list_screening_agent'],  # type: ignore[index]
             verbose=True,
             tools=[
                 GetCaseDetailsTool(),
-                PepScreeningTool(),
+                RiskListScreeningTool(),
+            ],
+            llm=self.llm,
+        )
+
+    # ------------------------------------------------------------------
+    # Adverse Media Agent (web search)
+    # ------------------------------------------------------------------
+
+    @agent
+    def adverse_media_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config["adverse_media_agent"],  # type: ignore[index]
+            verbose=True,
+            tools=[
+                GetCaseDetailsTool(),
                 SearchTool(),
-                ScreeningAnalysisTool(),
+                AdverseMediaAnalysisTool(),
             ],
             llm=self.llm,
         )
@@ -90,8 +105,9 @@ class KYCCrew():
     # ------------------------------------------------------------------
     # Tasks — order determines sequential execution:
     #   1. document_processing_task
-    #   2. screening_task
-    #   3. orchestrator_task  (context: outputs of 1 + 2)
+    #   2. risk_list_screening_task
+    #   3. adverse_media_task
+    #   4. orchestrator_task  (context: outputs of 1 + 2 + 3)
     # ------------------------------------------------------------------
 
     @task
@@ -102,10 +118,17 @@ class KYCCrew():
         )
 
     @task
-    def screening_task(self) -> Task:
+    def risk_list_screening_task(self) -> Task:
         return Task(
-            config=self.tasks_config['screening_task'],  # type: ignore[index]
-            callback=update_screening_result
+            config=self.tasks_config["risk_list_screening_task"],  # type: ignore[index]
+            callback=update_risk_list_screening_result
+        )
+
+    @task
+    def adverse_media_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["adverse_media_task"],  # type: ignore[index]
+            callback=update_adverse_media_result
         )
 
     @task
@@ -113,7 +136,7 @@ class KYCCrew():
         return Task(
             config=self.tasks_config['orchestrator_task'],  # type: ignore[index]
             callback=update_orchestrator_result,
-            context=[self.document_processing_task(), self.screening_task()]
+            context=[self.document_processing_task(), self.risk_list_screening_task(), self.adverse_media_task()]
         )
 
     # ------------------------------------------------------------------
@@ -123,8 +146,18 @@ class KYCCrew():
     @crew
     def crew(self) -> Crew:
         return Crew(
-            agents=[self.document_processing_agent(), self.kyc_screening_agent(), self.orchestrator_agent()],
-            tasks=[self.document_processing_task(), self.screening_task(), self.orchestrator_task()],
+            agents=[
+                self.document_processing_agent(),
+                self.risk_list_screening_agent(),
+                self.adverse_media_agent(),
+                self.orchestrator_agent(),
+            ],
+            tasks=[
+                self.document_processing_task(),
+                self.risk_list_screening_task(),
+                self.adverse_media_task(),
+                self.orchestrator_task(),
+            ],
             process=Process.sequential,
             verbose=True,
         )
