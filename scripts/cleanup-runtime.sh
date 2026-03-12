@@ -1,0 +1,99 @@
+#!/bin/bash
+
+set -e
+
+BASE_NAME="${1:-kyc-agent}"
+REGION="${2:-us-east-1}"
+
+AGENT_STACK="${BASE_NAME}-agentcore-runtime"
+LAMBDA_STACK="${BASE_NAME}-lambda"
+API_STACK="${BASE_NAME}-api"
+UI_STACK="${BASE_NAME}-ui"
+
+# Mock-service (Beanstalk + artifacts bucket) - names must match deploy_mock_service.sh defaults
+MOCK_EB_STACK="${MOCK_EB_STACK:-kyc-mock-service-eb}"
+MOCK_BUCKET_STACK="${MOCK_BUCKET_STACK:-kyc-mock-service-artifacts}"
+
+stack_exists() {
+    aws cloudformation describe-stacks --stack-name "$1" --region "$REGION" >/dev/null 2>&1
+}
+
+get_stack_output() {
+    local stack="$1"
+    local key="$2"
+    aws cloudformation describe-stacks \
+        --stack-name "$stack" \
+        --query "Stacks[0].Outputs[?OutputKey==\`$key\`].OutputValue | [0]" \
+        --output text \
+        --region "$REGION" 2>/dev/null || true
+}
+
+empty_bucket() {
+    local bucket="$1"
+    if [ -z "$bucket" ] || [ "$bucket" = "None" ]; then
+        return 0
+    fi
+
+    echo "Emptying bucket: $bucket"
+
+    aws s3 rm "s3://$bucket" --recursive --region "$REGION" >/dev/null 2>&1 || true
+
+    # If bucket is versioned, also delete versions and delete markers
+    while read -r key version_id; do
+        [ -n "$key" ] || continue
+        [ -n "$version_id" ] || continue
+        aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version_id" --region "$REGION" >/dev/null 2>&1 || true
+    done < <(aws s3api list-object-versions --bucket "$bucket" --query 'Versions[].{Key:Key,VersionId:VersionId}' --output text --region "$REGION" 2>/dev/null || true)
+
+    while read -r key version_id; do
+        [ -n "$key" ] || continue
+        [ -n "$version_id" ] || continue
+        aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version_id" --region "$REGION" >/dev/null 2>&1 || true
+    done < <(aws s3api list-object-versions --bucket "$bucket" --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' --output text --region "$REGION" 2>/dev/null || true)
+}
+
+delete_stack() {
+    local stack="$1"
+    if ! stack_exists "$stack"; then
+        echo "- Skipping (not found): $stack"
+        return 0
+    fi
+    echo "Deleting stack: $stack"
+    aws cloudformation delete-stack --stack-name "$stack" --region "$REGION"
+    aws cloudformation wait stack-delete-complete --stack-name "$stack" --region "$REGION"
+    echo "✓ Deleted: $stack"
+}
+
+echo "=========================================="
+echo "Cleaning up RUNTIME stacks"
+echo "=========================================="
+echo "Region: $REGION"
+echo "Base:   $BASE_NAME"
+echo "Runtime stacks:"
+echo "  UI:           $UI_STACK"
+echo "  API:          $API_STACK"
+echo "  Lambda:       $LAMBDA_STACK"
+echo "  Agent:        $AGENT_STACK"
+echo "  Mock-service: $MOCK_EB_STACK (+ bucket stack $MOCK_BUCKET_STACK)"
+echo "=========================================="
+
+echo ""
+echo "[1/2] Emptying runtime buckets (if present)..."
+UI_BUCKET=$(get_stack_output "$UI_STACK" "StaticBucketName")
+MOCK_ARTIFACTS_BUCKET=$(get_stack_output "$MOCK_BUCKET_STACK" "BucketName")
+empty_bucket "$UI_BUCKET"
+empty_bucket "$MOCK_ARTIFACTS_BUCKET"
+echo "✓ Runtime buckets emptied"
+
+echo ""
+echo "[2/2] Deleting runtime stacks..."
+# Order matters: UI/API/Lambda/Agent first, then mock-service + its bucket stack
+delete_stack "$UI_STACK"
+delete_stack "$API_STACK"
+delete_stack "$LAMBDA_STACK"
+delete_stack "$AGENT_STACK"
+delete_stack "$MOCK_EB_STACK"
+delete_stack "$MOCK_BUCKET_STACK"
+
+echo ""
+echo "✓ Runtime cleanup complete"

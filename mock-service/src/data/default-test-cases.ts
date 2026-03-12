@@ -124,6 +124,123 @@ export const defaultTestCases: DefaultTestCase[] = [
       verificationTimestamp: '2025-01-15T10:00:00.000Z',
     },
   },
+
+  // ----------------------------------------------------------------
+  // Rijbewijs cases (driving license) — same scenarios, different documentType
+  // Keys match persistenceKey: {{documentType}}_{{documentNumber}}
+  // ----------------------------------------------------------------
+  {
+    key: 'rijbewijs_NL123456789',
+    description: 'Case 1 (Rijbewijs): Clean Approval — Jan de Vries, all fields match',
+    data: {
+      burgerservicenummer: '123456789',
+      naam: {
+        voornamen: 'Jan',
+        voorvoegsel: 'de',
+        geslachtsnaam: 'Vries',
+        volledigeNaam: 'Jan de Vries',
+      },
+      geboorte: {
+        datum: '1985-03-15',
+        plaats: 'Amsterdam',
+        land: 'Nederland',
+      },
+      geslacht: 'M',
+      nationaliteiten: [{ nationaliteit: 'Nederlandse' }],
+      document: {
+        soort: 'rijbewijs',
+        nummer: 'NL123456789',
+        datumUitgifte: '2020-01-10',
+        datumEindeGeldigheid: '2030-01-10',
+      },
+      status: 'VERIFIED',
+      verificationTimestamp: '2025-01-15T10:00:00.000Z',
+    },
+  },
+  {
+    key: 'rijbewijs_NL987654321',
+    description: 'Case 2 (Rijbewijs): Document Mismatch — driving license registered to Maria Bakker, not Maria Jansen',
+    data: {
+      burgerservicenummer: '987654321',
+      naam: {
+        voornamen: 'Maria',
+        voorvoegsel: '',
+        geslachtsnaam: 'Bakker',
+        volledigeNaam: 'Maria Bakker',
+      },
+      geboorte: {
+        datum: '1990-07-22',
+        plaats: 'Rotterdam',
+        land: 'Nederland',
+      },
+      geslacht: 'V',
+      nationaliteiten: [{ nationaliteit: 'Nederlandse' }],
+      document: {
+        soort: 'rijbewijs',
+        nummer: 'NL987654321',
+        datumUitgifte: '2019-06-01',
+        datumEindeGeldigheid: '2029-06-01',
+      },
+      status: 'VERIFIED',
+      verificationTimestamp: '2025-01-15T10:00:00.000Z',
+    },
+  },
+  {
+    key: 'rijbewijs_NL555666777',
+    description: 'Case 3 (Rijbewijs): Sanctions Flag — Ahmed Al-Rashid, doc verification passes',
+    data: {
+      burgerservicenummer: '555666777',
+      naam: {
+        voornamen: 'Ahmed',
+        voorvoegsel: '',
+        geslachtsnaam: 'Al-Rashid',
+        volledigeNaam: 'Ahmed Al-Rashid',
+      },
+      geboorte: {
+        datum: '1978-11-03',
+        plaats: 'Den Haag',
+        land: 'Nederland',
+      },
+      geslacht: 'M',
+      nationaliteiten: [{ nationaliteit: 'Nederlandse' }],
+      document: {
+        soort: 'rijbewijs',
+        nummer: 'NL555666777',
+        datumUitgifte: '2021-03-20',
+        datumEindeGeldigheid: '2031-03-20',
+      },
+      status: 'VERIFIED',
+      verificationTimestamp: '2025-01-15T10:00:00.000Z',
+    },
+  },
+  {
+    key: 'rijbewijs_NL111222333',
+    description: 'Case 4 (Rijbewijs): PEP Flag — Willem van den Berg, former government official',
+    data: {
+      burgerservicenummer: '111222333',
+      naam: {
+        voornamen: 'Willem',
+        voorvoegsel: 'van den',
+        geslachtsnaam: 'Berg',
+        volledigeNaam: 'Willem van den Berg',
+      },
+      geboorte: {
+        datum: '1970-01-20',
+        plaats: 'Utrecht',
+        land: 'Nederland',
+      },
+      geslacht: 'M',
+      nationaliteiten: [{ nationaliteit: 'Nederlandse' }],
+      document: {
+        soort: 'rijbewijs',
+        nummer: 'NL111222333',
+        datumUitgifte: '2022-09-15',
+        datumEindeGeldigheid: '2032-09-15',
+      },
+      status: 'VERIFIED',
+      verificationTimestamp: '2025-01-15T10:00:00.000Z',
+    },
+  },
 ];
 
 // PEP match test cases — keys match persistenceKey: {{queries.q1.properties.lastName.0}}_{{queries.q1.properties.firstName.0}}
