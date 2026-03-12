@@ -9,6 +9,7 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
     const [submissions, setSubmissions] = useState<KycSubmission[]>([]);
     const [selectedSubmission, setSelectedSubmission] = useState<KycSubmission | null>(null);
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [analytics, setAnalytics] = useState({
         total_onboardings: 0,
@@ -85,7 +86,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                         </div>
                         <table className="kyc-table">
                             <thead>
-                                <tr><th>Applicant</th><th>Type</th><th>Risk</th><th>Decision</th><th>Agent</th><th>Time</th></tr>
+                                <tr><th>Applicant</th><th>Type</th><th>Risk</th><th>Decision</th><th>Agent</th><th>Time</th><th>Actions</th></tr>
                             </thead>
                             <tbody>
                                 {loading ? (
@@ -106,7 +107,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                                 </div>
                                                 <div>
                                                     <div className="applicant-name">{sub.identity.fullName}</div>
-                                                    <div className="applicant-id">{sub.caseId}</div>
+                                                    <div className="applicant-id">{sub.caseId || (sub as any).CaseId}</div>
                                                 </div>
                                             </div>
                                         </td>
@@ -115,6 +116,43 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         <td><span className={`decision-badge ${sub.status}`}>{sub.status}</span></td>
                                         <td><span className="agent-indicator" style={{ color: 'var(--accent-cyan)' }}><span className="agent-dot" style={{ background: 'var(--accent-cyan)' }}></span> AI Processing</span></td>
                                         <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(sub.createdAt)}</td>
+                                        <td>
+                                            <div className="row-actions">
+                                                <button
+                                                    className="menu-toggle"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const id = sub.caseId || (sub as any).CaseId;
+                                                        setOpenMenuId(openMenuId === id ? null : id);
+                                                    }}
+                                                >
+                                                    ⋮
+                                                </button>
+                                                {openMenuId === (sub.caseId || (sub as any).CaseId) && (
+                                                    <div className="row-menu" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="menu-header">Documents</div>
+                                                        {['passport', 'address', 'income'].map(type => {
+                                                            const url = sub.document_urls?.[type];
+                                                            const label = type.charAt(0).toUpperCase() + type.slice(1);
+                                                            return (
+                                                                <button
+                                                                    key={type}
+                                                                    className="menu-item"
+                                                                    onClick={() => {
+                                                                        if (url) window.open(url, '_blank');
+                                                                        setOpenMenuId(null);
+                                                                    }}
+                                                                    disabled={!url}
+                                                                >
+                                                                    <span className="doc-icon">📄</span>
+                                                                    {label}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -145,7 +183,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         </div>
                                         {selectedSubmission.stages?.orchestrator?.reason && (
                                             <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
-                                                {selectedSubmission.stages.orchestrator.reason.map((r, i) => (
+                                                {selectedSubmission.stages.orchestrator.reason.map((r: string, i: number) => (
                                                     <li key={i}>{r}</li>
                                                 ))}
                                             </ul>
@@ -156,7 +194,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         <div className="agent-reasoning" style={{ marginBottom: '20px', borderLeftColor: 'var(--accent-orange)' }}>
                                             <div className="ar-header" style={{ color: 'var(--accent-orange)' }}>⚠️ Document Discrepancies</div>
                                             <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
-                                                {selectedSubmission.stages.documentProcessing.discrepancies.map((d, i) => (
+                                                {selectedSubmission.stages.documentProcessing.discrepancies.map((d: string, i: number) => (
                                                     <li key={i}>{d}</li>
                                                 ))}
                                             </ul>
@@ -168,49 +206,38 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                             <div className="section-title" style={{ marginBottom: '10px' }}>Screening Details</div>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', fontSize: '12px' }}>
                                                 {selectedSubmission.stages.screening.riskListScreening && (
-                                                    <div>
-                                                        <span style={{ color: 'var(--text-muted)' }}>Risk List:</span>
-                                                        <span className={`decision-badge ${selectedSubmission.stages.screening.riskListScreening.result}`} style={{ marginLeft: '8px' }}>
-                                                            {selectedSubmission.stages.screening.riskListScreening.result}
-                                                        </span>
-                                                        <div style={{ fontSize: '11px', marginTop: '4px' }}>{selectedSubmission.stages.screening.riskListScreening.summary}</div>
+                                                    <div style={{ marginBottom: '8px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span style={{ color: 'var(--text-muted)' }}>Risk List:</span>
+                                                            <span className={`decision-badge ${selectedSubmission.stages.screening.riskListScreening.result || 'PENDING'}`}>
+                                                                {selectedSubmission.stages.screening.riskListScreening.result || 'PENDING'}
+                                                            </span>
+                                                        </div>
+                                                        {selectedSubmission.stages.screening.riskListScreening.summary && (
+                                                            <div style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-secondary)' }}>{selectedSubmission.stages.screening.riskListScreening.summary}</div>
+                                                        )}
+                                                        {selectedSubmission.stages.screening.riskListScreening.pepStatus && (
+                                                            <div style={{ fontSize: '10px', marginTop: '2px', color: 'var(--accent-blue)' }}>Status: {selectedSubmission.stages.screening.riskListScreening.pepStatus}</div>
+                                                        )}
                                                     </div>
                                                 )}
                                                 {selectedSubmission.stages.screening.adverseMedia && (
                                                     <div style={{ marginTop: '5px', borderTop: '1px solid var(--border)', paddingTop: '5px' }}>
-                                                        <span style={{ color: 'var(--text-muted)' }}>Adverse Media:</span>
-                                                        <span className={`decision-badge ${selectedSubmission.stages.screening.adverseMedia.result}`} style={{ marginLeft: '8px' }}>
-                                                            {selectedSubmission.stages.screening.adverseMedia.result}
-                                                        </span>
-                                                        <div style={{ fontSize: '11px', marginTop: '4px' }}>{selectedSubmission.stages.screening.adverseMedia.summary}</div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span style={{ color: 'var(--text-muted)' }}>Adverse Media:</span>
+                                                            <span className={`decision-badge ${selectedSubmission.stages.screening.adverseMedia.result || 'PENDING'}`}>
+                                                                {selectedSubmission.stages.screening.adverseMedia.result || 'PENDING'}
+                                                            </span>
+                                                        </div>
+                                                        {selectedSubmission.stages.screening.adverseMedia.summary && (
+                                                            <div style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-secondary)' }}>{selectedSubmission.stages.screening.adverseMedia.summary}</div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
                                     )}
-                                    <div className="section-title">Verification Documents</div>
-                                    <div className="document-list">
-                                        {['passport', 'address', 'income'].map(type => {
-                                            const url = selectedSubmission.document_urls?.[type];
-                                            const label = type.charAt(0).toUpperCase() + type.slice(1);
-                                            return (
-                                                <div key={type} className="doc-list-item">
-                                                    <div className="doc-info">
-                                                        <span className="doc-icon">📄</span>
-                                                        <span className="doc-label">{label}</span>
-                                                    </div>
-                                                    <button
-                                                        className="view-doc-btn"
-                                                        onClick={() => url && window.open(url, '_blank')}
-                                                        disabled={!url}
-                                                        title={url ? 'View Document' : 'Document not available'}
-                                                    >
-                                                        👁 View
-                                                    </button>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+
 
                                     <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px' }}>
                                         <div className="section-title" style={{ marginBottom: '10px' }}>Extracted Details</div>
