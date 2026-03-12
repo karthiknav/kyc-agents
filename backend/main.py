@@ -86,10 +86,10 @@ class S3Location(BaseModel):
     key: str
 
 class DocumentProcessingStage(BaseModel):
-    result: Optional[str] = None
-    summary: Optional[str] = None
-    discrepancies: Optional[List[str]] = None
-    governmentVerificationSummary: Optional[str] = None
+    result: str = "PENDING"
+    summary: str = "Awaiting document processing"
+    discrepancies: List[str] = []
+    governmentVerificationSummary: str = ""
     reportS3: Optional[S3Location] = None
     updatedAt: Optional[str] = None
 
@@ -109,24 +109,34 @@ class RiskListResult(ScreeningResult):
     sanctionsStatus: Optional[str] = None
 
 class ScreeningStage(BaseModel):
-    status: Optional[str] = None
-    summary: Optional[str] = None
+    status: str = "PENDING"
+    summary: str = "Awaiting risk and adverse media screening"
     updatedAt: Optional[str] = None
     reportS3: Optional[S3Location] = None
-    adverseMedia: Optional[AdverseMediaResult] = None
-    riskListScreening: Optional[RiskListResult] = None
+    adverseMedia: AdverseMediaResult = AdverseMediaResult(
+        result="PENDING", 
+        summary="Awaiting adverse media search",
+        searchQueries=[]
+    )
+    riskListScreening: RiskListResult = RiskListResult(
+        result="PENDING", 
+        summary="Awaiting risk list check",
+        datasetsMatched=[],
+        pepStatus="UNKNOWN",
+        sanctionsStatus="UNKNOWN"
+    )
 
 class OrchestratorStage(BaseModel):
-    status: Optional[str] = None
-    decision: Optional[str] = None
-    reason: Optional[List[str]] = None
-    recommendation_summary: Optional[str] = None
+    status: str = "INITIATED"
+    decision: str = "PENDING"
+    reason: List[str] = []
+    recommendation_summary: str = "Case initiated and awaiting agent analysis"
     decidedAt: Optional[str] = None
 
 class CaseStages(BaseModel):
-    documentProcessing: Optional[DocumentProcessingStage] = None
-    screening: Optional[ScreeningStage] = None
-    orchestrator: Optional[OrchestratorStage] = None
+    documentProcessing: DocumentProcessingStage = DocumentProcessingStage()
+    screening: ScreeningStage = ScreeningStage()
+    orchestrator: OrchestratorStage = OrchestratorStage()
 
 class UserResponse(BaseModel):
     email: str
@@ -387,7 +397,8 @@ async def submit_kyc(
                 "address": address,
                 "passportNumber": passportNumber,
                 "passportExpiry": passportExpiry
-            }
+            },
+            "stages": CaseStages().dict()
         }
         
         logger.info("Processing submission for user %s", userId)
@@ -448,6 +459,10 @@ async def get_submissions():
         )
         
         for document in submissions:
+            # Explicitly include caseId (lowercase) for frontend compatibility
+            if "CaseId" in document and "caseId" not in document:
+                document["caseId"] = document["CaseId"]
+                
             # Generate pre-signed URLs for documents in new structure
             document["document_urls"] = {}
             if "files" in document:

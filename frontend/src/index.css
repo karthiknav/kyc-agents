@@ -1,5 +1,85 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* ROW ACTIONS MENU */
+.row-actions {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.menu-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 18px;
+  transition: all 0.2s;
+}
+
+.menu-toggle:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.row-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 160px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu-header {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.menu-item {
+  width: 100%;
+  padding: 8px 10px;
+  background: none !important;
+  border: none !important;
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  border-radius: 4px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-family: inherit !important;
+  transition: all 0.2s !important;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.menu-item .doc-icon {
+  font-size: 14px;
+}
+
+
 :root {
   --bg-primary: #0B0F1A;
   --bg-secondary: #111827;
