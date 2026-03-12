@@ -29,7 +29,7 @@
                 "name": ["{{faker.person.fullName}}"],
                 "firstName": ["{{faker.person.firstName}}"],
                 "lastName": ["{{faker.person.lastName}}"],
-                "birthDate": ["{{faker.number.int({ min: 1950, max: 1990 })}}"],
+                "birthDate": ["{{faker.date.birthdate}}"],
                 "nationality": ["{{faker.helpers.arrayElement(['us','gb','de','nl','ru'])}}"],
                 "position": ["{{faker.helpers.arrayElement(['Politician','Government Official','Former Minister','Member of Parliament'])}}"]
               }

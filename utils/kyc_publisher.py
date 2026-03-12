@@ -32,9 +32,9 @@ DUMMY_RECORD: dict[str, Any] = {
         {"type": "license", "bucket": "kyc-agent-storage", "key": "cases/1234/license.pdf"}
     ],
     "identity": {
-        "fullName": "Alex Morgan Lee",
+        "fullName": "Willem van den Berg",
         "dateOfBirth": "1990-05-12",
-        "nationality": "UTO (Mock)",
+        "nationality": "Netherlands",
     }
 }
 

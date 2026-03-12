@@ -92,24 +92,24 @@ You can provision the Elastic Beanstalk application and environment using **AWS 
 
 | File | Purpose |
 |------|---------|
-| `templates/mock-service/elastic-beanstalk.yaml` | EB Application, ApplicationVersion (from S3), and Environment (Node.js, SingleInstance) |
-| `templates/mock-service/s3-artifacts-bucket.yaml` | Optional: S3 bucket for storing `deploy.zip` |
-| `templates/mock-service/parameters.example.json` | Example parameters file |
+| `templates/mock-service/s3-artifacts-bucket.yaml` | S3 bucket for `deploy.zip`. Deployed first; stack name: `kyc-mock-service-artifacts` (default). |
+| `templates/mock-service/elastic-beanstalk.yaml` | EB Application, ApplicationVersion, and Environment (Node.js, SingleInstance). Uses S3Bucket and S3Key from the bucket stack. |
+| `templates/mock-service/mock-service-eb.yaml` | Optional merged template (S3 + EB in one stack); not used by `deploy_mock_service.sh`. |
 
 ### Deploy with deploy_mock_service.sh (recommended)
 
 From the **repo root** (kyc-agents), run:
 
 ```bash
-# Package only (creates mock-service/deploy.zip)
 ./scripts/deploy_mock_service.sh
-
-# Package + upload to S3
-S3_BUCKET=your-bucket-name ./scripts/deploy_mock_service.sh
-
-# Package + upload + create or update CloudFormation stack
-S3_BUCKET=your-bucket-name STACK_NAME=kyc-mock-service-eb ./scripts/deploy_mock_service.sh
 ```
+
+Flow:
+
+1. **S3 bucket:** If `S3_BUCKET` is not set, ensures the bucket stack (`kyc-mock-service-artifacts`) exists (creates it if needed) and gets the bucket name from its output.
+2. **Package:** Builds the app and creates `mock-service/deploy.zip` (unless `DEPLOY_SKIP_PACKAGE=1`).
+3. **Upload:** Uploads `deploy.zip` to the bucket with a timestamped key so each deploy triggers an EB update.
+4. **EB stack:** Creates or updates the EB stack (`kyc-mock-service-eb`) with `S3Bucket` and `S3Key`.
 
 Packaging only (from repo root): `./scripts/package_mock_service_for_eb.sh`
 
@@ -117,9 +117,10 @@ Packaging only (from repo root): `./scripts/package_mock_service_for_eb.sh`
 
 | Variable | Description |
 |---------|-------------|
-| `S3_BUCKET` | Upload `deploy.zip` to this bucket; required for stack create/update |
-| `S3_KEY` | S3 key for the zip (default: `mock-service/deploy.zip`) |
-| `STACK_NAME` | CloudFormation stack name (default: `kyc-mock-service-eb`) |
+| `S3_BUCKET` | Use this bucket; if unset, create/use bucket stack and get bucket from it |
+| `STACK_NAME` | EB CloudFormation stack name (default: `kyc-mock-service-eb`) |
+| `MOCK_SERVICE_BUCKET_STACK` | Bucket stack name (default: `kyc-mock-service-artifacts`) |
+| `S3_KEY` | S3 key for the zip (default: `mock-service/deploy-TIMESTAMP.zip` so each deploy triggers EB update) |
 | `DEPLOY_SKIP_PACKAGE` | Set to `1` to skip packaging and use existing `mock-service/deploy.zip` |
 
 After the stack is `CREATE_COMPLETE` or `UPDATE_COMPLETE`, get the application URL and set it as **`BRP_API_URL`** for the agent (e.g. agent runtime environment):
