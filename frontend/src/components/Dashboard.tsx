@@ -244,7 +244,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         <div className="confidence-bar"><div className="fill" style={{ width: '82%', background: 'linear-gradient(90deg, var(--accent-blue), var(--accent-green))' }}></div></div>
                                     </div>
                                     <div className="agent-reasoning" style={{ marginBottom: '20px' }}>
-                                        <div className="ar-header">🤖 Agent Findings</div>
+                                        <div className="ar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                            <span>🤖 Agent Findings</span>
+                                            {selectedSubmission.stages?.orchestrator?.status && (
+                                                <span className={`decision-badge ${selectedSubmission.stages.orchestrator.status}`}>
+                                                    {selectedSubmission.stages.orchestrator.status}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="ar-text">
                                             {selectedSubmission.stages?.orchestrator?.recommendation_summary || 'No findings available'}
                                         </div>
@@ -257,14 +264,31 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         )}
                                     </div>
 
-                                    {selectedSubmission.stages?.documentProcessing?.discrepancies && selectedSubmission.stages.documentProcessing.discrepancies.length > 0 && (
-                                        <div className="agent-reasoning" style={{ marginBottom: '20px', borderLeftColor: 'var(--accent-orange)' }}>
-                                            <div className="ar-header" style={{ color: 'var(--accent-orange)' }}>⚠️ Document Discrepancies</div>
-                                            <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
-                                                {selectedSubmission.stages.documentProcessing.discrepancies.map((d: string, i: number) => (
-                                                    <li key={i}>{d}</li>
-                                                ))}
-                                            </ul>
+                                    {selectedSubmission.stages?.documentProcessing && (
+                                        <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+                                            <div className="section-title" style={{ marginBottom: '10px' }}>Document Verification</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', fontSize: '12px' }}>
+                                                <div style={{ marginBottom: '8px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span style={{ color: 'var(--text-muted)' }}>Status:</span>
+                                                        <span className={`decision-badge ${selectedSubmission.stages.documentProcessing.result || 'PENDING'}`}>
+                                                            {selectedSubmission.stages.documentProcessing.result || 'PENDING'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {selectedSubmission.stages.documentProcessing.discrepancies && selectedSubmission.stages.documentProcessing.discrepancies.length > 0 && (
+                                                    <div style={{ marginTop: '5px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                                                        <div style={{ color: 'var(--accent-orange)', fontSize: '11px', fontWeight: '600', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <span>⚠️</span> Discrepancies Found:
+                                                        </div>
+                                                        <ul style={{ fontSize: '11px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
+                                                            {selectedSubmission.stages.documentProcessing.discrepancies.map((d: string, i: number) => (
+                                                                <li key={i} style={{ marginBottom: '2px' }}>{d}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
 
