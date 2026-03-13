@@ -11,6 +11,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
     const [selectedSubmission, setSelectedSubmission] = useState<KycSubmission | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState('ALL');
     const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
     const [analytics, setAnalytics] = useState({
         total_onboardings: 0,
@@ -81,6 +82,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
             return 'N/A';
         }
     };
+
+    const filteredSubmissions = submissions.filter(sub => {
+        const s = sub.status.toUpperCase();
+        if (filter === 'ALL') return true;
+        if (filter === 'PENDING') return s === 'INITIATED' || s === 'PROCESSING' || s === 'PENDING';
+        return s === filter;
+    });
     const handleStatusUpdate = async (status: string) => {
         if (!selectedSubmission) return;
         const caseId = selectedSubmission.caseId || (selectedSubmission as any).CaseId;
@@ -136,11 +144,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                         <div className="table-header">
                             <h3>Onboarding Pipeline</h3>
                             <div className="table-filters">
-                                <button className="filter-btn active">All</button>
-                                <button className="filter-btn">Pending</button>
-                                <button className="filter-btn">Escalated</button>
-                                <button className="filter-btn">Approved</button>
-                                <button className="filter-btn">Rejected</button>
+                                <button className={`filter-btn ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>All</button>
+                                <button className={`filter-btn ${filter === 'PENDING' ? 'active' : ''}`} onClick={() => setFilter('PENDING')}>Pending</button>
+                                <button className={`filter-btn ${filter === 'ESCALATED' ? 'active' : ''}`} onClick={() => setFilter('ESCALATED')}>Escalated</button>
+                                <button className={`filter-btn ${filter === 'APPROVED' ? 'active' : ''}`} onClick={() => setFilter('APPROVED')}>Approved</button>
+                                <button className={`filter-btn ${filter === 'REJECTED' ? 'active' : ''}`} onClick={() => setFilter('REJECTED')}>Rejected</button>
                             </div>
                         </div>
                         <table className="kyc-table">
@@ -149,10 +157,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                             </thead>
                             <tbody>
                                 {loading ? (
-                                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>Loading submissions...</td></tr>
-                                ) : submissions.length === 0 ? (
-                                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>No submissions found</td></tr>
-                                ) : submissions.map(sub => (
+                                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>Loading submissions...</td></tr>
+                                ) : filteredSubmissions.length === 0 ? (
+                                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>No submissions found for this filter</td></tr>
+                                ) : filteredSubmissions.map(sub => (
                                     <tr
                                         key={sub.caseId}
                                         className={selectedSubmission?.caseId === sub.caseId ? 'selected' : ''}
