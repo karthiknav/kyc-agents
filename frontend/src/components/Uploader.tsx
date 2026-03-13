@@ -57,16 +57,39 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     const [caseStatus, setCaseStatus] = useState<string>(initialStatus);
     const [caseId, setCaseId] = useState<string | undefined>(initialSubmissionId);
     const pollingInterval = useRef<any>(null);
+    const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
+
+    const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        const id = Math.random().toString(36).substring(2, 9);
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 4000);
+    };
 
     const selectedSubmissionStageStatus = (stage: any) => {
         return stage?.result || stage?.status || 'PENDING';
     };
 
-    const isScreeningComplete = (screening: any) => {
+    const isScreeningComplete = (screening: any, stage?: 'adverseMedia' | 'riskListScreening'): boolean => {
         if (!screening) return false;
-        // Check if both sub-stages are present or if the legacy status is SUCCESS/OK
-        if (screening.adverseMedia && screening.riskListScreening) return true;
-        return screening.status === 'SUCCESS' || screening.result === 'OK';
+
+        const isResultComplete = (res: any) => {
+            if (!res || typeof res !== 'string') return false;
+            const r = res.toUpperCase();
+            return r !== 'PENDING' && r !== 'WAITING' && r !== 'INITIATED' && r !== 'PROCESSING' && r !== 'UNKNOWN';
+        };
+
+        if (stage) {
+            const sub = screening[stage];
+            return isResultComplete(sub?.result) || sub?.status === 'SUCCESS' || sub?.status === 'COMPLETED';
+        }
+
+        if (screening.adverseMedia && screening.riskListScreening) {
+            return isScreeningComplete(screening, 'adverseMedia') && isScreeningComplete(screening, 'riskListScreening');
+        }
+
+        return screening.status === 'SUCCESS' || screening.status === 'COMPLETED' || isResultComplete(screening.result);
     };
 
     const fetchStatus = async () => {
@@ -107,6 +130,22 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     }, [currentStep, caseStatus]);
 
     const handleFile = (id: string, file: File) => {
+        // Validation: Types
+        const allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+        const fileExtension = file.name.split('.').pop()?.toLowerCase();
+
+        if (!fileExtension || !allowedExtensions.includes(fileExtension)) {
+            showToast(`Invalid file type: .${fileExtension}. Please upload JPG, PNG or PDF.`, 'error');
+            return;
+        }
+
+        // Validation: Size (10MB)
+        const MAX_SIZE_BYTES = 10 * 1024 * 1024;
+        if (file.size > MAX_SIZE_BYTES) {
+            showToast(`File too large: ${(file.size / (1024 * 1024)).toFixed(1)} MB. Max size is 10 MB.`, 'error');
+            return;
+        }
+
         const sizeInMB = (file.size / (1024 * 1024)).toFixed(1);
         uploadedFiles.current[id] = file;
         setDocs(prev => prev.map(doc => {
@@ -444,8 +483,20 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                             <div className="left">
                                                 <div className="doc-icon verified">🔎</div>
                                                 <div>
-                                                    <div className="doc-name">Person Screening</div>
-                                                    <div className="doc-req">No matches found in watchlists</div>
+                                                    <div className="doc-name">Adverse Media Screening</div>
+                                                    <div className="doc-req">No adverse findings found</div>
+                                                </div>
+                                            </div>
+                                            <span className="status-chip verified">✓ Success</span>
+                                        </div>
+                                    </div>
+                                    <div className="upload-card" style={{ borderLeft: '4px solid var(--accent-green)' }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className="doc-icon verified">🛡️</div>
+                                                <div>
+                                                    <div className="doc-name">Risk List Screening</div>
+                                                    <div className="doc-req">No matches in global watchlists</div>
                                                 </div>
                                             </div>
                                             <span className="status-chip verified">✓ Success</span>
@@ -467,10 +518,10 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
                                 <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
                                     {/* Document Verification Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'var(--accent-green)' : 'var(--accent-blue)'}` }}>
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'var(--accent-green)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'verified' : 'processing'}`}>🪪</div>
+                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'verified' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🪪</div>
                                                 <div>
                                                     <div className="doc-name">Document Verification</div>
                                                     <div className="doc-req">Analyzing ID authenticity and OCR extraction</div>
@@ -480,25 +531,55 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                                 <span className="status-chip verified">✓ Completed</span>
                                             ) : selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'PARTIAL_MATCH' ? (
                                                 <span className="status-chip" style={{ background: 'var(--accent-orange-dim)', color: 'var(--accent-orange)' }}>⚠️ Partial Match</span>
-                                            ) : (
+                                            ) : submissionStages?.documentProcessing ? (
                                                 <span className="status-chip processing">⟳ In Progress</span>
+                                            ) : (
+                                                <span className="status-chip pending">○ Waiting</span>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Person Screening Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${isScreeningComplete(submissionStages?.screening) ? 'var(--accent-green)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                    {/* Adverse Media Stage */}
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'var(--accent-green)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${isScreeningComplete(submissionStages?.screening) ? 'verified' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🔎</div>
+                                                <div className={`doc-icon ${isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'verified' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🔎</div>
                                                 <div>
-                                                    <div className="doc-name">Person Screening</div>
-                                                    <div className="doc-req">Cross-referencing against global sanctions lists</div>
+                                                    <div className="doc-name">Adverse Media Screening</div>
+                                                    <div className="doc-req">Checking global news and media for reputational risk</div>
                                                 </div>
                                             </div>
-                                            {isScreeningComplete(submissionStages?.screening) ? (
-                                                <span className="status-chip verified">✓ Completed</span>
+                                            {isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? (
+                                                submissionStages?.screening?.result?.toUpperCase() === 'SUCCESS' ? (
+                                                    <span className="status-chip verified">✓ Success</span>
+                                                ) : (
+                                                    <span className="status-chip verified">✓ Completed</span>
+                                                )
                                             ) : submissionStages?.documentProcessing ? (
+                                                <span className="status-chip processing">⟳ In Progress</span>
+                                            ) : (
+                                                <span className="status-chip pending">○ Waiting</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Risk List Screening Stage */}
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${isScreeningComplete(submissionStages?.screening, 'riskListScreening') ? 'var(--accent-green)' : isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className={`doc-icon ${isScreeningComplete(submissionStages?.screening, 'riskListScreening') ? 'verified' : isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'processing' : ''}`}>🛡️</div>
+                                                <div>
+                                                    <div className="doc-name">Risk List Screening</div>
+                                                    <div className="doc-req">Cross-referencing against global sanctions and PEP lists</div>
+                                                </div>
+                                            </div>
+                                            {isScreeningComplete(submissionStages?.screening, 'riskListScreening') ? (
+                                                submissionStages?.screening?.result?.toUpperCase() === 'SUCCESS' ? (
+                                                    <span className="status-chip verified">✓ Success</span>
+                                                ) : (
+                                                    <span className="status-chip verified">✓ Completed</span>
+                                                )
+                                            ) : isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? (
                                                 <span className="status-chip processing">⟳ In Progress</span>
                                             ) : (
                                                 <span className="status-chip pending">○ Waiting</span>
@@ -510,7 +591,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                 <div className="processing-bar" style={{ maxWidth: '100%', margin: '40px 0 20px' }}>
                                     <div className="fill" style={{
                                         width: isScreeningComplete(submissionStages?.screening) ? '100%' :
-                                            submissionStages?.documentProcessing ? '66%' : '33%',
+                                            isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? '75%' :
+                                                submissionStages?.documentProcessing ? '50%' : '25%',
                                         background: 'var(--accent-blue)',
                                         transition: 'width 1s ease-in-out'
                                     }}></div>
@@ -538,6 +620,19 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                         <div className="ref-id" style={{ marginTop: '30px' }}>CASE ID: {caseId || `PENDING`}</div>
                     </div>
                 )}
+            </div>
+
+            <div className="toast-container">
+                {toasts.map(toast => (
+                    <div key={toast.id} className={`toast ${toast.type}`}>
+                        <span className="toast-icon">
+                            {toast.type === 'success' && '✓'}
+                            {toast.type === 'error' && '✕'}
+                            {toast.type === 'info' && 'ℹ'}
+                        </span>
+                        <span className="toast-message">{toast.message}</span>
+                    </div>
+                ))}
             </div>
         </div>
     );
