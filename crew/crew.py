@@ -30,8 +30,17 @@ class KYCCrew():
     tasks: List[Task]
     # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
     # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
+
+    _default_bedrock_model = "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    _model_env = (os.getenv("MODEL") or "").strip()
+    _resolved_model = (
+        _default_bedrock_model
+        if not _model_env
+        else (_model_env if _model_env.startswith("bedrock/") else f"bedrock/{_model_env}")
+    )
+
     llm = LLM(
-        model="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        model=_resolved_model,
     )
 
     # ------------------------------------------------------------------

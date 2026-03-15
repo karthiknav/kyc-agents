@@ -2,6 +2,13 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'KYC Main Stack - SQS queue'
 
 
+Parameters:
+  DefaultModelId:
+    Type: String
+    Description: Default model id written to SSM Parameter Store at /kyc-agent/model-id
+    Default: us.anthropic.claude-3-5-sonnet-20241022-v2:0
+
+
 Resources:
   # SQS queue - middleware/FastAPI publishes here when KYC is initiated
   KycInitiatedQueue:
@@ -14,7 +21,19 @@ Resources:
         - Key: Name
           Value: !Sub "${AWS::StackName}-kyc-initiated"
 
+  KycAgentModelIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /kyc-agent/model-id
+      Type: String
+      Value: !Ref DefaultModelId
+      Description: Default model id for the KYC agent (read as env MODEL)
+
 Outputs:
+  KycAgentModelIdParameterName:
+    Description: SSM parameter name that stores the model id
+    Value: /kyc-agent/model-id
+
   KycInitiatedQueueName:
     Description: Name of the SQS queue for KYC-initiated events
     Value: !Sub "${AWS::StackName}-kyc-initiated"
