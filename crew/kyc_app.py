@@ -9,6 +9,8 @@ import boto3
 from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from crewai import Crew, Process
+from opentelemetry import trace
+tracer = trace.get_tracer(__name__)
 
 from crew.crew import KYCCrew
 CrewAIInstrumentor().instrument()
@@ -53,9 +55,11 @@ def agent_invocation(payload, context):
 
         # Run only the sanctions screening agent and task
         
-        result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
-
-
+        
+        with tracer.start_as_current_span("kyc_screening"):
+            with tracer.start_as_current_span("crew_kickoff"):
+                result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
+        
         logger.info("Result: %s", result.raw)
         output = {"result": result.raw}
         return output

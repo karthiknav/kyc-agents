@@ -125,6 +125,14 @@ if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" == "None" ]; then
   echo "Warning: AgentRuntimeArn not found in $AGENT_STACK."
 fi
 echo "KYC Agent ARN: $KYC_AGENT_ARN"
+
+# Set up AgentCore online evaluation config (uses optional env var EVALUATOR_ID)
+echo ""
+echo "[5b/6] Setting up online evaluation config..."
+
+# We'll run this after Python env selection (below) is resolved; stash values for later.
+EVAL_AGENT_RUNTIME_ARN="$KYC_AGENT_ARN"
+EVAL_REGION="$REGION"
 KYC_LAMBDA_EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks \
     --stack-name "$ROLES_STACK" \
     --query 'Stacks[0].Outputs[?OutputKey==`KycLambdaExecutionRoleArn`].OutputValue' \
@@ -237,8 +245,8 @@ echo "✓ UI stack ready"
 
 export INFRA_STACK_NAME AWS_DEFAULT_REGION="$REGION"
 
-have_boto3 () {
-  "$1" -c "import boto3" >/dev/null 2>&1
+have_deploy_deps () {
+  "$1" -c "import boto3; import bedrock_agentcore_starter_toolkit" >/dev/null 2>&1
 }
 
 UI_VENV="$SCRIPT_DIR/.venv"
@@ -246,7 +254,7 @@ REQS_UI="$SCRIPT_DIR/requirements-deploy-ui.txt"
 
 # Prefer active venv only if it already has boto3; otherwise use a repo-local venv.
 PYTHON=""
-if [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ] && have_boto3 "$VIRTUAL_ENV/bin/python"; then
+if [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ] && have_deploy_deps "$VIRTUAL_ENV/bin/python"; then
   PYTHON="$VIRTUAL_ENV/bin/python"
 else
   if [ ! -x "$UI_VENV/bin/python" ]; then
@@ -254,11 +262,20 @@ else
     "$UI_VENV/bin/python" -m pip install -q --upgrade pip
   fi
 
-  if ! have_boto3 "$UI_VENV/bin/python"; then
+  if ! have_deploy_deps "$UI_VENV/bin/python"; then
     "$UI_VENV/bin/python" -m pip install -q -r "$REQS_UI"
   fi
 
   PYTHON="$UI_VENV/bin/python"
+fi
+
+# Run evaluation config setup once Python is available
+if [ -n "$EVAL_AGENT_RUNTIME_ARN" ] && [ "$EVAL_AGENT_RUNTIME_ARN" != "None" ]; then
+  "$PYTHON" "$SCRIPT_DIR/setup_agent_evaluation.py" \
+    --agent-runtime-arn "$EVAL_AGENT_RUNTIME_ARN" \
+    --region "$EVAL_REGION"
+else
+  echo "Warning: skipping evaluation setup (missing agent runtime ARN)."
 fi
 
 "$PYTHON" "$SCRIPT_DIR/deploy_ui.py" "$INFRA_STACK_NAME" "$REGION"
