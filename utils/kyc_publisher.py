@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Hardcoded for testing — match deploy.sh default BASE_NAME (e.g. kyc-agent)
 _DEFAULT_BASE_NAME = "kyc-agent"
-TEST_TABLE_NAME = f"{_DEFAULT_BASE_NAME}-storage-kyc-cases"
+TEST_TABLE_NAME = f"{_DEFAULT_BASE_NAME}-storage-kyc-cases-206409480438-us-east-1"
 TEST_QUEUE_NAME = f"{_DEFAULT_BASE_NAME}-main-kyc-initiated"
-TEST_S3_BUCKET_NAME = f"{_DEFAULT_BASE_NAME}-storage"
+TEST_S3_BUCKET_NAME = "kyc-agent-storage-206409480438-us-east-1"
 TEST_REGION = "us-east-1"
 
 # Default dummy record for testing (includes dummy S3 keys under files)
@@ -33,7 +33,7 @@ DUMMY_RECORD: dict[str, Any] = {
     ],
     "identity": {
         "fullName": "Willem van den Berg",
-        "dateOfBirth": "1990-05-12",
+        "dateOfBirth": "1970-01-20",
         "nationality": "Netherlands",
     }
 }
@@ -92,7 +92,7 @@ class KycCasePublisher:
 
         try:
             self._put_dynamodb(payload)
-            self._send_sqs(payload)
+            #self._send_sqs(payload)
             logger.info("Pushed caseId=%s to DynamoDB and SQS", case_id)
             return True, None
         except ClientError as e:

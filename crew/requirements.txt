@@ -15,3 +15,5 @@ bedrock_agentcore_starter_toolkit
 opentelemetry-instrumentation-crewai
 aws-opentelemetry-distro==0.12.1
 requests
+langfuse
+openinference-instrumentation-crewai
