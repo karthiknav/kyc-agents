@@ -9,7 +9,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-import boto3
+try:
+    import boto3
+except ModuleNotFoundError as e:
+    if e.name != "boto3":
+        raise
+    print(
+        "❌ Python module 'boto3' not found. You're likely running this script with the system Python\n"
+        "   instead of the repo virtualenv. Try one of:\n"
+        "   - scripts/.venv/bin/python scripts/deploy_ui.py\n"
+        "   - crew/.venv/bin/python scripts/deploy_ui.py\n",
+        file=sys.stderr,
+    )
+    raise
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent

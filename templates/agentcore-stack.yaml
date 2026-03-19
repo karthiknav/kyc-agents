@@ -213,6 +213,9 @@ Resources:
         MOCK_SERVICE_URL: !Ref MockServiceUrl
         # Forces runtime to redeploy when agent code changes (new image digest for :latest)
         DEPLOY_SOURCE_KEY: !Ref SourceZipKey
+        CREWAI_DISABLE_TELEMETRY: "true"
+        OTEL_PYTHON_EXCLUDED_URLS: "https://api.scarf.sh/"
+        CREWAI_TRACING_ENABLED: "true"
       RoleArn: !ImportValue
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:

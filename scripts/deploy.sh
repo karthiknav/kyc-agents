@@ -214,9 +214,19 @@ if [ -n "$API_ENDPOINT" ] && [ "$API_ENDPOINT" != "None" ]; then
   echo "  Backend API: $API_ENDPOINT"
 fi
 
+# Deploy X-Ray Transaction Search config (CloudFormation)
+# echo ""
+# echo "[8/9] Deploying X-Ray Transaction Search config..."
+# XRAY_STACK="${INFRA_STACK_NAME}-xray-transaction-search"
+# aws cloudformation deploy \
+#   --stack-name "$XRAY_STACK" \
+#   --template-file "$REPO_ROOT/templates/xray-transaction-search-stack.yaml" \
+#   --region "$REGION"
+# echo "✓ X-Ray Transaction Search stack ready"
+
 # Deploy UI stack (CloudFormation), then package frontend and sync via deploy_ui.py
 echo ""
-echo "[8/8] Deploying UI stack and syncing frontend..."
+echo "[9/9] Deploying UI stack and syncing frontend..."
 aws cloudformation deploy \
     --stack-name "$UI_STACK" \
     --template-file "$REPO_ROOT/templates/ui-stack.yaml" \
@@ -226,14 +236,31 @@ aws cloudformation deploy \
 echo "✓ UI stack ready"
 
 export INFRA_STACK_NAME AWS_DEFAULT_REGION="$REGION"
-# Prefer 'python' on Windows (Git Bash, conda, etc.); use python3 on Unix
-case "$(uname -s 2>/dev/null)" in
-  MINGW*|MSYS*|CYGWIN*) PYTHON=python ;;
-  *) PYTHON=python3 ;;
-esac
-if ! command -v $PYTHON >/dev/null 2>&1; then
-  PYTHON=python
+
+have_boto3 () {
+  "$1" -c "import boto3" >/dev/null 2>&1
+}
+
+UI_VENV="$SCRIPT_DIR/.venv"
+REQS_UI="$SCRIPT_DIR/requirements-deploy-ui.txt"
+
+# Prefer active venv only if it already has boto3; otherwise use a repo-local venv.
+PYTHON=""
+if [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ] && have_boto3 "$VIRTUAL_ENV/bin/python"; then
+  PYTHON="$VIRTUAL_ENV/bin/python"
+else
+  if [ ! -x "$UI_VENV/bin/python" ]; then
+    python3 -m venv "$UI_VENV"
+    "$UI_VENV/bin/python" -m pip install -q --upgrade pip
+  fi
+
+  if ! have_boto3 "$UI_VENV/bin/python"; then
+    "$UI_VENV/bin/python" -m pip install -q -r "$REQS_UI"
+  fi
+
+  PYTHON="$UI_VENV/bin/python"
 fi
+
 "$PYTHON" "$SCRIPT_DIR/deploy_ui.py" "$INFRA_STACK_NAME" "$REGION"
 
 echo ""

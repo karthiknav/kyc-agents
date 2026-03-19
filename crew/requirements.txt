@@ -3,7 +3,8 @@ crewai-tools>=0.14.0
 boto3
 python-dotenv
 tavily-python
-bedrock-agentcore<=0.1.5
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
 langchain-community>=0.3.0
 langchain-tavily
 google-search-results
@@ -11,4 +12,6 @@ langchain-openai>=0.2.0
 duckduckgo-search
 ddgs
 bedrock_agentcore_starter_toolkit
+opentelemetry-instrumentation-crewai
+aws-opentelemetry-distro==0.12.1
 requests

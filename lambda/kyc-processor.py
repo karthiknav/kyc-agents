@@ -1,6 +1,8 @@
 import json
 import os
 import logging
+import secrets
+import uuid
 import boto3
 
 logger = logging.getLogger()
@@ -9,10 +11,20 @@ logger.setLevel(logging.INFO)
 AGENTCORE_QUALIFIER = "DEFAULT"
 
 
+def _uuid34() -> str:
+    """Return a 34-character unique id (hex)."""
+    # uuid4().hex -> 32 chars, token_hex(1) -> 2 chars
+    return uuid.uuid4().hex + secrets.token_hex(1)
+
+
 def _invoke_agent_fire_and_forget(agentcore_client, agent_arn: str, payload: dict) -> None:
     """Invoke Bedrock AgentCore runtime and drain the response (fire-and-forget)."""
+    case_id = payload.get("caseId", "unknown")
+    case_id = case_id.strip() if isinstance(case_id, str) else str(case_id)
+    runtime_session_id = f"kyc-case-{case_id}-{_uuid34()}"
     boto3_response = agentcore_client.invoke_agent_runtime(
         agentRuntimeArn=agent_arn,
+        runtimeSessionId=runtime_session_id,
         qualifier=AGENTCORE_QUALIFIER,
         payload=json.dumps(payload),
     )
