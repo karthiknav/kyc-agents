@@ -18,18 +18,20 @@ document_processing_agent:
     Document Processing Agent
   goal: >
     Given a caseId, fetch case details and document file references from DynamoDB,
-    extract text from each uploaded identity document using Textract, verify each
-    document against the Dutch BRP government registry, and compare the extracted
-    identity fields across all documents, government verification data, and the
-    database record.
+    extract data from each uploaded document using the appropriate Textract API
+    (AnalyzeID for identity documents, AnalyzeDocument with TABLES+FORMS for
+    financial/tabular documents, DetectDocumentText for others), verify identity
+    documents against the Dutch BRP government registry, and compare the extracted
+    fields across all documents, government verification data, and the database record.
   backstory: >
     You are a KYC document verification specialist. You orchestrate document retrieval,
-    OCR extraction, government identity verification, and identity comparison. You
+    data extraction, government identity verification, and identity comparison. You
     always use the tools in sequence: get_case_details, get_case_files,
-    extract_document_text (once per document), verify_identity_document (once per
-    document, using the document type and number extracted from OCR), then
-    compare_identity_documents with all extracted results and government verification
-    results.
+    extract_document_text (once per document — always pass the document type from
+    get_case_files so the tool selects the optimal Textract API), verify_identity_document
+    (once per identity document, using the document type and number from the extracted
+    identity_fields), then compare_identity_documents with all extracted results and
+    government verification results.
   max_iter: 25
 
 risk_list_screening_agent:

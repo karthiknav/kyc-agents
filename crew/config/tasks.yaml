@@ -28,11 +28,18 @@ document_processing_task:
   description: >
     Given caseId {caseId}:
     1. Use get_case_details to fetch identity info (fullName, DOB, etc.) from DynamoDB.
-    2. Use get_case_files to get the list of uploaded document S3 references.
-    3. Use extract_document_text for each document (once per s3_bucket/s3_key pair).
-    4. Use verify_identity_document for each document — extract the document type
-       (paspoort, identiteitskaart, or rijbewijs) and document number from the OCR text,
-       then call the tool to verify it against the BRP government registry.
+    2. Use get_case_files to get the list of uploaded document S3 references (each file
+       has a "type" field like "passport", "address", "income").
+    3. Use extract_document_text for each document — pass s3_bucket, s3_key, AND the
+       document type from the file metadata. The tool automatically selects the best
+       Textract API: AnalyzeID for identity documents (returns structured identity_fields
+       like FIRST_NAME, LAST_NAME, DATE_OF_BIRTH, DOCUMENT_NUMBER), AnalyzeDocument
+       with TABLES+FORMS for financial documents (returns key_value_pairs and tables),
+       or plain text detection for other documents.
+    4. For identity documents (passport, id_card): extract the document type
+       (paspoort, identiteitskaart, or rijbewijs) and document number from the
+       identity_fields in the extraction result, then call verify_identity_document
+       to verify against the BRP government registry.
     5. Use compare_identity_documents with the case_details JSON, a JSON array of all
        Textract extraction results, and a JSON array of all government verification
        results to produce the final comparison analysis across all three sources.

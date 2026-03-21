@@ -115,32 +115,38 @@ class CompareIdentityDocumentsTool(BaseTool):
         prompt = f"""You are a KYC (Know Your Customer) document verification specialist.
 Compare identity fields across THREE sources:
 1. The database record (what the applicant submitted)
-2. The OCR-extracted text from uploaded identity documents
+2. Extracted data from uploaded identity documents (via Textract AnalyzeID for identity documents, AnalyzeDocument for financial/tabular documents, or plain text detection for others)
 3. The government BRP (Basisregistratie Personen) verification response (official registry data)
 
 Source 1 — Database identity record:
 {db_identity_text}
 
-Source 2 — Extracted document text (one entry per document):
+Source 2 — Extracted document data (one entry per document):
 {docs_truncated}
+
+Note on extraction formats:
+- Identity documents (passport, id_card) have "extraction_method": "ANALYZE_ID" with structured "identity_fields" (e.g. FIRST_NAME, LAST_NAME, DATE_OF_BIRTH, DOCUMENT_NUMBER, EXPIRATION_DATE).
+- Financial/tabular documents (income, payslip) have "extraction_method": "ANALYZE_DOCUMENT" with "key_value_pairs" and "tables".
+- Other documents have "extraction_method": "DETECT_TEXT" with "full_text" and "pages".
 
 Source 3 — Government BRP verification results:
 {govt_truncated}
 
 Analyze whether the identity information is consistent across all three sources.
-Check fields such as full name, date of birth, nationality, document numbers, and any other identity-relevant fields present.
+For identity documents, compare structured fields (FIRST_NAME, LAST_NAME, DATE_OF_BIRTH, DOCUMENT_NUMBER, etc.) directly against the database record.
+For other document types, extract relevant identity information from the text/tables and cross-reference.
 Pay special attention to whether the government registry confirms the document belongs to the same person in the database record.
 
 Respond with a JSON object containing exactly these keys:
 1. "comparison_result": one of "MATCH" (all fields match across all sources), "PARTIAL_MATCH" (most fields match but some discrepancies), or "MISMATCH" (significant differences found between sources)
 2. "discrepancies": a list of strings, each describing a specific field discrepancy in the format "field X differs: source1=A, source2=B". Empty list if MATCH.
 3. "comparison_summary": a 5-10 sentence explanation of the comparison outcome and reasoning
-4. "documents_summary": a brief summary of each document processed (type, key fields found, quality of extraction)
+4. "documents_summary": a brief summary of each document processed (type, extraction method, key fields found, confidence levels if available)
 5. "government_verification_summary": a summary of the government verification results — whether the document is confirmed as authentic, whether the registered person matches, and any notable findings
 
 Example:
-{{"comparison_result": "MATCH", "discrepancies": [], "comparison_summary": "All identity fields match across database, documents, and government registry.", "documents_summary": "Passport: clear extraction, all fields present.", "government_verification_summary": "BRP confirms document NL123456789 is registered to Jan de Vries, matching both DB and OCR data."}}
-{{"comparison_result": "MISMATCH", "discrepancies": ["name differs: DB=Maria Jansen, BRP=Maria Bakker"], "comparison_summary": "Government registry shows document registered to different person.", "documents_summary": "Passport processed.", "government_verification_summary": "BRP shows passport NL987654321 registered to Maria Bakker, not Maria Jansen as in DB record. Document may be fraudulent or misattributed."}}
+{{"comparison_result": "MATCH", "discrepancies": [], "comparison_summary": "All identity fields match across database, documents, and government registry. Passport AnalyzeID extracted FIRST_NAME, LAST_NAME, DATE_OF_BIRTH, and DOCUMENT_NUMBER with high confidence, all matching the DB record.", "documents_summary": "Passport (ANALYZE_ID): FIRST_NAME=Jan, LAST_NAME=de Vries, DOB=1985-03-15, DOC_NUMBER=NL123456789 — all fields extracted with >95% confidence.", "government_verification_summary": "BRP confirms document NL123456789 is registered to Jan de Vries, matching both DB and extracted identity fields."}}
+{{"comparison_result": "MISMATCH", "discrepancies": ["LAST_NAME differs: DB=Jansen, AnalyzeID=Bakker, BRP=Bakker"], "comparison_summary": "Government registry and document extraction both show a different last name than the database record.", "documents_summary": "Passport (ANALYZE_ID): FIRST_NAME=Maria, LAST_NAME=Bakker extracted with 98% confidence.", "government_verification_summary": "BRP shows passport NL987654321 registered to Maria Bakker, not Maria Jansen as in DB record. Document may be fraudulent or misattributed."}}
 
 Your response (JSON only, no markdown):"""
 
