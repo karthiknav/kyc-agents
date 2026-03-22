@@ -28,8 +28,8 @@ DUMMY_RECORD: dict[str, Any] = {
     "status": "INITIATED",
     "statusUpdatedAt": "2026-02-26T02:18:10Z",
     "files": [
-        {"type": "passport", "bucket": "kyc-agent-storage", "key": "cases/1234/passport.pdf"},
-        {"type": "license", "bucket": "kyc-agent-storage", "key": "cases/1234/license.pdf"}
+        {"type": "passport", "bucket": TEST_S3_BUCKET_NAME, "key": "cases/1234/passport.pdf"},
+        {"type": "license", "bucket":TEST_S3_BUCKET_NAME, "key": "cases/1234/license.pdf"}
     ],
     "identity": {
         "fullName": "Willem van den Berg",
