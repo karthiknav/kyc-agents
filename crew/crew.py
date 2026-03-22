@@ -31,12 +31,10 @@ from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
-from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
 from crew.update_case import update_adverse_media_result, update_risk_list_screening_result
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
 
-CrewAIInstrumentor().instrument()
 @CrewBase
 class KYCCrew():
     """KYC crew: document processing → sanctions screening → final decision (sequential)."""

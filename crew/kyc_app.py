@@ -5,22 +5,35 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 import boto3
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from crewai import Crew, Process
-from opentelemetry import trace
 from langfuse import get_client
 from openinference.instrumentation.crewai import CrewAIInstrumentor
+
+langfuse = get_client()
 CrewAIInstrumentor().instrument(skip_dep_check=True)
-tracer = trace.get_tracer(__name__)
+try:
+    from openinference.instrumentation.bedrock import BedrockInstrumentor
+
+    BedrockInstrumentor().instrument()
+    logger.info("OpenInference Bedrock instrumentation enabled (LLM/Converse spans for Langfuse)")
+except ImportError:
+    logger.warning(
+        "openinference-instrumentation-bedrock not installed; Bedrock LLM calls may be missing "
+        "from Langfuse. Install with: pip install openinference-instrumentation-bedrock"
+    )
+
+from crew.langfuse_crewai_patches import patch_crewai_structured_tool_for_langfuse
+
+patch_crewai_structured_tool_for_langfuse()
 
 from crew.crew import KYCCrew
 
 
 app = BedrockAgentCoreApp()
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-langfuse = get_client()
 
 if langfuse.auth_check():
     logger.info("✅ Langfuse authentication successful")

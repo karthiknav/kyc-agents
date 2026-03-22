@@ -17,3 +17,4 @@ aws-opentelemetry-distro==0.12.1
 requests
 langfuse
 openinference-instrumentation-crewai
+openinference-instrumentation-bedrock
