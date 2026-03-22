@@ -2,7 +2,10 @@ from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 # Monkey-patch CrewAI native Bedrock: correct tool-call arg parsing (input vs arguments).
 # Empty-response retry: on by default (Bedrock Converse sometimes returns message.content=[]).
@@ -44,8 +47,9 @@ class KYCCrew():
     # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
     # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
 
-    _default_bedrock_model = "bedrock/us.anthropic.claude-sonnet-4-6"
+    _default_bedrock_model = "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
     _model_env = (os.getenv("MODEL") or "").strip()
+    logger.info("MODEL env (MODEL) resolved to: %r", _model_env)
     _resolved_model = (
         _default_bedrock_model
         if not _model_env

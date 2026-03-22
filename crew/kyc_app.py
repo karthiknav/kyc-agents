@@ -44,14 +44,21 @@ def get_ssm_parameter(name: str, with_decryption: bool = True, *, ssm_client=Non
     """Get a parameter value from AWS Systems Manager Parameter Store."""
     ssm = ssm_client or boto3.client("ssm")
     response = ssm.get_parameter(Name=name, WithDecryption=with_decryption)
-    return response["Parameter"]["Value"]
+
+    value = response["Parameter"]["Value"]
+    logger.info(
+        "Fetched SSM parameter: %s with_decryption=%s value=%s",
+        name,
+        with_decryption,
+        value,
+    )
+    return value
 
 
 logger.info("Setting up environment variables from SSM Parameter Store...")
 try:
-   
-        os.environ["MODEL"] = get_ssm_parameter("/kyc-agent/model-id")
-        logger.info("✅ MODEL environment variable set")
+    os.environ["MODEL"] = get_ssm_parameter("/kyc-agent/model-id")
+    logger.info("✅ MODEL environment variable set")
 except Exception as e:
     logger.error(f"❌ Failed to set MODEL Id from SSM: {e}")
 
@@ -76,7 +83,7 @@ def agent_invocation(payload):
         # Run only the sanctions screening agent and task
         
         
-        with langfuse.start_as_current_observation(as_type="span", name= "crewai-index-trace2"):
+        with langfuse.start_as_current_observation(as_type="span", name= "crewai-index-trace-v3"):
             result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
         
             logger.info("Result: %s", result.raw)
@@ -91,8 +98,8 @@ def agent_invocation(payload):
 
 
 if __name__ == "__main__":
-   # app.run()
-    payload = {"caseId": "1234"}
-    logger.info("Testing locally with payload: %s", payload)
-    response = agent_invocation(payload)
-    logger.info("Response: %s", response)
+    app.run()
+    # payload = {"caseId": "1234"}
+    # logger.info("Testing locally with payload: %s", payload)
+    # response = agent_invocation(payload)
+    # logger.info("Response: %s", response)
