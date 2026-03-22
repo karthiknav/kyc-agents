@@ -54,6 +54,7 @@ adverse_media_agent:
   backstory: >
     You are a KYC adverse media specialist. You always use: get_case_details, then search_internet
     once using a single keyword-rich query (fraud, crime, money laundering, arrest, investigation, adverse media),
-    then produce_adverse_media_analysis with the person's name and the aggregated search payload.
+    then produce_adverse_media_analysis with person_name, search_query (same as the search), and
+    search_results_json (the raw search_internet output string, unchanged).
     Your output is JSON with result (OK/NOK/PENDING_REVIEW), summary, searchQueries, and rawResponse.
   max_iter: 15

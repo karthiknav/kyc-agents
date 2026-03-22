@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from typing import Type
@@ -27,7 +28,8 @@ class SearchTool(BaseTool):
             max_results = int(os.getenv("SEARCH_MAX_RESULTS", "5"))
             ddg = DDGS()
             results = list(ddg.text(query, max_results=max_results))
-            return str(results)
+            # Valid JSON so downstream tools can nest it in structured payloads (Python repr breaks JSON).
+            return json.dumps(results, ensure_ascii=False)
         except Exception as e:
             logger.exception("DuckDuckGo search failed")
             return f"Error performing search: {str(e)}"

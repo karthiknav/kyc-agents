@@ -4,9 +4,23 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
 import os
 
-# Monkey-patch CrewAI so Bedrock tool calls get arguments from tool_call["input"]
-from crew.bedrock_tool_args_patch import apply_bedrock_tool_args_patch
+# Monkey-patch CrewAI native Bedrock: correct tool-call arg parsing (input vs arguments).
+# Empty-response retry: on by default (Bedrock Converse sometimes returns message.content=[]).
+# Disable with KYC_BEDROCK_EMPTY_RESPONSE_RETRY=0 if you need a stable message list for debugging.
+# Optional: KYC_BEDROCK_EMPTY_RESPONSE_MAX_RETRIES (default 3) for continuation nudges after empty replies.
+# Slim tool observations: apply_slim_tool_observations_patch() removes CrewAI's periodic full tool-list
+# append after every 3rd tool (huge context). Set KYC_CREWAI_TOOL_FORMAT_REMINDERS=1 to restore default.
+from crew.bedrock_tool_args_patch import (
+    apply_bedrock_empty_response_retry_patch,
+    apply_bedrock_tool_args_patch,
+)
+from crew.crewai_tool_observation_patch import apply_slim_tool_observations_patch
+
 apply_bedrock_tool_args_patch()
+apply_slim_tool_observations_patch()
+_retry = os.getenv("KYC_BEDROCK_EMPTY_RESPONSE_RETRY", "1").strip().lower()
+if _retry not in ("0", "false", "no", "off"):
+    apply_bedrock_empty_response_retry_patch()
 
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
@@ -32,7 +46,7 @@ class KYCCrew():
     # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
     # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
 
-    _default_bedrock_model = "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    _default_bedrock_model = "bedrock/us.anthropic.claude-sonnet-4-6"
     _model_env = (os.getenv("MODEL") or "").strip()
     _resolved_model = (
         _default_bedrock_model
@@ -40,8 +54,11 @@ class KYCCrew():
         else (_model_env if _model_env.startswith("bedrock/") else f"bedrock/{_model_env}")
     )
 
+    # Generous max_tokens reduces empty completions from Bedrock when the agent must
+    # emit long ReAct steps or final JSON after large tool observations.
     llm = LLM(
         model=_resolved_model,
+        use_conversational_api=False,
     )
 
     # ------------------------------------------------------------------

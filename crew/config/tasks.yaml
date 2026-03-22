@@ -73,11 +73,11 @@ adverse_media_task:
     1. Use get_case_details to fetch the case from DynamoDB and extract identity.fullName.
     2. Run a single web search using search_internet with this query (construct it using the extracted identity.fullName):
        "<FULL_NAME> fraud crime money laundering arrest investigation adverse media"
-    3. Build a JSON search_payload with keys:
-       - searchQueries: array containing the single query string
-       - searchResults: array with one {query, result} object (result is the raw tool output)
-    4. Call produce_adverse_media_analysis with person_name and search_payload.
-    Return JSON with result, summary, searchQueries, and rawResponse (the search_payload you built).
+    3. Call produce_adverse_media_analysis with:
+       - person_name: identity.fullName
+       - search_query: the exact same string you passed to search_internet
+       - search_results_json: the exact string returned by search_internet (valid JSON array; do not reformat)
+    Return JSON with result, summary, searchQueries, and rawResponse (object with searchQueries and searchResults).
   expected_output: >
     Valid JSON object with exactly these keys:
     - "case_id": the case ID from the case (string)
@@ -85,5 +85,5 @@ adverse_media_task:
     - "result": one of "OK", "NOK", "PENDING_REVIEW" (string)
     - "summary": short summary (string)
     - "searchQueries": array of search queries used (array)
-    - "rawResponse": the aggregated search_payload (object)
+    - "rawResponse": object with searchQueries and searchResults (same structure as passed to analysis)
   agent: adverse_media_agent

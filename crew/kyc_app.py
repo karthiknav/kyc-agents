@@ -36,7 +36,7 @@ def get_ssm_parameter(name: str, with_decryption: bool = True, *, ssm_client=Non
 
 logger.info("Setting up environment variables from SSM Parameter Store...")
 try:
-    if not os.getenv("MODEL"):
+   
         os.environ["MODEL"] = get_ssm_parameter("/kyc-agent/model-id")
         logger.info("✅ MODEL environment variable set")
 except Exception as e:
@@ -63,7 +63,7 @@ def agent_invocation(payload):
         # Run only the sanctions screening agent and task
         
         
-        with langfuse.start_as_current_observation(as_type="span", name= "crewai-index-trace"):
+        with langfuse.start_as_current_observation(as_type="span", name= "crewai-index-trace2"):
             result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
         
             logger.info("Result: %s", result.raw)
