@@ -1,7 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
-
+.terraform/
 # Claude Code
 .claude/
 /.idea/misc.xml
@@ -11,3 +11,6 @@ __pycache__/
 /crew/venv/lib/python3.12/*
 /crew/venv/bin
 /crew/venv/pyvenv.cfg
+
+# Langfuse vendored Helm chart: subchart packages are fetched by `helm dependency build` or Terraform (see charts/README.txt)
+langfuse/charts/langfuse/charts/*.tgz
