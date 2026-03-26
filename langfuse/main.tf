@@ -14,8 +14,6 @@ module "langfuse" {
   public_subnet_ids  = ["subnet-009754e40f5ceabfe", "subnet-0f91f20160c798e26"]
 
   private_route_table_ids = ["rtb-0664d2f6c957b8376"]
-
-  enable_web = var.enable_web
 }
 
 provider "kubernetes" {
@@ -43,3 +41,4 @@ provider "helm" {
     }
   }
 }
+

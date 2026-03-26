@@ -1,3 +1,9 @@
+# Terraform (local state — use a remote backend for teams/CI)
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+
 .venv/
 __pycache__/
 *.pyc
