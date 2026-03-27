@@ -50,6 +50,13 @@ EOF
   esac
 done
 
+# If we're being used as an eval-able env emitter, ensure *only* export lines reach stdout.
+# Many AWS CLI commands print progress to stdout, which would break `eval "$(...)"`.
+if [[ $PRINT_ENV -eq 1 ]]; then
+  exec 3>&1
+  exec 1>&2
+fi
+
 VPC_STACK="${INFRA_STACK_NAME}-vpc"
 STORAGE_STACK="${INFRA_STACK_NAME}-storage"
 ROLES_STACK="${INFRA_STACK_NAME}-roles"
@@ -185,17 +192,17 @@ if [[ -z "${SKIP_LANGFUSE_RUNTIME_UPDATE:-}" && -n "$KYC_AGENT_ARN" && "$KYC_AGE
 fi
 
 if [[ $PRINT_ENV -eq 1 ]]; then
-  # Only emit eval-safe export lines on stdout.
-  printf 'export INFRA_STACK_NAME=%q\n' "$INFRA_STACK_NAME"
-  printf 'export AWS_DEFAULT_REGION=%q\n' "$REGION"
-  printf 'export REGION=%q\n' "$REGION"
-  printf 'export VPC_STACK=%q\n' "$VPC_STACK"
-  printf 'export STORAGE_STACK=%q\n' "$STORAGE_STACK"
-  printf 'export ROLES_STACK=%q\n' "$ROLES_STACK"
-  printf 'export MAIN_STACK=%q\n' "$MAIN_STACK"
-  printf 'export AGENT_STACK=%q\n' "$AGENT_STACK"
-  printf 'export KYC_RESULTS_BUCKET=%q\n' "$KYC_RESULTS_BUCKET"
-  printf 'export KYC_CASES_TABLE=%q\n' "$KYC_CASES_TABLE"
-  printf 'export KYC_AGENT_ARN=%q\n' "$KYC_AGENT_ARN"
-  printf 'export PYTHON=%q\n' "$PYTHON"
+  # Emit eval-safe export lines on the original stdout.
+  printf 'export INFRA_STACK_NAME=%q\n' "$INFRA_STACK_NAME" >&3
+  printf 'export AWS_DEFAULT_REGION=%q\n' "$REGION" >&3
+  printf 'export REGION=%q\n' "$REGION" >&3
+  printf 'export VPC_STACK=%q\n' "$VPC_STACK" >&3
+  printf 'export STORAGE_STACK=%q\n' "$STORAGE_STACK" >&3
+  printf 'export ROLES_STACK=%q\n' "$ROLES_STACK" >&3
+  printf 'export MAIN_STACK=%q\n' "$MAIN_STACK" >&3
+  printf 'export AGENT_STACK=%q\n' "$AGENT_STACK" >&3
+  printf 'export KYC_RESULTS_BUCKET=%q\n' "$KYC_RESULTS_BUCKET" >&3
+  printf 'export KYC_CASES_TABLE=%q\n' "$KYC_CASES_TABLE" >&3
+  printf 'export KYC_AGENT_ARN=%q\n' "$KYC_AGENT_ARN" >&3
+  printf 'export PYTHON=%q\n' "$PYTHON" >&3
 fi

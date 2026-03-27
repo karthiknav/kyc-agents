@@ -35,10 +35,10 @@ from crew.crew import KYCCrew
 
 app = BedrockAgentCoreApp()
 
-if langfuse.auth_check():
-    logger.info("✅ Langfuse authentication successful")
-else:
-    logger.error("❌ Langfuse authentication failed")
+# if langfuse.auth_check():
+#     logger.info("✅ Langfuse authentication successful")
+# else:
+#     logger.error("❌ Langfuse authentication failed")
 
 def get_ssm_parameter(name: str, with_decryption: bool = True, *, ssm_client=None) -> str:
     """Get a parameter value from AWS Systems Manager Parameter Store."""

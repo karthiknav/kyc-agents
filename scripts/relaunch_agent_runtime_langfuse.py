@@ -121,6 +121,7 @@ def main() -> int:
         "LANGFUSE_SECRET_KEY": langfuse_secret_key,
         "LANGFUSE_PUBLIC_KEY": langfuse_public_key,
         "LANGFUSE_HOST": host,
+        "LANGFUSE_BASE_URL": host,
         "LANGFUSE_TRACING_ENVIRONMENT": tracing_env,
         "OTEL_EXPORTER_OTLP_ENDPOINT": otel_endpoint,
         "OTEL_EXPORTER_OTLP_HEADERS": otel_auth_header,
