@@ -6,12 +6,21 @@ import uuid
 from datetime import datetime
 
 import boto3
+from botocore.config import Config
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 AGENTCORE_QUALIFIER = "DEFAULT"
 PROCESSING_STATUS = "PROCESSING"
+
+# Important: botocore retries can re-send timed-out requests, which may create
+# duplicate AgentCore invocations. Keep attempts to 1.
+AGENTCORE_CLIENT_CONFIG = Config(
+    connect_timeout=60,
+    read_timeout=120,
+    retries={"total_max_attempts": 1, "max_attempts": 0, "mode": "standard"},
+)
 
 
 def _uuid34() -> str:
@@ -20,11 +29,24 @@ def _uuid34() -> str:
     return uuid.uuid4().hex + secrets.token_hex(1)
 
 
-def _invoke_agent_fire_and_forget(agentcore_client, agent_arn: str, payload: dict) -> None:
+def _invoke_agent_fire_and_forget(
+    agentcore_client,
+    agent_arn: str,
+    payload: dict,
+    *,
+    runtime_session_id: str | None = None,
+) -> str:
     """Invoke Bedrock AgentCore runtime without waiting for any response."""
     case_id = payload.get("caseId", "unknown")
     case_id = case_id.strip() if isinstance(case_id, str) else str(case_id)
-    runtime_session_id = f"kyc-case-{case_id}-{_uuid34()}"
+    runtime_session_id = runtime_session_id or f"kyc-case-{case_id}-{_uuid34()}"
+
+    logger.info(
+        "Invoking AgentCore runtime: caseId=%s runtimeSessionId=%s qualifier=%s",
+        case_id,
+        runtime_session_id,
+        AGENTCORE_QUALIFIER,
+    )
 
     # Invoke AgentCore (this still waits for headers, <150ms)
     boto3_response = agentcore_client.invoke_agent_runtime(
@@ -36,13 +58,16 @@ def _invoke_agent_fire_and_forget(agentcore_client, agent_arn: str, payload: dic
 
     # TRUE fire-and-forget: immediately close the streaming response
     try:
-        stream = boto3_response.get("response")
-        if stream:
-            stream.close()   # closes the socket, does NOT wait for tokens
+        response = boto3_response.get("response")
+        if response:
+            logger.info(f"Response is {response}")
+            response.close()   # closes the socket, does NOT wait for tokens
     except Exception as e:
         logger.warning("Error closing AgentCore streaming response: %s", e)
 
     # Do NOT iterate, do NOT wait, do NOT drain
+
+    return runtime_session_id
 
 
 def _parse_body(record) -> tuple[dict, str]:
@@ -148,7 +173,11 @@ def handler(event, context):
     if not agent_arn:
         raise ValueError("KYC_AGENT_ARN environment variable is required")
 
-    agentcore_client = boto3.client("bedrock-agentcore", region_name=region)
+    agentcore_client = boto3.client(
+        "bedrock-agentcore",
+        region_name=region,
+        config=AGENTCORE_CLIENT_CONFIG,
+    )
     cases_table = _get_cases_table(region)
 
     failed = 0
@@ -174,8 +203,16 @@ def handler(event, context):
                 logger.info("Skipping agent invocation for caseId=%s as it is duplicate", case_id)
                 continue
 
-            logger.info("Invoking KYC agent for caseId=%s", case_id)
-            _invoke_agent_fire_and_forget(agentcore_client, agent_arn, {"caseId": case_id})
+            message_id = record.get("messageId")
+            stable_session_id = (
+                f"kyc-case-{case_id}-{message_id}" if isinstance(message_id, str) and message_id else None
+            )
+            _invoke_agent_fire_and_forget(
+                agentcore_client,
+                agent_arn,
+                {"caseId": case_id},
+                runtime_session_id=stable_session_id,
+            )
         except Exception as e:
             try:
                 _, case_id = _parse_body(record)

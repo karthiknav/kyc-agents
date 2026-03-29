@@ -2,6 +2,8 @@ import logging
 import os
 import time
 import importlib
+import threading
+import uuid
 from contextlib import nullcontext
 
 from dotenv import load_dotenv
@@ -123,10 +125,31 @@ def _langfuse_span(name: str):
         return nullcontext()
 
 
+def _run_kyc_crew_background(*, case_id: str, job_id: str) -> None:
+    try:
+        logger.info("[job=%s] Background KYC kickoff starting (caseId=%s)", job_id, case_id)
+        ensure_model_env_from_ssm(max_age_seconds=int(os.getenv("MODEL_SSM_REFRESH_SECONDS", "300")))
+        with _langfuse_span("crewai-index-trace"):
+            result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
+            logger.info("[job=%s] Background KYC kickoff finished (caseId=%s)", job_id, case_id)
+            try:
+                logger.info("[job=%s] Result: %s", job_id, result.raw)
+            except Exception:
+                logger.info("[job=%s] Result produced (raw unavailable)", job_id)
+
+        if langfuse:
+            try:
+                langfuse.flush()
+            except Exception:
+                logger.exception("[job=%s] Langfuse flush failed; continuing", job_id)
+    except Exception:
+        logger.exception("[job=%s] Background kickoff failed (caseId=%s)", job_id, case_id)
+
+
 
 
 @app.entrypoint
-def agent_invocation(payload):
+def agent_invocation(payload, context):
     """
     Handler for KYC screening.
     Payload must include caseId. Optionally KYC_CASES_TABLE env var for DynamoDB table name.
@@ -143,21 +166,15 @@ def agent_invocation(payload):
 
         logger.info("KYC screening for caseId: %s", case_id)
 
-        # Run only the sanctions screening agent and task
-        
-        
-        with _langfuse_span("crewai-index-trace"):
-            result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
-        
-            logger.info("Result: %s", result.raw)
-            output = {"result": result.raw}
-
-        if langfuse:
-            try:
-                langfuse.flush()
-            except Exception:
-                logger.exception("Langfuse flush failed; continuing")
-        return output
+        job_id = str(uuid.uuid4())
+        thread = threading.Thread(
+            target=_run_kyc_crew_background,
+            kwargs={"case_id": case_id, "job_id": job_id},
+            name=f"kyc-kickoff-{job_id}",
+            daemon=True,
+        )
+        thread.start()
+        return {"status": "started", "caseId": case_id, "jobId": job_id}
 
     except Exception as e:
         logger.exception("Agent invocation failed")
