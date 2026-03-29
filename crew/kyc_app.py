@@ -1,6 +1,8 @@
 import logging
 import os
 import time
+import importlib
+from contextlib import nullcontext
 
 from dotenv import load_dotenv
 
@@ -11,25 +13,50 @@ logger = logging.getLogger(__name__)
 
 import boto3
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from langfuse import get_client
-from openinference.instrumentation.crewai import CrewAIInstrumentor
 
-langfuse = get_client()
-CrewAIInstrumentor().instrument(skip_dep_check=True)
-try:
-    from openinference.instrumentation.bedrock import BedrockInstrumentor
 
-    BedrockInstrumentor().instrument()
-    logger.info("OpenInference Bedrock instrumentation enabled (LLM/Converse spans for Langfuse)")
-except ImportError:
-    logger.warning(
-        "openinference-instrumentation-bedrock not installed; Bedrock LLM calls may be missing "
-        "from Langfuse. Install with: pip install openinference-instrumentation-bedrock"
-    )
+def _env_flag(name: str, default: str = "0") -> bool:
+    value = (os.getenv(name, default) or "").strip().lower()
+    return value in {"1", "true", "yes", "y", "on"}
 
-from crew.langfuse_crewai_patches import patch_crewai_structured_tool_for_langfuse
 
-patch_crewai_structured_tool_for_langfuse()
+LANGFUSE_ENABLED = _env_flag("LANGFUSE_ENABLED", "0")
+
+langfuse = None
+if LANGFUSE_ENABLED:
+    try:
+        from langfuse import get_client
+
+        langfuse = get_client()
+
+        CrewAIInstrumentor = importlib.import_module(
+            "openinference.instrumentation.crewai"
+        ).CrewAIInstrumentor
+        CrewAIInstrumentor().instrument(skip_dep_check=True)
+
+        try:
+            BedrockInstrumentor = importlib.import_module(
+                "openinference.instrumentation.bedrock"
+            ).BedrockInstrumentor
+            BedrockInstrumentor().instrument()
+            logger.info(
+                "OpenInference Bedrock instrumentation enabled (LLM/Converse spans for Langfuse)"
+            )
+        except ImportError:
+            logger.warning(
+                "openinference-instrumentation-bedrock not installed; Bedrock LLM calls may be missing "
+                "from Langfuse. Install with: pip install openinference-instrumentation-bedrock"
+            )
+
+        from crew.langfuse_crewai_patches import patch_crewai_structured_tool_for_langfuse
+
+        patch_crewai_structured_tool_for_langfuse()
+        logger.info("Langfuse enabled (LANGFUSE_ENABLED=1)")
+    except Exception:
+        logger.exception("Langfuse init failed; continuing without Langfuse")
+        langfuse = None
+else:
+    logger.info("Langfuse disabled (set LANGFUSE_ENABLED=1 to enable)")
 
 from crew.crew import KYCCrew
 
@@ -86,6 +113,16 @@ def ensure_model_env_from_ssm(*, max_age_seconds: int = 300, force: bool = False
 ensure_model_env_from_ssm(max_age_seconds=0, force=True)
 
 
+def _langfuse_span(name: str):
+    if not langfuse:
+        return nullcontext()
+    try:
+        return langfuse.start_as_current_observation(as_type="span", name=name)
+    except Exception:
+        logger.exception("Failed to start Langfuse span; continuing")
+        return nullcontext()
+
+
 
 
 @app.entrypoint
@@ -109,13 +146,17 @@ def agent_invocation(payload):
         # Run only the sanctions screening agent and task
         
         
-        with langfuse.start_as_current_observation(as_type="span", name= "crewai-index-trace-v3"):
+        with _langfuse_span("crewai-index-trace"):
             result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
         
             logger.info("Result: %s", result.raw)
             output = {"result": result.raw}
-        
-        langfuse.flush()
+
+        if langfuse:
+            try:
+                langfuse.flush()
+            except Exception:
+                logger.exception("Langfuse flush failed; continuing")
         return output
 
     except Exception as e:

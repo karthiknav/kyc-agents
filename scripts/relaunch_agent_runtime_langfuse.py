@@ -117,6 +117,7 @@ def main() -> int:
     system_prompt = os.getenv("SYSTEM_PROMPT")
 
     extra: Dict[str, str] = {
+        "LANGFUSE_ENABLED": "1",
         "LANGFUSE_PROJECT_NAME": langfuse_project_name,
         "LANGFUSE_SECRET_KEY": langfuse_secret_key,
         "LANGFUSE_PUBLIC_KEY": langfuse_public_key,

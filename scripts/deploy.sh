@@ -10,6 +10,9 @@ set -e
 
 INFRA_STACK_NAME="kyc-agent"
 REGION="${2:-us-east-1}"
+
+# Feature switch: Langfuse/OTEL integration (default off; override by exporting LANGFUSE_ENABLED=1)
+export LANGFUSE_ENABLED="${LANGFUSE_ENABLED:-0}"
 VPC_STACK="${INFRA_STACK_NAME}-vpc"
 STORAGE_STACK="${INFRA_STACK_NAME}-storage"
 ROLES_STACK="${INFRA_STACK_NAME}-roles"

@@ -41,6 +41,7 @@ Options:
 
 Environment:
   MOCK_EB_STACK                  Mock service EB stack name (default: kyc-mock-service-eb)
+  LANGFUSE_ENABLED                If truthy (1/true/yes/on), apply Langfuse/OTEL runtime env update
   SKIP_LANGFUSE_RUNTIME_UPDATE   Set to 1 to skip runtime env update
   LOG_SSM_PARAMETER_VALUES       (Only affects agent runtime logs) See crew/kyc_app.py
 EOF
@@ -157,6 +158,13 @@ fi
 
 export INFRA_STACK_NAME AWS_DEFAULT_REGION="$REGION"
 
+is_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|True|yes|YES|Yes|y|Y|on|ON|On) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 have_deploy_deps () {
   "$1" -c "import boto3; import bedrock_agentcore_starter_toolkit" >/dev/null 2>&1
 }
@@ -181,7 +189,8 @@ else
 fi
 
 # Apply Langfuse + OTEL env from SSM right after AgentCore stack deploy (UpdateAgentRuntime).
-if [[ -z "${SKIP_LANGFUSE_RUNTIME_UPDATE:-}" && -n "$KYC_AGENT_ARN" && "$KYC_AGENT_ARN" != "None" ]]; then
+# Only do this when LANGFUSE_ENABLED is truthy.
+if is_truthy "${LANGFUSE_ENABLED:-0}" && [[ -z "${SKIP_LANGFUSE_RUNTIME_UPDATE:-}" && -n "$KYC_AGENT_ARN" && "$KYC_AGENT_ARN" != "None" ]]; then
   log ""
   log "Applying Langfuse / OTEL environment to agent runtime..."
   "$PYTHON" "$SCRIPT_DIR/relaunch_agent_runtime_langfuse.py" \

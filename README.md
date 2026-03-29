@@ -185,6 +185,13 @@ chmod +x *.sh
 ./deploy.sh
 ```
 
+To enable Langfuse/OTEL integration during deploy (and apply the runtime env update), run:
+
+```bash
+export LANGFUSE_ENABLED=1
+./deploy.sh
+```
+
 Notes:
 - Requires `aws` CLI configured with credentials/permissions to deploy CloudFormation and related resources.
 - If you prefer not to `chmod`, you can run: `bash deploy-base.sh` and `bash deploy.sh`.
