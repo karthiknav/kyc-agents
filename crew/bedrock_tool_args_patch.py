@@ -1,180 +1,134 @@
 """
-Monkey-patches for CrewAI + AWS Bedrock native provider (Converse API).
+Monkey-patch for CrewAI + Bedrock: ensure tool arguments are taken from Bedrock's 'input' field.
 
-1) Tool-call arguments: Bedrock sends tool_use["input"] (dict). CrewAI may read
-   func_info["arguments"] first; the default "{}" is truthy and blocks "input".
-   We coerce dict input and parse JSON strings when needed.
+Why:
+Some CrewAI versions parse tool args from tool_call["function"]["arguments"] and accidentally
+default that to a truthy string like " {}", which prevents falling back to tool_call["input"].
+Bedrock Converse tool calls commonly return:
+  {"name": "...", "input": {...}, "toolUseId": "..."}
+so input must be used.
 
-2) Empty assistant messages: Bedrock sometimes returns output.message.content=[] —
-   especially on the *recursive* Converse call right after a toolResult (nested
-   _handle_converse). An earlier retry patch only ran at TLS depth 1, so those
-   empty replies never got a nudge. We retry with a user nudge at any depth.
+This patch targets the current CrewAI path:
+  crewai.utilities.agent_utils.parse_tool_call_args
+(which is imported and used by CrewAgentExecutor). [1](https://github.com/arunahk/CrewAI/blob/main/lib/crewai/src/crewai/agents/crew_agent_executor.py)[2](https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/utilities/agent_utils.py)
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
-from typing import Any
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
-
-_BEDROCK_HANDLE_CONVERS_ORIGINAL = None
-
-_EMPTY_RESPONSE_APOLOGY = (
-    "I apologize, but I received an empty response. Please try again."
-)
-
-_NUDGE_MESSAGE = (
-    "Your last model turn had no output (empty content from Bedrock). "
-    "Continue now: Thought + Action + Action Input (JSON only), or Thought + Final Answer "
-    "with the required JSON. Do not reply with empty content."
-)
-
-_NUDGE_MESSAGE_SHORT = (
-    "Empty assistant message again. Reply immediately with your next Thought/Action or Final Answer."
-)
+logger.setLevel(logging.INFO)
 
 
-def _coerce_tool_args_from_dict(tool_call: dict) -> dict:
-    """Prefer Bedrock Converse ``input`` dict; fall back to OpenAI-style ``function.arguments``."""
-    inp = tool_call.get("input")
-    if isinstance(inp, dict):
-        return inp
+def _maybe_json_loads(v: Any) -> Any:
+    """Parse JSON string into dict if applicable; otherwise return as-is."""
+    if isinstance(v, str):
+        s = v.strip()
+        if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
+            try:
+                return json.loads(s)
+            except Exception:
+                return v
+    return v
 
-    func_info = tool_call.get("function") or {}
-    raw = func_info.get("arguments")
-    if raw is None or raw == "":
+
+def _bedrock_args_from_tool_call(tool_call: Any) -> Dict[str, Any]:
+    """
+    Extract args dict from various tool_call shapes, prioritizing Bedrock 'input'.
+    """
+    # Bedrock dict shape: {"name": "...", "input": {...}, "toolUseId": "..."}
+    if isinstance(tool_call, dict):
+        if isinstance(tool_call.get("input"), dict):
+            return tool_call["input"]
+
+        # OpenAI-like dict shape: {"function": {"arguments": "..."}}
+        func = tool_call.get("function")
+        if isinstance(func, dict):
+            args = func.get("arguments")
+            args = _maybe_json_loads(args)
+            if isinstance(args, dict):
+                return args
+
         return {}
-    if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, str):
-        s = raw.strip()
-        if not s or s == "{}":
-            return {}
-        try:
-            parsed = json.loads(s)
-            return parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            return {}
+
+    # Bedrock object shape: tool_call.input
+    if hasattr(tool_call, "input"):
+        inp = getattr(tool_call, "input", None)
+        if isinstance(inp, dict):
+            return inp
+
+    # OpenAI object shape: tool_call.function.arguments
+    if hasattr(tool_call, "function") and getattr(tool_call, "function") is not None:
+        fn = tool_call.function
+        args = getattr(fn, "arguments", None)
+        args = _maybe_json_loads(args)
+        if isinstance(args, dict):
+            return args
+
     return {}
 
 
-def _parse_native_tool_call_bedrock_fixed(self, tool_call: Any):
-    """Patched _parse_native_tool_call that correctly reads Bedrock's 'input' field."""
-    from crewai.utilities.string_utils import sanitize_tool_name
-
-    if hasattr(tool_call, "function"):
-        call_id = getattr(tool_call, "id", f"call_{id(tool_call)}")
-        func_name = sanitize_tool_name(tool_call.function.name)
-        return call_id, func_name, tool_call.function.arguments
-    if hasattr(tool_call, "function_call") and tool_call.function_call:
-        call_id = f"call_{id(tool_call)}"
-        func_name = sanitize_tool_name(tool_call.function_call.name)
-        func_args = (
-            dict(tool_call.function_call.args)
-            if tool_call.function_call.args
-            else {}
-        )
-        return call_id, func_name, func_args
-    if hasattr(tool_call, "name") and hasattr(tool_call, "input"):
-        call_id = getattr(tool_call, "id", f"call_{id(tool_call)}")
-        func_name = sanitize_tool_name(tool_call.name)
-        return call_id, func_name, tool_call.input
-    if isinstance(tool_call, dict):
-        call_id = (
-            tool_call.get("id")
-            or tool_call.get("toolUseId")
-            or f"call_{id(tool_call)}"
-        )
-        func_info = tool_call.get("function") or {}
-        func_name = sanitize_tool_name(
-            func_info.get("name", "") or tool_call.get("name", "")
-        )
-        func_args = _coerce_tool_args_from_dict(tool_call)
-        return call_id, func_name, func_args
-    return None
-
-
 def apply_bedrock_tool_args_patch() -> None:
-    """Apply monkey-patch so Bedrock tool calls receive correct arguments."""
-    from crewai.agents import crew_agent_executor
-
-    crew_agent_executor.CrewAgentExecutor._parse_native_tool_call = (
-        _parse_native_tool_call_bedrock_fixed
-    )
-
-
-def _handle_converse_with_empty_retry(
-    self,
-    messages,
-    body,
-    available_functions=None,
-    from_task=None,
-    from_agent=None,
-):
     """
-    Wrap BedrockCompletion._handle_converse.
-
-    When Converse returns no content blocks, CrewAI returns the apology string.
-    That happens often on the *inner* call after toolResult (recursion), where a
-    depth==1-only retry never runs. We nudge and retry at any call depth.
+    Patch crewai.utilities.agent_utils.parse_tool_call_args so Bedrock tool calls
+    pass real arguments (from tool_call['input']) instead of {}.
     """
-    global _BEDROCK_HANDLE_CONVERS_ORIGINAL
-    assert _BEDROCK_HANDLE_CONVERS_ORIGINAL is not None
+    from crewai.utilities import agent_utils
 
-    try:
-        max_nudges = int(os.getenv("KYC_BEDROCK_EMPTY_RESPONSE_MAX_RETRIES", "4"))
-    except ValueError:
-        max_nudges = 4
-    max_nudges = max(1, min(max_nudges, 8))
-
-    # Pass the same list through on the first call — CrewAI appends tool turns in place
-    # and recurses; copying here would break that chain.
-    result = _BEDROCK_HANDLE_CONVERS_ORIGINAL(
-        self,
-        messages,
-        body,
-        available_functions,
-        from_task,
-        from_agent,
-    )
-    if result != _EMPTY_RESPONSE_APOLOGY:
-        return result
-
-    logger.warning(
-        "Bedrock returned empty message.content (after tool or mid-turn). "
-        "Sending up to %s continuation nudge(s). You may also see "
-        "WARNING:root:No content in Bedrock response from CrewAI.",
-        max_nudges,
-    )
-
-    msgs = list(messages)
-    for attempt in range(1, max_nudges + 1):
-        nudge = _NUDGE_MESSAGE if attempt == 1 else _NUDGE_MESSAGE_SHORT
-        logger.warning("Empty Bedrock response: continuation nudge %s/%s", attempt, max_nudges)
-        msgs.append({"role": "user", "content": [{"text": nudge}]})
-        result = _BEDROCK_HANDLE_CONVERS_ORIGINAL(
-            self,
-            msgs,
-            body,
-            available_functions,
-            from_task,
-            from_agent,
-        )
-        if result != _EMPTY_RESPONSE_APOLOGY:
-            return result
-
-    return result
-
-
-def apply_bedrock_empty_response_retry_patch() -> None:
-    """Patch Bedrock Converse to nudge/retry when the model returns empty content."""
-    global _BEDROCK_HANDLE_CONVERS_ORIGINAL
-    from crewai.llms.providers.bedrock.completion import BedrockCompletion
-
-    if getattr(BedrockCompletion._handle_converse, "__name__", "") == "_handle_converse_with_empty_retry":
+    if getattr(agent_utils, "__bedrock_tool_args_patch_applied__", False):
+        logger.info("✅ Bedrock tool args patch already applied")
         return
-    _BEDROCK_HANDLE_CONVERS_ORIGINAL = BedrockCompletion._handle_converse
-    BedrockCompletion._handle_converse = _handle_converse_with_empty_retry
+
+    if not hasattr(agent_utils, "parse_tool_call_args"):
+        logger.warning("❌ parse_tool_call_args not found in crewai.utilities.agent_utils; patch not applied")
+        return
+
+    original = agent_utils.parse_tool_call_args
+
+    def patched_parse_tool_call_args(tool_call: Any, *args, **kwargs):
+        # First, try original CrewAI behavior
+        try:
+            out = original(tool_call, *args, **kwargs)
+        except TypeError:
+            # Some versions may have different signature; call with tool_call only
+            out = original(tool_call)
+
+        # If CrewAI returned empty (common bug case), fall back to Bedrock input
+        if not out or (isinstance(out, dict) and len(out) == 0):
+            fallback = _bedrock_args_from_tool_call(tool_call)
+            if fallback:
+                logger.info("✅ Tool args recovered from Bedrock tool_call['input']")
+                return fallback
+
+        # Also handle the "truthy string {}" scenario
+        if isinstance(out, str):
+            parsed = _maybe_json_loads(out)
+            if isinstance(parsed, dict) and parsed:
+                return parsed
+            if out.strip() in ("{}", "{ }", "[]"):
+                fallback = _bedrock_args_from_tool_call(tool_call)
+                if fallback:
+                    logger.info("✅ Tool args recovered from Bedrock tool_call['input'] (string default case)")
+                    return fallback
+
+        return out
+
+    # Apply patch
+    agent_utils.__bedrock_tool_args_patch_original__ = original
+    agent_utils.parse_tool_call_args = patched_parse_tool_call_args
+    agent_utils.__bedrock_tool_args_patch_applied__ = True
+
+    logger.info("✅ Patched crewai.utilities.agent_utils.parse_tool_call_args")
+
+    # If CrewAgentExecutor already imported parse_tool_call_args directly, patch that reference too.
+    try:
+        from crewai.agents import crew_agent_executor as cae
+        if hasattr(cae, "parse_tool_call_args"):
+            cae.parse_tool_call_args = patched_parse_tool_call_args
+            logger.info("✅ Patched crewai.agents.crew_agent_executor.parse_tool_call_args reference")
+    except Exception:
+        # Not fatal; module may not be loaded yet.
+        pass

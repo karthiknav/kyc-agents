@@ -14,16 +14,14 @@ logger = logging.getLogger(__name__)
 # Slim tool observations: apply_slim_tool_observations_patch() removes CrewAI's periodic full tool-list
 # append after every 3rd tool (huge context). Set KYC_CREWAI_TOOL_FORMAT_REMINDERS=1 to restore default.
 from crew.bedrock_tool_args_patch import (
-    apply_bedrock_empty_response_retry_patch,
     apply_bedrock_tool_args_patch,
 )
 from crew.crewai_tool_observation_patch import apply_slim_tool_observations_patch
+from crew.bedrock_stop_sequences_patch import apply_bedrock_stop_sequences_patch
+apply_bedrock_stop_sequences_patch()
 
 apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
-_retry = os.getenv("KYC_BEDROCK_EMPTY_RESPONSE_RETRY", "1").strip().lower()
-if _retry not in ("0", "false", "no", "off"):
-    apply_bedrock_empty_response_retry_patch()
 
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
@@ -60,7 +58,9 @@ class KYCCrew():
     # emit long ReAct steps or final JSON after large tool observations.
     llm = LLM(
         model=_resolved_model,
-        use_conversational_api=False,
+        drop_params=True,
+        additional_drop_params=["stopSequences", "stop", "stop_sequences"]
+
     )
 
     # ------------------------------------------------------------------

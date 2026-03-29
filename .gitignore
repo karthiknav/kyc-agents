@@ -20,3 +20,6 @@ __pycache__/
 
 # Langfuse vendored Helm chart: subchart packages are fetched by `helm dependency build` or Terraform (see charts/README.txt)
 langfuse/charts/langfuse/charts/*.tgz
+
+# mock-service build artifacts
+mock-service/deploy.zip

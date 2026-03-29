@@ -111,7 +111,9 @@ class CompareIdentityDocumentsTool(BaseTool):
             len(govt_text) if govt_text else 0,
         )
         # Bedrock model: use inference profile ID (no "bedrock/" prefix for boto3)
-        model_id = os.getenv("MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+        region = os.getenv("AWS_REGION_NAME") or os.getenv("AWS_REGION") or "us-east-1"
+        model_id = (os.getenv("MODEL") or "us.anthropic.claude-3-5-sonnet-20241022-v2:0").strip()
+        model_id = model_id.replace("bedrock/", "")
         prompt = f"""You are a KYC (Know Your Customer) document verification specialist.
 Compare identity fields across THREE sources:
 1. The database record (what the applicant submitted)
@@ -145,7 +147,8 @@ Example:
 Your response (JSON only, no markdown):"""
 
         try:
-            client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION_NAME", "us-east-1"))
+            logger.info("Bedrock invoke: tool=%s modelId=%s region=%s", self.name, model_id, region)
+            client = boto3.client("bedrock-runtime", region_name=region)
             response = client.converse(
                 modelId=model_id,
                 messages=[{"role": "user", "content": [{"text": prompt}]}],
