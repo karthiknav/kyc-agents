@@ -24,7 +24,7 @@ Parameters:
 
   KycLambdaTimeout:
     Type: Number
-    Default: 600
+    Default: 120
     Description: Lambda timeout in seconds
     MinValue: 10
     MaxValue: 900

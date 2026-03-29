@@ -15,7 +15,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-kyc-initiated"
-      VisibilityTimeout: 120
+      VisibilityTimeout: 180
       MessageRetentionPeriod: 345600
       Tags:
         - Key: Name
