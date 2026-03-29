@@ -109,6 +109,12 @@ def _mark_case_processing_or_skip(table, case_id: str) -> bool:
         response = table.get_item(Key={"CaseId": case_id})
         item = response.get("Item") or {}
         current_status = item.get("status")
+        logger.info(
+            "Current case status read from DynamoDB: caseId=%s status=%s item_found=%s",
+            case_id,
+            current_status,
+            bool(item),
+        )
         if isinstance(current_status, str) and current_status.strip().upper() == PROCESSING_STATUS:
             logger.info("Skipping caseId=%s because status is already %s", case_id, PROCESSING_STATUS)
             return False
@@ -165,6 +171,7 @@ def handler(event, context):
                 failed += 1
                 continue
             if not _mark_case_processing_or_skip(cases_table, case_id):
+                logger.info("Skipping agent invocation for caseId=%s as it is duplicate", case_id)
                 continue
 
             logger.info("Invoking KYC agent for caseId=%s", case_id)
