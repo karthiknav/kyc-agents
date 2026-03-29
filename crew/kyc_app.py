@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 from dotenv import load_dotenv
 
@@ -55,12 +56,34 @@ def get_ssm_parameter(name: str, with_decryption: bool = True, *, ssm_client=Non
     return value
 
 
-logger.info("Setting up environment variables from SSM Parameter Store...")
-try:
-    os.environ["MODEL"] = get_ssm_parameter("/kyc-agent/model-id")
-    logger.info("✅ MODEL environment variable set")
-except Exception as e:
-    logger.error(f"❌ Failed to set MODEL Id from SSM: {e}")
+_MODEL_SSM_PARAM_NAME = "/kyc-agent/model-id"
+_MODEL_LAST_REFRESH_EPOCH = 0.0
+
+
+def ensure_model_env_from_ssm(*, max_age_seconds: int = 300, force: bool = False) -> None:
+    """Ensure os.environ['MODEL'] is populated from SSM.
+
+    AgentCore runtimes are long-lived; if you change the SSM parameter, the process
+    won't pick it up unless we refresh. This helper refreshes with a TTL to avoid
+    calling SSM on every request.
+    """
+    global _MODEL_LAST_REFRESH_EPOCH
+
+    now = time.time()
+    if not force and (now - _MODEL_LAST_REFRESH_EPOCH) < max_age_seconds and os.environ.get("MODEL"):
+        return
+
+    logger.info("Refreshing MODEL from SSM Parameter Store (param=%s)...", _MODEL_SSM_PARAM_NAME)
+    try:
+        os.environ["MODEL"] = get_ssm_parameter(_MODEL_SSM_PARAM_NAME)
+        _MODEL_LAST_REFRESH_EPOCH = now
+        logger.info("✅ MODEL environment variable set to: %s", os.environ.get("MODEL"))
+    except Exception as e:
+        logger.error("❌ Failed to set MODEL Id from SSM: %s", e)
+
+
+# Initial best-effort set at startup (cold start)
+ensure_model_env_from_ssm(max_age_seconds=0, force=True)
 
 
 
@@ -73,6 +96,9 @@ def agent_invocation(payload):
     Returns JSON with name, analysis_result, analysis_summary.
     """
     try:
+        # Refresh MODEL periodically so SSM changes take effect without a restart
+        ensure_model_env_from_ssm(max_age_seconds=int(os.getenv("MODEL_SSM_REFRESH_SECONDS", "300")))
+
         case_id = payload.get("caseId", "").strip()
         if not case_id:
             logger.warning("No caseId provided in payload")

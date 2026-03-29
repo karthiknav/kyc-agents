@@ -82,9 +82,14 @@ Search payload:
 Your response (JSON only, no markdown):"""
 
         try:
-            client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION_NAME", "us-east-1"))
+            region = os.getenv("AWS_REGION_NAME") or os.getenv("AWS_REGION") or "us-east-1"
+            model_id = (os.getenv("MODEL") or "us.anthropic.claude-3-5-sonnet-20241022-v2:0").strip()
+            model_id = model_id.replace("bedrock/", "")
+            logger.info("Adverse media analysis Bedrock modelId=%s region=%s", model_id, region)
+
+            client = boto3.client("bedrock-runtime", region_name=region)
             response = client.converse(
-                modelId=os.getenv("MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0").replace("bedrock/", ""),
+                modelId=model_id,
                 messages=[{"role": "user", "content": [{"text": prompt}]}],
                 inferenceConfig={"maxTokens": 1024, "temperature": 0.0},
             )
