@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime
 
 import boto3
-from botocore.config import Config
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -87,21 +86,6 @@ def _utc_now_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
-def _agentcore_boto_client(region: str):
-    """Bedrock AgentCore client with timeouts tuned for slow first-byte / cold starts."""
-    read_timeout = int(os.environ.get("KYC_AGENTCORE_READ_TIMEOUT", "300"))
-    connect_timeout = int(os.environ.get("KYC_AGENTCORE_CONNECT_TIMEOUT", "10"))
-    return boto3.client(
-        "bedrock-agentcore",
-        region_name=region,
-        config=Config(
-            connect_timeout=connect_timeout,
-            read_timeout=read_timeout,
-            retries={"max_attempts": 2, "mode": "standard"},
-        ),
-    )
-
-
 def _get_cases_table(region: str):
     table_name = os.environ.get("KYC_CASES_TABLE")
     if not table_name:
@@ -158,7 +142,7 @@ def handler(event, context):
     if not agent_arn:
         raise ValueError("KYC_AGENT_ARN environment variable is required")
 
-    agentcore_client = _agentcore_boto_client(region)
+    agentcore_client = boto3.client("bedrock-agentcore", region_name=region)
     cases_table = _get_cases_table(region)
 
     failed = 0
