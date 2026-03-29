@@ -14,6 +14,66 @@ logger.setLevel(logging.INFO)
 AGENTCORE_QUALIFIER = "DEFAULT"
 PROCESSING_STATUS = "PROCESSING"
 
+
+def _drain_agentcore_response(boto3_response: dict, *, max_bytes: int) -> tuple[str, bool]:
+    """Drain up to max_bytes from the AgentCore invoke response.
+
+    Returns (decoded_text, truncated).
+    """
+    response = boto3_response.get("response")
+    if not response:
+        return "", False
+
+    if max_bytes <= 0:
+        return "", True
+
+    content_type = str(boto3_response.get("contentType") or "")
+
+    collected = 0
+    truncated = False
+    chunks: list[bytes] = []
+
+    try:
+        if "text/event-stream" in content_type:
+            # SSE: capture line-by-line (still streaming bytes).
+            for line in response.iter_lines(chunk_size=1024):
+                if not line:
+                    continue
+                line_bytes = line.encode("utf-8", errors="replace") if isinstance(line, str) else line
+                addition = line_bytes + b"\n"
+                remaining = max_bytes - collected
+                if remaining <= 0:
+                    truncated = True
+                    break
+                if len(addition) > remaining:
+                    chunks.append(addition[:remaining])
+                    collected += remaining
+                    truncated = True
+                    break
+                chunks.append(addition)
+                collected += len(addition)
+        else:
+            # Non-SSE: drain chunks.
+            for chunk in response.iter_chunks(chunk_size=8192):
+                if not chunk:
+                    continue
+                remaining = max_bytes - collected
+                if remaining <= 0:
+                    truncated = True
+                    break
+                if len(chunk) > remaining:
+                    chunks.append(chunk[:remaining])
+                    collected += remaining
+                    truncated = True
+                    break
+                chunks.append(chunk)
+                collected += len(chunk)
+    except Exception as e:
+        logger.warning("Error draining AgentCore response body: %s", e)
+
+    data = b"".join(chunks)
+    return data.decode("utf-8", errors="replace"), truncated
+
 # Important: botocore retries can re-send timed-out requests, which may create
 # duplicate AgentCore invocations. Keep attempts to 1.
 AGENTCORE_CLIENT_CONFIG = Config(
@@ -56,16 +116,35 @@ def _invoke_agent_fire_and_forget(
         payload=json.dumps(payload),
     )
 
-    # TRUE fire-and-forget: immediately close the streaming response
+    # Drain and log the response body (this WILL wait for tokens).
     try:
         response = boto3_response.get("response")
+        content_type = str(boto3_response.get("contentType") or "")
+
         if response:
-            logger.info(f"Response is {response}")
-            response.close()   # closes the socket, does NOT wait for tokens
+            max_bytes = int(os.environ.get("AGENTCORE_MAX_RESPONSE_BYTES", "20000"))
+            text, truncated = _drain_agentcore_response(boto3_response, max_bytes=max_bytes)
+            # If it's JSON, log a compact representation.
+            try:
+                text = json.dumps(json.loads(text), ensure_ascii=False)
+            except Exception:
+                pass
+            logger.info(
+                "AgentCore response body (contentType=%s truncated=%s maxBytes=%s): %s",
+                content_type,
+                truncated,
+                max_bytes,
+                text,
+            )
     except Exception as e:
         logger.warning("Error closing AgentCore streaming response: %s", e)
-
-    # Do NOT iterate, do NOT wait, do NOT drain
+    finally:
+        try:
+            response = boto3_response.get("response")
+            if response:
+                response.close()
+        except Exception:
+            pass
 
     return runtime_session_id
 
