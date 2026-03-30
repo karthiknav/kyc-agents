@@ -7,6 +7,13 @@ import os
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_bedrock_model_from_env(*, default_model: str) -> str:
+    model_env = (os.getenv("MODEL") or "").strip()
+    if not model_env:
+        return default_model
+    return model_env if model_env.startswith("bedrock/") else f"bedrock/{model_env}"
+
 # Monkey-patch CrewAI native Bedrock: correct tool-call arg parsing (input vs arguments).
 # Empty-response retry: on by default (Bedrock Converse sometimes returns message.content=[]).
 # Disable with KYC_BEDROCK_EMPTY_RESPONSE_RETRY=0 if you need a stable message list for debugging.
@@ -46,22 +53,36 @@ class KYCCrew():
     # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
 
     _default_bedrock_model = "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-    _model_env = (os.getenv("MODEL") or "").strip()
-    logger.info("MODEL env (MODEL) resolved to: %r", _model_env)
-    _resolved_model = (
-        _default_bedrock_model
-        if not _model_env
-        else (_model_env if _model_env.startswith("bedrock/") else f"bedrock/{_model_env}")
-    )
 
-    # Generous max_tokens reduces empty completions from Bedrock when the agent must
-    # emit long ReAct steps or final JSON after large tool observations.
-    llm = LLM(
-        model=_resolved_model,
-        drop_params=True,
-        additional_drop_params=["stopSequences", "stop", "stop_sequences"]
+    @property
+    def llm(self) -> LLM:
+        """Create (and refresh) the LLM using the current MODEL env var.
 
-    )
+        NOTE: AgentCore runtimes are long-lived; `crew/kyc_app.py` refreshes
+        `os.environ['MODEL']` from SSM between invocations. We must therefore
+        resolve the model at runtime (not import time).
+        """
+
+        resolved_model = _resolve_bedrock_model_from_env(
+            default_model=self._default_bedrock_model
+        )
+
+        previous_model = getattr(self, "_llm_model", None)
+        llm_instance = getattr(self, "_llm_instance", None)
+        if llm_instance is None or previous_model != resolved_model:
+            logger.info(
+                "Using Bedrock model: %s (MODEL env=%r)",
+                resolved_model,
+                (os.getenv("MODEL") or "").strip(),
+            )
+            self._llm_model = resolved_model
+            self._llm_instance = LLM(
+                model=resolved_model,
+                drop_params=True,
+                additional_drop_params=["stopSequences", "stop", "stop_sequences"],
+            )
+
+        return self._llm_instance
 
     # ------------------------------------------------------------------
     # Document Processing Agent
