@@ -52,10 +52,9 @@ class KYCCrew():
     # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
     # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
 
-    _default_bedrock_model = "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    _default_bedrock_model = "bedrock/google.gemma-3-12b-it"
 
-    @property
-    def llm(self) -> LLM:
+    def get_llm(self) -> LLM:
         """Create (and refresh) the LLM using the current MODEL env var.
 
         NOTE: AgentCore runtimes are long-lived; `crew/kyc_app.py` refreshes
@@ -67,20 +66,18 @@ class KYCCrew():
             default_model=self._default_bedrock_model
         )
 
-        previous_model = getattr(self, "_llm_model", None)
-        llm_instance = getattr(self, "_llm_instance", None)
-        if llm_instance is None or previous_model != resolved_model:
-            logger.info(
+        logger.info(
                 "Using Bedrock model: %s (MODEL env=%r)",
                 resolved_model,
                 (os.getenv("MODEL") or "").strip(),
             )
-            self._llm_model = resolved_model
-            self._llm_instance = LLM(
+        self._llm_model = resolved_model
+        self._llm_instance = LLM(
                 model=resolved_model,
                 drop_params=True,
                 additional_drop_params=["stopSequences", "stop", "stop_sequences"],
             )
+            
 
         return self._llm_instance
 
@@ -100,7 +97,7 @@ class KYCCrew():
                 VerifyIdentityDocumentTool(),
                 CompareIdentityDocumentsTool(),
             ],
-            llm=self.llm,
+            llm=self.get_llm(),
         )
 
     # ------------------------------------------------------------------
@@ -116,7 +113,7 @@ class KYCCrew():
                 GetCaseDetailsTool(),
                 RiskListScreeningTool(),
             ],
-            llm=self.llm,
+            llm=self.get_llm(),
         )
 
     # ------------------------------------------------------------------
@@ -133,7 +130,7 @@ class KYCCrew():
                 SearchTool(),
                 AdverseMediaAnalysisTool(),
             ],
-            llm=self.llm,
+            llm=self.get_llm(),
         )
 
     # ------------------------------------------------------------------
@@ -149,7 +146,7 @@ class KYCCrew():
                 GetCaseDetailsTool(),
                 EscalateToHumanTool(),
             ],
-            llm=self.llm,
+            llm=self.get_llm(),
         )
 
     # ------------------------------------------------------------------
