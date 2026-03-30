@@ -52,7 +52,7 @@ class KYCCrew():
     # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
     # Models without tool use (e.g. Titan, Claude 2.x, Mistral Instruct) will fail when agents use tools.
 
-    _default_bedrock_model = "bedrock/google.gemma-3-12b-it"
+    _default_bedrock_model = "bedrock/gpt-oss-120b"
 
     def get_llm(self) -> LLM:
         """Create (and refresh) the LLM using the current MODEL env var.
