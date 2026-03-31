@@ -255,13 +255,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         <div className="ar-text">
                                             {selectedSubmission.stages?.orchestrator?.recommendation_summary || 'No findings available'}
                                         </div>
-                                        {selectedSubmission.stages?.orchestrator?.reason && (
-                                            <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
-                                                {selectedSubmission.stages.orchestrator.reason.map((r: string, i: number) => (
-                                                    <li key={i}>{r}</li>
-                                                ))}
-                                            </ul>
-                                        )}
+                                        {Array.isArray(selectedSubmission.stages?.orchestrator?.reason) && (
+                                        <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
+                                        {selectedSubmission.stages!.orchestrator!.reason.map((r: string, i: number) => (
+                                         <li key={i}>{r}</li>
+                                            ))}
+                                        </ul>
+                                       )}
                                     </div>
 
                                     {selectedSubmission.stages?.documentProcessing && (
