@@ -1,0 +1,78 @@
+{
+  "name": "kyc-identity-verification",
+  "description": "Golden dataset for identity verification agent evaluation. Tests comparison_result accuracy across match, mismatch, and partial match scenarios.",
+  "items": [
+    {
+      "id": "id-clean-match",
+      "input": {
+        "case_details": {"caseId": "TEST-ID-001", "identity": {"fullName": "Jan de Vries", "dateOfBirth": "1985-03-15", "nationality": "Netherlands", "passportNumber": "NL123456789"}},
+        "extracted_documents": [{"full_text": "PASPOORT\nNaam: Jan de Vries\nGeboortedatum: 15-03-1985\nNationaliteit: Nederlandse\nDocumentnummer: NL123456789\nGeldig tot: 10-01-2030"}],
+        "government_verification_results": [{"burgerservicenummer": "123456789", "naam": {"volledigeNaam": "Jan de Vries"}, "geboorte": {"datum": "1985-03-15"}, "document": {"nummer": "NL123456789"}, "status": "VERIFIED"}]
+      },
+      "expected_output": {
+        "comparison_result": "MATCH",
+        "discrepancies": []
+      }
+    },
+    {
+      "id": "id-name-mismatch",
+      "input": {
+        "case_details": {"caseId": "TEST-ID-002", "identity": {"fullName": "Maria Jansen", "dateOfBirth": "1990-07-22", "nationality": "Netherlands", "passportNumber": "NL987654321"}},
+        "extracted_documents": [{"full_text": "PASPOORT\nNaam: Maria Bakker\nGeboortedatum: 22-07-1990\nDocumentnummer: NL987654321"}],
+        "government_verification_results": [{"burgerservicenummer": "987654321", "naam": {"volledigeNaam": "Maria Bakker"}, "geboorte": {"datum": "1990-07-22"}, "document": {"nummer": "NL987654321"}, "status": "VERIFIED"}]
+      },
+      "expected_output": {
+        "comparison_result": "MISMATCH",
+        "discrepancies": ["name differs: DB=Maria Jansen, BRP=Maria Bakker"]
+      }
+    },
+    {
+      "id": "id-dob-format-swap",
+      "input": {
+        "case_details": {"caseId": "TEST-ID-003", "identity": {"fullName": "Pieter Smit", "dateOfBirth": "1985-03-15", "nationality": "Netherlands", "passportNumber": "NL444555666"}},
+        "extracted_documents": [{"full_text": "PASPOORT\nNaam: Pieter Smit\nGeboortedatum: 15-03-1985\nDocumentnummer: NL444555666"}],
+        "government_verification_results": [{"burgerservicenummer": "444555666", "naam": {"volledigeNaam": "Pieter Smit"}, "geboorte": {"datum": "1985-15-03"}, "document": {"nummer": "NL444555666"}, "status": "VERIFIED"}]
+      },
+      "expected_output": {
+        "comparison_result": "PARTIAL_MATCH",
+        "discrepancies": ["date of birth format inconsistency between sources"]
+      }
+    },
+    {
+      "id": "id-missing-nationality",
+      "input": {
+        "case_details": {"caseId": "TEST-ID-004", "identity": {"fullName": "Anna Visser", "dateOfBirth": "1992-11-08", "nationality": "Netherlands", "passportNumber": "NL777888999"}},
+        "extracted_documents": [{"full_text": "PASPOORT\nNaam: Anna Visser\nGeboortedatum: 08-11-1992\nDocumentnummer: NL777888999"}],
+        "government_verification_results": [{"burgerservicenummer": "777888999", "naam": {"volledigeNaam": "Anna Visser"}, "geboorte": {"datum": "1992-11-08"}, "document": {"nummer": "NL777888999"}, "status": "VERIFIED"}]
+      },
+      "expected_output": {
+        "comparison_result": "PARTIAL_MATCH",
+        "discrepancies": ["nationality not found in OCR extraction"]
+      }
+    },
+    {
+      "id": "id-expired-document",
+      "input": {
+        "case_details": {"caseId": "TEST-ID-005", "identity": {"fullName": "Kees de Jong", "dateOfBirth": "1975-06-20", "nationality": "Netherlands", "passportNumber": "NL333222111"}},
+        "extracted_documents": [{"full_text": "PASPOORT\nNaam: Kees de Jong\nGeboortedatum: 20-06-1975\nDocumentnummer: NL333222111\nGeldig tot: 01-01-2024"}],
+        "government_verification_results": [{"burgerservicenummer": "333222111", "naam": {"volledigeNaam": "Kees de Jong"}, "geboorte": {"datum": "1975-06-20"}, "document": {"nummer": "NL333222111", "datumEindeGeldigheid": "2024-01-01"}, "status": "VERIFIED"}]
+      },
+      "expected_output": {
+        "comparison_result": "PARTIAL_MATCH",
+        "discrepancies": ["document has expired (datumEindeGeldigheid: 2024-01-01)"]
+      }
+    },
+    {
+      "id": "id-empty-sources",
+      "input": {
+        "case_details": {"caseId": "TEST-ID-006", "identity": {"fullName": "Unknown Person", "dateOfBirth": "2000-01-01", "nationality": "Netherlands", "passportNumber": "NL000000000"}},
+        "extracted_documents": [{"full_text": ""}],
+        "government_verification_results": []
+      },
+      "expected_output": {
+        "comparison_result": "MISMATCH",
+        "discrepancies": ["insufficient data from document extraction and government verification"]
+      }
+    }
+  ]
+}

@@ -40,11 +40,24 @@ export interface ScreeningStage {
     summary?: string;
 }
 
+export interface IncomeVerificationStage extends BaseStage {
+    incomeSource?: string;
+    monthlyIncomeEur?: number;
+    nameMatch?: boolean;
+    riskIndicators?: string[];
+    requiresAdditionalDocuments?: boolean;
+    additionalDocumentsNeeded?: Array<{ document_type: string; reason: string }>;
+}
+
 export interface OrchestratorStage {
     status: string;
     decision: string;
     reason: string[];
     recommendation_summary: string;
+    risk_classification?: string;
+    risk_score?: number;
+    risk_score_breakdown?: string[];
+    additional_documents_needed?: Array<{ document_type: string; reason: string }>;
     decidedAt: string;
     // Legacy support
     updatedAt?: string;
@@ -67,7 +80,8 @@ export interface User {
     kyc_logs?: Array<{ time: string; event: string; agent: string }>;
     document_urls?: Record<string, string>;
     stages?: {
-        documentProcessing?: DocumentProcessingStage;
+        identityVerification?: DocumentProcessingStage;
+        incomeVerification?: IncomeVerificationStage;
         screening?: ScreeningStage;
         orchestrator?: OrchestratorStage;
     };
@@ -90,7 +104,8 @@ export interface KycSubmission {
         passportExpiry: string;
     };
     stages: {
-        documentProcessing?: DocumentProcessingStage;
+        identityVerification?: DocumentProcessingStage;
+        incomeVerification?: IncomeVerificationStage;
         screening?: ScreeningStage;
         orchestrator?: OrchestratorStage;
     };

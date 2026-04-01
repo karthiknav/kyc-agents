@@ -1,0 +1,135 @@
+{
+  "name": "kyc-orchestrator-e2e",
+  "description": "Golden dataset for end-to-end orchestrator evaluation. Tests final KYC decision given combined stage results.",
+  "items": [
+    {
+      "id": "orch-all-pass",
+      "input": {
+        "identity_result": "MATCH",
+        "income_result": "VERIFIED",
+        "income_risk_indicators": [],
+        "risk_list_result": "CLEAR",
+        "pep_status": "NOT_PEP",
+        "sanctions_status": "NOT_SANCTIONED",
+        "adverse_media_result": "OK"
+      },
+      "expected_output": {
+        "action": "APPROVED",
+        "risk_classification": "LOW"
+      }
+    },
+    {
+      "id": "orch-identity-mismatch",
+      "input": {
+        "identity_result": "MISMATCH",
+        "income_result": "VERIFIED",
+        "income_risk_indicators": [],
+        "risk_list_result": "CLEAR",
+        "pep_status": "NOT_PEP",
+        "sanctions_status": "NOT_SANCTIONED",
+        "adverse_media_result": "OK"
+      },
+      "expected_output": {
+        "action": "ESCALATED",
+        "risk_classification": "MEDIUM"
+      }
+    },
+    {
+      "id": "orch-sanctions-hit",
+      "input": {
+        "identity_result": "MATCH",
+        "income_result": "VERIFIED",
+        "income_risk_indicators": [],
+        "risk_list_result": "HIT",
+        "pep_status": "NOT_PEP",
+        "sanctions_status": "SANCTIONED",
+        "adverse_media_result": "OK"
+      },
+      "expected_output": {
+        "action": "ESCALATED",
+        "risk_classification": "HIGH"
+      }
+    },
+    {
+      "id": "orch-pep-only",
+      "input": {
+        "identity_result": "MATCH",
+        "income_result": "VERIFIED",
+        "income_risk_indicators": ["Multiple income sources"],
+        "risk_list_result": "HIT",
+        "pep_status": "PEP",
+        "sanctions_status": "NOT_SANCTIONED",
+        "adverse_media_result": "OK"
+      },
+      "expected_output": {
+        "action": "ESCALATED",
+        "risk_classification": "LOW"
+      }
+    },
+    {
+      "id": "orch-income-insufficient",
+      "input": {
+        "identity_result": "MATCH",
+        "income_result": "INSUFFICIENT",
+        "income_risk_indicators": [],
+        "income_requires_additional_documents": true,
+        "risk_list_result": "CLEAR",
+        "pep_status": "NOT_PEP",
+        "sanctions_status": "NOT_SANCTIONED",
+        "adverse_media_result": "OK"
+      },
+      "expected_output": {
+        "action": "ADDITIONAL_DOCUMENTS_REQUIRED",
+        "risk_classification": "MEDIUM"
+      }
+    },
+    {
+      "id": "orch-income-suspicious",
+      "input": {
+        "identity_result": "MATCH",
+        "income_result": "SUSPICIOUS",
+        "income_risk_indicators": ["Income exceeds threshold", "No KVK registration"],
+        "risk_list_result": "CLEAR",
+        "pep_status": "NOT_PEP",
+        "sanctions_status": "NOT_SANCTIONED",
+        "adverse_media_result": "OK"
+      },
+      "expected_output": {
+        "action": "ESCALATED",
+        "risk_classification": "MEDIUM"
+      }
+    },
+    {
+      "id": "orch-multiple-failures",
+      "input": {
+        "identity_result": "MISMATCH",
+        "income_result": "SUSPICIOUS",
+        "income_risk_indicators": ["Income exceeds threshold"],
+        "risk_list_result": "HIT",
+        "pep_status": "NOT_PEP",
+        "sanctions_status": "SANCTIONED",
+        "adverse_media_result": "NOK"
+      },
+      "expected_output": {
+        "action": "ESCALATED",
+        "risk_classification": "HIGH"
+      }
+    },
+    {
+      "id": "orch-adverse-pending",
+      "input": {
+        "identity_result": "MATCH",
+        "income_result": "VERIFIED",
+        "income_risk_indicators": [],
+        "risk_list_result": "CLEAR",
+        "pep_status": "NOT_PEP",
+        "sanctions_status": "NOT_SANCTIONED",
+        "adverse_media_result": "PENDING_REVIEW"
+      },
+      "expected_output": {
+        "action": "ESCALATED",
+        "risk_classification": "LOW"
+      }
+    }
+  ]
+}

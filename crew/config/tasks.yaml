@@ -1,30 +1,56 @@
 orchestrator_task:
   description: >
-    Given caseId {caseId} and the outputs of the document processing and screening
-    tasks provided as context, make the final KYC decision:
+    Given caseId {caseId} and the outputs of the identity verification, income verification,
+    risk list screening, and adverse media tasks provided as context, apply Dutch Wwft
+    (Anti-Money Laundering Act) rules to make the final KYC decision:
 
-    1. Read the document comparison result (MATCH / PARTIAL_MATCH / MISMATCH) and
-       the risk list screening result (CLEAR / HIT) and the adverse media result (OK / NOK / PENDING_REVIEW)
-       from the context.
+    1. Read ALL four results from the context:
+       - Document comparison result (MATCH / PARTIAL_MATCH / MISMATCH)
+       - Income verification result (VERIFIED / INSUFFICIENT / SUSPICIOUS / UNREADABLE)
+       - Risk list screening result (CLEAR / HIT)
+       - Adverse media result (OK / NOK / PENDING_REVIEW)
 
-    2. If document result is MATCH AND risk list result is CLEAR AND adverse media result is OK: approve the case.
-       Return JSON with action "APPROVED".
+    2. RISK CLASSIFICATION — compute and include in output:
+       - LOW: All checks pass, standard NL/EU resident, employment income < EUR 10,000/month
+       - MEDIUM: Minor discrepancies (PARTIAL_MATCH), PEP with no adverse media,
+         self-employment/business income, multiple income sources
+       - HIGH: Any sanctions hit, adverse media NOK, document MISMATCH, SUSPICIOUS income,
+         multiple risk indicators
 
-    3. For any other combination: escalate. Call escalate_to_human with the case_id,
-       a reason list summarising both results, and an escalation_summary.
-       Return JSON with action "ESCALATED".
+    3. DECISION RULES:
+       a) If document result is MATCH AND income result is VERIFIED (with no risk indicators)
+          AND risk list result is CLEAR AND adverse media result is OK:
+          APPROVE the case. Return JSON with action "APPROVED".
+
+       b) If income verification result is INSUFFICIENT and requires_additional_documents is true:
+          Return JSON with action "ADDITIONAL_DOCUMENTS_REQUIRED". Include the
+          "additional_documents_needed" list from the income verification output.
+          Call escalate_to_human with reason including what additional documents are needed.
+
+       c) If income verification result is UNREADABLE:
+          Return JSON with action "ADDITIONAL_DOCUMENTS_REQUIRED" requesting re-upload
+          of the income document in better quality.
+
+       d) For any other failing combination (sanctions HIT, adverse media NOK, document
+          MISMATCH, SUSPICIOUS income): ESCALATE.
+          Call escalate_to_human with the case_id, a reason list summarising all results,
+          and an escalation_summary.
+          Return JSON with action "ESCALATED".
 
   expected_output: >
     Valid JSON object with at minimum these keys:
     - "case_id": the case ID (string)
-    - "action": one of "APPROVED" or "ESCALATED"
-    - "decision": "APPROVE" or "ESCALATE"
+    - "action": one of "APPROVED", "ESCALATED", or "ADDITIONAL_DOCUMENTS_REQUIRED"
+    - "decision": "APPROVE", "ESCALATE", or "REQUEST_ADDITIONAL_DOCUMENTS"
     - "reason": list of strings describing the decision factors
     - "recommendation_summary": explanation of the outcome
+    - "risk_classification": one of "LOW", "MEDIUM", "HIGH" (string)
+    - "risk_score": integer 0-100 representing overall risk
+    - "additional_documents_needed": list of objects with "document_type" and "reason" keys (empty array if not applicable)
   agent: orchestrator_agent
   
 
-document_processing_task:
+identity_verification_task:
   description: >
     Given caseId {caseId}:
     1. Use get_case_details to fetch identity info (fullName, DOB, etc.) from DynamoDB.
@@ -47,7 +73,41 @@ document_processing_task:
     - "comparison_summary": explanation of the comparison outcome (string)
     - "documents_summary": brief summary of each document processed (string)
     - "government_verification_summary": summary of BRP government verification results (string)
-  agent: document_processing_agent
+  agent: identity_verification_agent
+
+income_verification_task:
+  description: >
+    Given caseId {caseId}:
+    1. Use get_case_details to fetch identity info (fullName, DOB, etc.) from DynamoDB.
+    2. Use get_case_files to get the list of uploaded documents.
+    3. Find the income document(s) — files with type "income".
+    4. Use extract_document_text for each income document (pass s3_bucket and s3_key).
+    5. If a BSN (burgerservicenummer) is available from the document processing task
+       context, use verify_income_uwv with that BSN to get UWV employment records.
+       If no BSN is available, skip this step.
+    6. If the extracted income text indicates self-employment or business ownership
+       AND a KVK number is found, use verify_business_kvk with that KVK number.
+       Otherwise skip this step.
+    7. Use analyze_income_document with:
+       - case_details: the JSON from get_case_details
+       - extracted_income_text: the text extracted from the income document(s)
+       - document_type_hint: your best guess of document type based on filename
+         and content (bank_statement, employment_contract, salary_slip, tax_return,
+         business_registration, or unknown)
+       - income_registry_data: JSON string of UWV and/or KVK results (or empty string)
+    Return valid JSON with the analysis results.
+  expected_output: >
+    Valid JSON object with exactly these keys:
+    - "case_id": the case ID (string)
+    - "name": full name from identity.fullName (string)
+    - "verification_result": one of "VERIFIED", "INSUFFICIENT", "SUSPICIOUS", "UNREADABLE" (string)
+    - "income_source": one of "employment", "self_employment", "business_ownership", "investments", "pension", "social_benefits", "unknown" (string)
+    - "income_details": object with employer_or_source, monthly_income_eur, annual_income_eur, currency, income_frequency
+    - "risk_indicators": list of risk flag strings (array, empty if none)
+    - "summary": explanation of the verification outcome (string)
+    - "requires_additional_documents": boolean indicating if more documents are needed
+    - "additional_documents_needed": list of objects with "document_type" and "reason" keys (array, empty if none)
+  agent: income_verification_agent
 
 risk_list_screening_task:
   description: >

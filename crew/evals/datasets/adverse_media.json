@@ -1,0 +1,68 @@
+{
+  "name": "kyc-adverse-media",
+  "description": "Golden dataset for adverse media agent evaluation. Tests ability to distinguish relevant adverse findings from irrelevant results.",
+  "items": [
+    {
+      "id": "am-no-relevant-results",
+      "input": {
+        "person_name": "Jan de Vries",
+        "search_results": [
+          {"title": "Jan de Vries wins local chess tournament", "href": "https://example.com/chess", "body": "Amateur chess player Jan de Vries won the regional championship in Groningen."},
+          {"title": "De Vries family bakery celebrates 100 years", "href": "https://example.com/bakery", "body": "The de Vries bakery in Amsterdam has been serving customers since 1926."}
+        ]
+      },
+      "expected_output": {
+        "result": "OK"
+      }
+    },
+    {
+      "id": "am-clear-fraud",
+      "input": {
+        "person_name": "Hans Mueller",
+        "search_results": [
+          {"title": "Hans Mueller convicted of EUR 2M fraud scheme", "href": "https://example.com/fraud", "body": "Amsterdam court sentenced Hans Mueller, 45, of Den Haag to 3 years for orchestrating a money laundering operation involving shell companies."},
+          {"title": "Police arrest Hans Mueller in money laundering probe", "href": "https://example.com/arrest", "body": "Dutch police arrested Hans Mueller in connection with an international money laundering investigation spanning multiple countries."}
+        ]
+      },
+      "expected_output": {
+        "result": "NOK"
+      }
+    },
+    {
+      "id": "am-different-person",
+      "input": {
+        "person_name": "Jan de Vries",
+        "search_results": [
+          {"title": "Professor Jan de Vries publishes groundbreaking research", "href": "https://example.com/prof", "body": "Dr. Jan de Vries, 72, professor emeritus at Leiden University, published new findings in quantum physics."},
+          {"title": "Jan de Vries appointed to museum board", "href": "https://example.com/museum", "body": "Art historian Jan de Vries, 65, has been appointed to the board of the Rijksmuseum."}
+        ]
+      },
+      "expected_output": {
+        "result": "OK"
+      }
+    },
+    {
+      "id": "am-ambiguous",
+      "input": {
+        "person_name": "Peter van der Berg",
+        "search_results": [
+          {"title": "Van der Berg implicated in tax evasion case", "href": "https://example.com/tax", "body": "A businessman named van der Berg is under investigation for tax evasion in Rotterdam. Details about the suspect's first name were not released."},
+          {"title": "Peter van der Berg opens new restaurant", "href": "https://example.com/restaurant", "body": "Entrepreneur Peter van der Berg celebrated the opening of his new restaurant in Utrecht."}
+        ]
+      },
+      "expected_output": {
+        "result": "PENDING_REVIEW"
+      }
+    },
+    {
+      "id": "am-empty-results",
+      "input": {
+        "person_name": "Extremely Unique Name XYZ123",
+        "search_results": []
+      },
+      "expected_output": {
+        "result": "OK"
+      }
+    }
+  ]
+}

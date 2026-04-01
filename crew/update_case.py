@@ -170,6 +170,13 @@ def update_risk_list_screening_result(task_output):
     except Exception as e:
         logger.exception("update_risk_list_screening_result error: %s", e)
 
+    # Online evals: schema validation
+    try:
+        from crew.evals.online import run_online_evals
+        run_online_evals(stage="screening", task_output=task_output)
+    except Exception:
+        logger.debug("Online eval scoring skipped (screening)", exc_info=True)
+
 
 def update_adverse_media_result(task_output):
     """Update stages.screening.adverseMedia and upload raw response JSON to S3."""
@@ -297,3 +304,10 @@ def update_adverse_media_result(task_output):
         logger.info("update_adverse_media_result success: case_id=%s, name=%s, result=%s", case_id, name, result)
     except Exception as e:
         logger.exception("update_adverse_media_result error: %s", e)
+
+    # Online evals: schema validation
+    try:
+        from crew.evals.online import run_online_evals
+        run_online_evals(stage="adverse_media", task_output=task_output)
+    except Exception:
+        logger.debug("Online eval scoring skipped (adverse_media)", exc_info=True)

@@ -15,7 +15,11 @@ _MAX_INPUT_CHARS = 12000
 class AggregateKYCResultsInput(BaseModel):
     case_id: str = Field(description="The KYC case ID")
     document_processing_result: str = Field(
-        description="JSON string of the documentProcessing stage result from get_case_stages"
+        description="JSON string of the identityVerification stage result from get_case_stages"
+    )
+    income_verification_result: str = Field(
+        default="",
+        description="JSON string of the incomeVerification stage result from get_case_stages. Optional — empty if not yet available."
     )
     screening_result: str = Field(
         description="JSON string of the screening stage result from get_case_stages"
@@ -23,14 +27,14 @@ class AggregateKYCResultsInput(BaseModel):
 
 
 class AggregateKYCResultsTool(BaseTool):
-    """Aggregate document processing and sanctions screening results to produce the final KYC decision."""
+    """Aggregate identity verification and sanctions screening results to produce the final KYC decision."""
 
     name: str = "aggregate_kyc_results"
     description: str = (
-        "Takes the documentProcessing and screening stage results and uses an LLM to produce "
+        "Takes the identityVerification, incomeVerification, and screening stage results and uses an LLM to produce "
         "a final KYC decision: APPROVE or ESCALATE. "
-        "APPROVE only when document comparison is MATCH and screening is OK. "
-        "ESCALATE for any PARTIAL_MATCH, MISMATCH, NOK, or AMBIGUOUS result. "
+        "APPROVE only when identity is MATCH, income is VERIFIED, and screening is OK. "
+        "ESCALATE for any PARTIAL_MATCH, MISMATCH, INSUFFICIENT, SUSPICIOUS, NOK, or AMBIGUOUS result. "
         "Returns JSON with decision, reason, and recommendation_summary."
     )
     args_schema: Type[AggregateKYCResultsInput] = AggregateKYCResultsInput
@@ -39,12 +43,14 @@ class AggregateKYCResultsTool(BaseTool):
         self,
         case_id: str,
         document_processing_result: str,
-        screening_result: str,
+        income_verification_result: str = "",
+        screening_result: str = "",
     ) -> str:
         logger.info(
-            "aggregate_kyc_results input: case_id=%s, doc_result len=%s, screening len=%s",
+            "aggregate_kyc_results input: case_id=%s, doc_result len=%s, income_result len=%s, screening len=%s",
             case_id,
             len(document_processing_result) if document_processing_result else 0,
+            len(income_verification_result) if income_verification_result else 0,
             len(screening_result) if screening_result else 0,
         )
         if not case_id:
@@ -54,8 +60,11 @@ class AggregateKYCResultsTool(BaseTool):
         if not screening_result:
             return json.dumps({"error": "screening_result is required — sub-agent may not have completed yet"})
 
-        # Guard: both results must be non-trivial JSON (not error strings)
-        for label, raw in [("document_processing_result", document_processing_result), ("screening_result", screening_result)]:
+        # Guard: results must be non-trivial JSON (not error strings)
+        check_results = [("document_processing_result", document_processing_result), ("screening_result", screening_result)]
+        if income_verification_result:
+            check_results.append(("income_verification_result", income_verification_result))
+        for label, raw in check_results:
             try:
                 parsed = json.loads(raw) if isinstance(raw, str) else raw
                 if isinstance(parsed, dict) and "error" in parsed:
@@ -83,7 +92,19 @@ class AggregateKYCResultsTool(BaseTool):
         except json.JSONDecodeError:
             screening_text = screening_result
 
-        combined = f"Document Processing:\n{doc_text}\n\nSanctions Screening:\n{screening_text}"
+        # Parse income verification result if available
+        income_text = ""
+        if income_verification_result:
+            try:
+                income_parsed = json.loads(income_verification_result) if isinstance(income_verification_result, str) else income_verification_result
+                income_text = json.dumps(income_parsed, indent=2)
+            except json.JSONDecodeError:
+                income_text = income_verification_result
+
+        combined = f"Identity Verification:\n{doc_text}\n\n"
+        if income_text:
+            combined += f"Income Verification:\n{income_text}\n\n"
+        combined += f"Sanctions Screening:\n{screening_text}"
         if len(combined) > _MAX_INPUT_CHARS:
             combined = combined[:_MAX_INPUT_CHARS]
 
@@ -104,15 +125,16 @@ class AggregateKYCResultsTool(BaseTool):
 
         prompt = f"""You are a senior KYC compliance officer making the final approval decision.
 
-You have received the results from two KYC verification sub-agents:
+You have received the results from KYC verification sub-agents:
 
 {combined_results}
 
-Based on these results, make the final KYC decision.
+Based on these results, make the final KYC decision applying Dutch Wwft (Anti-Money Laundering Act) rules.
 
 Decision rules (apply strictly):
-- APPROVE: document comparison result is "MATCH" AND screening result is "OK"
-- ESCALATE: any of the following → document result is "PARTIAL_MATCH" or "MISMATCH", OR screening result is "NOK" or "AMBIGUOUS"
+- APPROVE: identity comparison is "MATCH" AND income verification is "VERIFIED" (with no risk indicators) AND screening result is "OK"
+- ESCALATE: any of the following → identity is "PARTIAL_MATCH" or "MISMATCH", OR income is "INSUFFICIENT", "SUSPICIOUS", or "UNREADABLE", OR screening is "NOK" or "AMBIGUOUS"
+- If income verification result is not available, still make a decision based on identity and screening only
 - When in doubt, always ESCALATE (conservative approach protects against compliance risk)
 
 Respond with a JSON object containing exactly these keys:

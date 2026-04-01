@@ -1,0 +1,46 @@
+{
+  "id": "uwv-polisadministratie",
+  "name": "UWV Polisadministratie - Dienstverbanden API",
+  "description": "Simulates the UWV Polisadministratie API for employment and income verification. Returns employment records (dienstverbanden) for a given BSN.",
+  "method": "POST",
+  "path": "/api/v1/uwv/polisadministratie/dienstverbanden",
+  "request": {
+    "body": {
+      "burgerservicenummer": { "type": "string", "required": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "persistenceKey": "{{burgerservicenummer}}",
+    "schema": {
+      "burgerservicenummer": "{{request.burgerservicenummer}}",
+      "dienstverbanden": [
+        {
+          "werkgever": {
+            "naam": "{{faker.company.name}}",
+            "kvkNummer": "{{faker.string.numeric(8)}}",
+            "loonheffingennummer": "L{{faker.string.numeric(10)}}"
+          },
+          "dienstverband": {
+            "soort": "{{faker.helpers.arrayElement(['vast','tijdelijk','oproep'])}}",
+            "startdatum": "{{faker.date.past}}",
+            "einddatum": null,
+            "beroep": "{{faker.person.jobTitle}}",
+            "arbeidsuren": 40
+          },
+          "inkomen": {
+            "svLoon": "{{faker.number.int({min:24000,max:120000})}}",
+            "brutoloonPeriode": "{{faker.number.int({min:2000,max:10000})}}",
+            "loonperiode": "maand",
+            "vakantiegeld": "{{faker.number.int({min:1920,max:9600})}}",
+            "bijzondereBeloningen": 0
+          },
+          "periode": "2025"
+        }
+      ],
+      "uitkeringen": [],
+      "status": "GEVONDEN",
+      "peildatum": "{{now}}"
+    }
+  }
+}

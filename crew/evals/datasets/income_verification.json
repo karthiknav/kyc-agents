@@ -1,0 +1,111 @@
+{
+  "name": "kyc-income-verification",
+  "description": "Golden dataset for income verification agent evaluation. Tests Wwft source-of-funds rules across employment, self-employment, and suspicious scenarios.",
+  "items": [
+    {
+      "id": "inc-clean-employment",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-001", "identity": {"fullName": "Jan de Vries", "dateOfBirth": "1985-03-15"}},
+        "extracted_income_text": "LOONSTROOK - Periode: Maart 2026\nWerkgever: Tech Solutions BV\nWerknemer: Jan de Vries\nBrutoloon: EUR 4.000,00\nNettoloon: EUR 2.850,00\nVakantiegeld: EUR 320,00\nBSN: 123456789",
+        "document_type_hint": "salary_slip",
+        "income_registry_data": "{\"dienstverbanden\": [{\"werkgever\": {\"naam\": \"Tech Solutions BV\", \"kvkNummer\": \"12345678\"}, \"inkomen\": {\"svLoon\": 48000, \"brutoloonPeriode\": 4000}, \"dienstverband\": {\"soort\": \"vast\"}}], \"status\": \"GEVONDEN\"}"
+      },
+      "expected_output": {
+        "verification_result": "VERIFIED",
+        "income_source": "employment",
+        "risk_indicators": []
+      }
+    },
+    {
+      "id": "inc-no-uwv-records",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-002", "identity": {"fullName": "Maria Bakker", "dateOfBirth": "1990-07-22"}},
+        "extracted_income_text": "LOONSTROOK\nWerkgever: Onbekend BV\nWerknemer: Maria Bakker\nBrutoloon: EUR 3.500,00",
+        "document_type_hint": "salary_slip",
+        "income_registry_data": "{\"dienstverbanden\": [], \"status\": \"NIET_GEVONDEN\"}"
+      },
+      "expected_output": {
+        "verification_result": "INSUFFICIENT",
+        "requires_additional_documents": true
+      }
+    },
+    {
+      "id": "inc-suspicious-high-income",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-003", "identity": {"fullName": "Ahmed Al-Rashid", "dateOfBirth": "1978-11-03"}},
+        "extracted_income_text": "EMPLOYMENT CONTRACT\nEmployer: International Trading GmbH\nEmployee: Ahmed Al-Rashid\nPosition: Consultant\nSalary: EUR 20,833 per month\nContract type: Temporary (1 year)",
+        "document_type_hint": "employment_contract",
+        "income_registry_data": "{\"dienstverbanden\": [{\"werkgever\": {\"naam\": \"International Trading GmbH\", \"kvkNummer\": \"\", \"loonheffingennummer\": \"\"}, \"inkomen\": {\"svLoon\": 250000}, \"dienstverband\": {\"soort\": \"tijdelijk\", \"startdatum\": \"2025-09-01\"}}], \"status\": \"GEVONDEN\"}"
+      },
+      "expected_output": {
+        "verification_result": "SUSPICIOUS",
+        "risk_indicators": ["Monthly income EUR 20,833 exceeds EUR 10,000 threshold", "Employer has no Dutch KVK registration", "Employer has no Dutch loonheffingennummer"]
+      }
+    },
+    {
+      "id": "inc-self-employed-kvk",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-004", "identity": {"fullName": "Willem van den Berg", "dateOfBirth": "1970-01-20"}},
+        "extracted_income_text": "BELASTINGAANGIFTE 2025\nNaam: Willem van den Berg\nBSN: 111222333\nInkomen uit werk: EUR 95.000\nInkomen uit onderneming: EUR 65.000\nKvK-nummer: 87654321",
+        "document_type_hint": "tax_return",
+        "income_registry_data": "{\"dienstverbanden\": [{\"werkgever\": {\"naam\": \"Rijksoverheid\"}, \"inkomen\": {\"svLoon\": 95000}, \"dienstverband\": {\"soort\": \"vast\"}}], \"status\": \"GEVONDEN\"}"
+      },
+      "expected_output": {
+        "verification_result": "VERIFIED",
+        "income_source": "employment",
+        "risk_indicators": ["Multiple income sources: government employment + private business"]
+      }
+    },
+    {
+      "id": "inc-unreadable",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-005", "identity": {"fullName": "Test Person"}},
+        "extracted_income_text": "xk39f... [[garbled]] ...#@$ unable to parse",
+        "document_type_hint": "unknown",
+        "income_registry_data": ""
+      },
+      "expected_output": {
+        "verification_result": "UNREADABLE"
+      }
+    },
+    {
+      "id": "inc-cash-deposits",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-006", "identity": {"fullName": "Frank Dekker", "dateOfBirth": "1988-04-12"}},
+        "extracted_income_text": "BANKAFSCHRIFT - ING Bank\nRekeninghouder: Frank Dekker\nIBAN: NL91INGB0001234567\nPeriode: Januari 2026\n\n05-01: Storting contant EUR 18.000,00\n12-01: Salaris ABC Corp EUR 3.500,00\n19-01: Storting contant EUR 22.000,00\n26-01: Overboeking ontvangen EUR 5.000,00 (geen omschrijving)",
+        "document_type_hint": "bank_statement",
+        "income_registry_data": "{\"dienstverbanden\": [{\"werkgever\": {\"naam\": \"ABC Corp\"}, \"inkomen\": {\"svLoon\": 42000}, \"dienstverband\": {\"soort\": \"vast\"}}], \"status\": \"GEVONDEN\"}"
+      },
+      "expected_output": {
+        "verification_result": "SUSPICIOUS",
+        "risk_indicators": ["Cash deposits exceed EUR 15,000 Wwft reporting threshold"]
+      }
+    },
+    {
+      "id": "inc-outdated-document",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-007", "identity": {"fullName": "Eva Mulder", "dateOfBirth": "1995-02-28"}},
+        "extracted_income_text": "LOONSTROOK - Periode: September 2025\nWerkgever: Retail BV\nWerknemer: Eva Mulder\nBrutoloon: EUR 2.800,00",
+        "document_type_hint": "salary_slip",
+        "income_registry_data": "{\"dienstverbanden\": [{\"werkgever\": {\"naam\": \"Retail BV\"}, \"inkomen\": {\"svLoon\": 33600}, \"dienstverband\": {\"soort\": \"vast\"}}], \"status\": \"GEVONDEN\"}"
+      },
+      "expected_output": {
+        "verification_result": "INSUFFICIENT",
+        "risk_indicators": ["Document older than 3 months"]
+      }
+    },
+    {
+      "id": "inc-name-mismatch",
+      "input": {
+        "case_details": {"caseId": "TEST-INC-008", "identity": {"fullName": "Sophie van Dijk", "dateOfBirth": "1993-08-15"}},
+        "extracted_income_text": "LOONSTROOK\nWerkgever: Design Studio BV\nWerknemer: Sophie Hendriks\nBrutoloon: EUR 3.200,00",
+        "document_type_hint": "salary_slip",
+        "income_registry_data": "{\"dienstverbanden\": [{\"werkgever\": {\"naam\": \"Design Studio BV\"}, \"inkomen\": {\"svLoon\": 38400}}], \"status\": \"GEVONDEN\"}"
+      },
+      "expected_output": {
+        "verification_result": "SUSPICIOUS",
+        "risk_indicators": ["Name on document (Sophie Hendriks) does not match applicant (Sophie van Dijk)"]
+      }
+    }
+  ]
+}

@@ -16,12 +16,12 @@ class GetCaseStagesInput(BaseModel):
 
 
 class GetCasestagesTool(BaseTool):
-    """Read the stages map (documentProcessing, screening, orchestrator) for a KYC case."""
+    """Read the stages map (identityVerification, screening, orchestrator) for a KYC case."""
 
     name: str = "get_case_stages"
     description: str = (
         "Reads the 'stages' attribute from DynamoDB for a KYC case. "
-        "Returns the full stages map including documentProcessing, screening, and orchestrator sub-stages. "
+        "Returns the full stages map including identityVerification, screening, and orchestrator sub-stages. "
         "Use this to check whether sub-agents have already completed and written their results."
     )
     args_schema: Type[GetCaseStagesInput] = GetCaseStagesInput
@@ -46,7 +46,7 @@ class GetCasestagesTool(BaseTool):
                 "case_id": case_id,
                 "case_status": item.get("status", "UNKNOWN"),
                 "stages": stages,
-                "has_document_processing": "documentProcessing" in stages,
+                "has_document_processing": "identityVerification" in stages,
                 "has_screening": "screening" in stages,
                 "has_orchestrator": "orchestrator" in stages,
             }

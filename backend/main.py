@@ -87,7 +87,7 @@ class S3Location(BaseModel):
 
 class DocumentProcessingStage(BaseModel):
     result: str = "PENDING"
-    summary: str = "Awaiting document processing"
+    summary: str = "Awaiting identity verification"
     discrepancies: List[str] = []
     governmentVerificationSummary: str = ""
     reportS3: Optional[S3Location] = None
@@ -126,15 +126,36 @@ class ScreeningStage(BaseModel):
         sanctionsStatus="UNKNOWN"
     )
 
+class AdditionalDocumentRequest(BaseModel):
+    document_type: str
+    reason: str
+
+class IncomeVerificationStage(BaseModel):
+    result: str = "PENDING"
+    incomeSource: Optional[str] = None
+    monthlyIncomeEur: Optional[float] = None
+    nameMatch: Optional[bool] = None
+    riskIndicators: List[str] = []
+    summary: str = "Awaiting income verification"
+    requiresAdditionalDocuments: bool = False
+    additionalDocumentsNeeded: List[AdditionalDocumentRequest] = []
+    reportS3: Optional[S3Location] = None
+    updatedAt: Optional[str] = None
+
 class OrchestratorStage(BaseModel):
     status: str = "INITIATED"
     decision: str = "PENDING"
     reason: List[str] = []
     recommendation_summary: str = "Case initiated and awaiting agent analysis"
+    risk_classification: Optional[str] = None
+    risk_score: Optional[int] = None
+    risk_score_breakdown: List[str] = []
+    additional_documents_needed: List[dict] = []
     decidedAt: Optional[str] = None
 
 class CaseStages(BaseModel):
-    documentProcessing: DocumentProcessingStage = DocumentProcessingStage()
+    identityVerification: DocumentProcessingStage = DocumentProcessingStage()
+    incomeVerification: IncomeVerificationStage = IncomeVerificationStage()
     screening: ScreeningStage = ScreeningStage()
     orchestrator: OrchestratorStage = OrchestratorStage()
 
@@ -542,6 +563,90 @@ async def update_submission_status(caseId: str, request: StatusUpdateRequest):
     except Exception as e:
         logger.exception("Error updating status")
         raise HTTPException(status_code=500, detail=f"Failed to update status: {str(e)}")
+
+@app.get("/submissions/{caseId}/additional-documents-needed")
+async def get_additional_documents_needed(caseId: str):
+    """Get the list of additional documents needed for a case."""
+    try:
+        table = get_submissions_table()
+        response = table.get_item(Key={"CaseId": caseId})
+        item = response.get("Item")
+        if not item:
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        docs_needed = []
+        # Check orchestrator stage
+        stages = item.get("stages", {})
+        orch = stages.get("orchestrator", {})
+        if orch.get("additional_documents_needed"):
+            docs_needed.extend(orch["additional_documents_needed"])
+        # Check income verification stage
+        income = stages.get("incomeVerification", {})
+        if income.get("additionalDocumentsNeeded"):
+            docs_needed.extend(income["additionalDocumentsNeeded"])
+
+        return {
+            "caseId": caseId,
+            "status": item.get("status"),
+            "additional_documents_needed": docs_needed,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error fetching additional documents needed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/submissions/{caseId}/upload-additional")
+async def upload_additional_document(
+    caseId: str,
+    document_type: str = Form(...),
+    reason_context: str = Form(""),
+    file: UploadFile = File(...)
+):
+    """Upload an additional document requested by the KYC system."""
+    try:
+        table = get_submissions_table()
+        # Verify case exists
+        response = table.get_item(Key={"CaseId": caseId})
+        item = response.get("Item")
+        if not item:
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        # Upload to S3
+        s3_key = f"cases/{caseId}/additional_{document_type}_{file.filename}"
+        s3_client.upload_fileobj(file.file, S3_BUCKET, s3_key)
+
+        new_file = {
+            "type": f"additional_{document_type}",
+            "bucket": S3_BUCKET,
+            "key": s3_key,
+            "reason_context": reason_context,
+            "uploadedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+
+        # Append to files array in DynamoDB
+        existing_files = item.get("files", [])
+        existing_files.append(new_file)
+        table.update_item(
+            Key={"CaseId": caseId},
+            UpdateExpression="SET files = :files",
+            ExpressionAttributeValues={":files": existing_files},
+        )
+
+        logger.info("Additional document uploaded for case %s: %s", caseId, s3_key)
+        return {
+            "status": "success",
+            "caseId": caseId,
+            "file": new_file,
+            "message": f"Additional {document_type} document uploaded successfully",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error uploading additional document")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/health")
 async def health_check():
