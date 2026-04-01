@@ -4,6 +4,8 @@
 
 export const BRP_MOCK_ID = 'brp-identity-verification';
 export const PEP_MOCK_ID = 'pep-match';
+export const UWV_MOCK_ID = 'uwv-polisadministratie';
+export const KVK_MOCK_ID = 'kvk-basisprofiel';
 
 export interface DefaultTestCase {
   key: string;
@@ -365,6 +367,165 @@ export const pepTestCases: PepTestCase[] = [
           ],
         },
       },
+    },
+  },
+];
+
+// UWV Polisadministratie test cases — keys match persistenceKey: {{burgerservicenummer}}
+export const uwvTestCases: DefaultTestCase[] = [
+  {
+    key: '123456789',
+    description: 'UWV Case 1: Clean — Jan de Vries, employed at Tech Solutions BV, EUR 48K/yr',
+    data: {
+      burgerservicenummer: '123456789',
+      dienstverbanden: [
+        {
+          werkgever: {
+            naam: 'Tech Solutions BV',
+            kvkNummer: '12345678',
+            loonheffingennummer: 'L1234567890',
+          },
+          dienstverband: {
+            soort: 'vast',
+            startdatum: '2020-01-15',
+            einddatum: null,
+            beroep: 'Software Engineer',
+            arbeidsuren: 40,
+          },
+          inkomen: {
+            svLoon: 48000,
+            brutoloonPeriode: 4000,
+            loonperiode: 'maand',
+            vakantiegeld: 3840,
+            bijzondereBeloningen: 0,
+          },
+          periode: '2025',
+        },
+      ],
+      uitkeringen: [],
+      status: 'GEVONDEN',
+      peildatum: '2026-03-15T10:00:00.000Z',
+    },
+  },
+  {
+    key: '987654321',
+    description: 'UWV Case 2: No records — Maria Bakker, no employment found',
+    data: {
+      burgerservicenummer: '987654321',
+      dienstverbanden: [],
+      uitkeringen: [],
+      status: 'NIET_GEVONDEN',
+      peildatum: '2026-03-15T10:00:00.000Z',
+    },
+  },
+  {
+    key: '555666777',
+    description: 'UWV Case 3: Suspicious — Ahmed Al-Rashid, EUR 250K temp contract',
+    data: {
+      burgerservicenummer: '555666777',
+      dienstverbanden: [
+        {
+          werkgever: {
+            naam: 'International Trading GmbH',
+            kvkNummer: '',
+            loonheffingennummer: '',
+          },
+          dienstverband: {
+            soort: 'tijdelijk',
+            startdatum: '2025-09-01',
+            einddatum: '2026-08-31',
+            beroep: 'Consultant',
+            arbeidsuren: 40,
+          },
+          inkomen: {
+            svLoon: 250000,
+            brutoloonPeriode: 20833,
+            loonperiode: 'maand',
+            vakantiegeld: 20000,
+            bijzondereBeloningen: 0,
+          },
+          periode: '2025',
+        },
+      ],
+      uitkeringen: [],
+      status: 'GEVONDEN',
+      peildatum: '2026-03-15T10:00:00.000Z',
+    },
+  },
+  {
+    key: '111222333',
+    description: 'UWV Case 4: PEP dual income — Willem van den Berg, government + zzp',
+    data: {
+      burgerservicenummer: '111222333',
+      dienstverbanden: [
+        {
+          werkgever: {
+            naam: 'Rijksoverheid',
+            kvkNummer: '00000001',
+            loonheffingennummer: 'L0000000001',
+          },
+          dienstverband: {
+            soort: 'vast',
+            startdatum: '2005-04-01',
+            einddatum: null,
+            beroep: 'Beleidsadviseur',
+            arbeidsuren: 36,
+          },
+          inkomen: {
+            svLoon: 95000,
+            brutoloonPeriode: 7917,
+            loonperiode: 'maand',
+            vakantiegeld: 7600,
+            bijzondereBeloningen: 2500,
+          },
+          periode: '2025',
+        },
+      ],
+      uitkeringen: [],
+      status: 'GEVONDEN',
+      peildatum: '2026-03-15T10:00:00.000Z',
+    },
+  },
+];
+
+// KVK Basisprofiel test cases — keys match persistenceKey: {{kvkNummer}}
+export const kvkTestCases: DefaultTestCase[] = [
+  {
+    key: '87654321',
+    description: 'KVK Case 1: Van den Berg Advies BV — Willem van den Berg consulting firm',
+    data: {
+      kvkNummer: '87654321',
+      naam: 'Van den Berg Advies BV',
+      formeleRegistratiedatum: '2015-06-01',
+      statutaireNaam: 'Van den Berg Advies B.V.',
+      handelsnamen: [{ naam: 'Van den Berg Advies', volgorde: 1 }],
+      sbiActiviteiten: [
+        {
+          sbiCode: '70221',
+          sbiOmschrijving: 'Organisatieadviesbureaus',
+          indHoofdactiviteit: 'Ja',
+        },
+      ],
+      eigenaar: {
+        rechtsvorm: 'BeslotenVennootschap',
+        uitgebreideRechtsvorm: 'Besloten Vennootschap',
+        rsin: '987654321',
+      },
+      hoofdvestiging: {
+        vestigingsnummer: '123456789012',
+        eersteHandelsnaam: 'Van den Berg Advies',
+        totaalWerkzamePersonen: 3,
+        adressen: [
+          {
+            type: 'bezoekadres',
+            straatnaam: 'Herengracht',
+            huisnummer: 100,
+            postcode: '1015BS',
+            plaats: 'Amsterdam',
+          },
+        ],
+      },
+      _links: {},
     },
   },
 ];

@@ -471,11 +471,23 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                             <div className="left">
                                                 <div className="doc-icon verified">🪪</div>
                                                 <div>
-                                                    <div className="doc-name">Document Verification</div>
+                                                    <div className="doc-name">Identity Verification</div>
                                                     <div className="doc-req">Completed successfully</div>
                                                 </div>
                                             </div>
                                             <span className="status-chip verified">✓ Success</span>
+                                        </div>
+                                    </div>
+                                    <div className="upload-card" style={{ borderLeft: '4px solid var(--accent-green)' }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className="doc-icon verified">💰</div>
+                                                <div>
+                                                    <div className="doc-name">Income & Source of Funds</div>
+                                                    <div className="doc-req">Income verified successfully</div>
+                                                </div>
+                                            </div>
+                                            <span className="status-chip verified">✓ Verified</span>
                                         </div>
                                     </div>
                                     <div className="upload-card" style={{ borderLeft: '4px solid var(--accent-green)' }}>
@@ -517,21 +529,47 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                 <p>We are running automated checks on your submission. This usually takes less than a minute.</p>
 
                                 <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
-                                    {/* Document Verification Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'var(--accent-green)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                    {/* Identity Verification Stage */}
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.identityVerification) === 'MATCH' ? 'var(--accent-green)' : submissionStages?.identityVerification ? 'var(--accent-blue)' : 'var(--border)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'verified' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🪪</div>
+                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.identityVerification) === 'MATCH' ? 'verified' : submissionStages?.identityVerification ? 'processing' : ''}`}>🪪</div>
                                                 <div>
-                                                    <div className="doc-name">Document Verification</div>
+                                                    <div className="doc-name">Identity Verification</div>
                                                     <div className="doc-req">Analyzing ID authenticity and OCR extraction</div>
                                                 </div>
                                             </div>
-                                            {selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? (
+                                            {selectedSubmissionStageStatus(submissionStages?.identityVerification) === 'MATCH' ? (
                                                 <span className="status-chip verified">✓ Completed</span>
-                                            ) : selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'PARTIAL_MATCH' ? (
+                                            ) : selectedSubmissionStageStatus(submissionStages?.identityVerification) === 'PARTIAL_MATCH' ? (
                                                 <span className="status-chip" style={{ background: 'var(--accent-orange-dim)', color: 'var(--accent-orange)' }}>⚠️ Partial Match</span>
-                                            ) : submissionStages?.documentProcessing ? (
+                                            ) : submissionStages?.identityVerification ? (
+                                                <span className="status-chip processing">⟳ In Progress</span>
+                                            ) : (
+                                                <span className="status-chip pending">○ Waiting</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Income Verification Stage */}
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.incomeVerification) === 'VERIFIED' ? 'var(--accent-green)' : submissionStages?.incomeVerification ? (selectedSubmissionStageStatus(submissionStages?.incomeVerification) === 'SUSPICIOUS' ? 'var(--accent-red)' : 'var(--accent-blue)') : 'var(--border)'}` }}>
+                                        <div className="upload-card-header" style={{ marginBottom: 0 }}>
+                                            <div className="left">
+                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.incomeVerification) === 'VERIFIED' ? 'verified' : submissionStages?.incomeVerification ? 'processing' : ''}`}>💰</div>
+                                                <div>
+                                                    <div className="doc-name">Income & Source of Funds</div>
+                                                    <div className="doc-req">Verifying income documentation per Wwft requirements</div>
+                                                </div>
+                                            </div>
+                                            {selectedSubmissionStageStatus(submissionStages?.incomeVerification) === 'VERIFIED' ? (
+                                                <span className="status-chip verified">✓ Verified</span>
+                                            ) : selectedSubmissionStageStatus(submissionStages?.incomeVerification) === 'INSUFFICIENT' ? (
+                                                <span className="status-chip" style={{ background: 'var(--accent-orange-dim)', color: 'var(--accent-orange)' }}>⚠ Insufficient</span>
+                                            ) : selectedSubmissionStageStatus(submissionStages?.incomeVerification) === 'SUSPICIOUS' ? (
+                                                <span className="status-chip" style={{ background: 'var(--accent-red-dim, #fde8e8)', color: 'var(--accent-red)' }}>⚠ Suspicious</span>
+                                            ) : submissionStages?.incomeVerification ? (
+                                                <span className="status-chip processing">⟳ In Progress</span>
+                                            ) : submissionStages?.identityVerification ? (
                                                 <span className="status-chip processing">⟳ In Progress</span>
                                             ) : (
                                                 <span className="status-chip pending">○ Waiting</span>
@@ -540,10 +578,10 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                     </div>
 
                                     {/* Adverse Media Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'var(--accent-green)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'var(--accent-green)' : submissionStages?.identityVerification ? 'var(--accent-blue)' : 'var(--border)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'verified' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🔎</div>
+                                                <div className={`doc-icon ${isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? 'verified' : submissionStages?.identityVerification ? 'processing' : ''}`}>🔎</div>
                                                 <div>
                                                     <div className="doc-name">Adverse Media Screening</div>
                                                     <div className="doc-req">Checking global news and media for reputational risk</div>
@@ -555,7 +593,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                                 ) : (
                                                     <span className="status-chip verified">✓ Completed</span>
                                                 )
-                                            ) : submissionStages?.documentProcessing ? (
+                                            ) : submissionStages?.identityVerification ? (
                                                 <span className="status-chip processing">⟳ In Progress</span>
                                             ) : (
                                                 <span className="status-chip pending">○ Waiting</span>
@@ -591,12 +629,61 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                 <div className="processing-bar" style={{ maxWidth: '100%', margin: '40px 0 20px' }}>
                                     <div className="fill" style={{
                                         width: isScreeningComplete(submissionStages?.screening) ? '100%' :
-                                            isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? '75%' :
-                                                submissionStages?.documentProcessing ? '50%' : '25%',
+                                            isScreeningComplete(submissionStages?.screening, 'riskListScreening') ? '90%' :
+                                            isScreeningComplete(submissionStages?.screening, 'adverseMedia') ? '70%' :
+                                                submissionStages?.incomeVerification ? '50%' :
+                                                submissionStages?.identityVerification ? '30%' : '15%',
                                         background: 'var(--accent-blue)',
                                         transition: 'width 1s ease-in-out'
                                     }}></div>
                                 </div>
+
+                                {/* Additional Documents Requested */}
+                                {caseStatus === 'ADDITIONAL_DOCUMENTS_REQUESTED' && (
+                                    <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
+                                        <div className="ai-result" style={{ borderLeftColor: 'var(--accent-orange)', gridColumn: '1 / -1' }}>
+                                            <div className="ai-label" style={{ color: 'var(--accent-orange)' }}>Additional Documents Required</div>
+                                            <p style={{ margin: '8px 0 16px', color: 'var(--text-secondary)' }}>
+                                                Our verification system needs additional documentation to complete your KYC review. Please upload the requested documents below.
+                                            </p>
+                                            {(submissionStages?.orchestrator?.additional_documents_needed || submissionStages?.incomeVerification?.additionalDocumentsNeeded || []).map((doc: any, idx: number) => (
+                                                <div key={idx} style={{ marginBottom: '16px', padding: '12px', background: 'var(--bg-primary)', borderRadius: '8px' }}>
+                                                    <div style={{ fontWeight: 600, marginBottom: '4px' }}>{doc.document_type?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}</div>
+                                                    <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '8px' }}>{doc.reason}</div>
+                                                    <input
+                                                        type="file"
+                                                        accept=".pdf,.jpg,.jpeg,.png"
+                                                        onChange={async (e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (!file || !caseId) return;
+                                                            const formData = new FormData();
+                                                            formData.append('document_type', doc.document_type);
+                                                            formData.append('reason_context', doc.reason);
+                                                            formData.append('file', file);
+                                                            try {
+                                                                const resp = await fetch(`${API_BASE_URL}/submissions/${caseId}/upload-additional`, {
+                                                                    method: 'POST',
+                                                                    body: formData,
+                                                                });
+                                                                if (resp.ok) {
+                                                                    showToast('Document uploaded successfully', 'success');
+                                                                } else {
+                                                                    showToast('Upload failed', 'error');
+                                                                }
+                                                            } catch {
+                                                                showToast('Upload failed', 'error');
+                                                            }
+                                                        }}
+                                                        style={{ fontSize: '13px' }}
+                                                    />
+                                                </div>
+                                            ))}
+                                            <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                                After uploading, your analyst will review the documents and make a decision on your case.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
                                     {docs.map(doc => (

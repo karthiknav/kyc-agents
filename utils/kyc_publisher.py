@@ -29,7 +29,8 @@ DUMMY_RECORD: dict[str, Any] = {
     "statusUpdatedAt": "2026-02-26T02:18:10Z",
     "files": [
         {"type": "passport", "bucket": TEST_S3_BUCKET_NAME, "key": "cases/1234/passport.pdf"},
-        {"type": "license", "bucket":TEST_S3_BUCKET_NAME, "key": "cases/1234/license.pdf"}
+        {"type": "address", "bucket": TEST_S3_BUCKET_NAME, "key": "cases/1234/address.pdf"},
+        {"type": "income", "bucket": TEST_S3_BUCKET_NAME, "key": "cases/1234/income.pdf"},
     ],
     "identity": {
         "fullName": "Willem van den Berg",

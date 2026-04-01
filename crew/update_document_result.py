@@ -18,7 +18,7 @@ def _format_document_report(
     government_verification_summary: str,
     updated_at: str,
 ) -> str:
-    """Format document processing output as a markdown report."""
+    """Format identity verification output as a markdown report."""
     status_emoji = {"MATCH": "✅", "PARTIAL_MATCH": "⚠️", "MISMATCH": "❌"}
     emoji = status_emoji.get(comparison_result, "❓")
     discrepancies_md = (
@@ -27,7 +27,7 @@ def _format_document_report(
         else "_No discrepancies found._"
     )
     lines = [
-        "# KYC Document Processing Report",
+        "# KYC Identity Verification Report",
         "",
         f"**Case ID:** `{case_id}`",
         f"**Subject:** {name}",
@@ -63,16 +63,16 @@ def _format_document_report(
     return "\n".join(lines)
 
 
-def update_document_result(task_output):
-    """Update the documentProcessing stage in the case document and notify the orchestrator."""
-    logger.info("update_document_result input: task_output=%s", task_output)
+def update_identity_verification_result(task_output):
+    """Update the identityVerification stage in the case document and notify the orchestrator."""
+    logger.info("update_identity_verification_result input: task_output=%s", task_output)
     if hasattr(task_output, "raw"):
         task_output = task_output.raw
     if isinstance(task_output, str):
         try:
             task_output = json.loads(task_output)
         except json.JSONDecodeError:
-            logger.error("update_document_result: task_output is not valid JSON")
+            logger.error("update_identity_verification_result: task_output is not valid JSON")
             return
     case_id = task_output.get("case_id")
     comparison_result = task_output.get("comparison_result")
@@ -127,7 +127,7 @@ def update_document_result(task_output):
     # Upload report to S3
     report_s3 = None
     bucket = os.environ.get("KYC_RESULTS_BUCKET", "kyc-results")
-    report_key = f"cases/{case_id}/document-processing-report.md"
+    report_key = f"cases/{case_id}/identity-verification-report.md"
     try:
         s3 = boto3.client("s3")
         s3.put_object(
@@ -139,10 +139,10 @@ def update_document_result(task_output):
         report_s3 = {"bucket": bucket, "key": report_key}
         logger.info("Document processing report uploaded to s3://%s/%s", bucket, report_key)
     except Exception as e:
-        logger.exception("Failed to upload document processing report to S3: %s", e)
+        logger.exception("Failed to upload identity verification report to S3: %s", e)
 
-    # Build the documentProcessing stage object
-    document_processing_stage = {
+    # Build the identityVerification stage object
+    identity_verification_stage = {
         "result": status,
         "updatedAt": now,
         "summary": comparison_summary,
@@ -150,7 +150,7 @@ def update_document_result(task_output):
         "governmentVerificationSummary": government_verification_summary,
     }
     if report_s3:
-        document_processing_stage["reportS3"] = report_s3
+        identity_verification_stage["reportS3"] = report_s3
 
     table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
     try:
@@ -163,17 +163,23 @@ def update_document_result(task_output):
             ExpressionAttributeNames={"#stages": "stages"},
             ExpressionAttributeValues={":empty_map": {}},
         )
-        # Step 2: write documentProcessing stage
+        # Step 2: write identityVerification stage
         table.update_item(
             Key={"CaseId": case_id},
-            UpdateExpression="SET #stages.#documentProcessing = :documentProcessing",
+            UpdateExpression="SET #stages.#identityVerification = :identityVerification",
             ExpressionAttributeNames={
                 "#stages": "stages",
-                "#documentProcessing": "documentProcessing",
+                "#identityVerification": "identityVerification",
             },
-            ExpressionAttributeValues={":documentProcessing": document_processing_stage},
+            ExpressionAttributeValues={":identityVerification": identity_verification_stage},
         )
     except Exception as e:
-        logger.exception("update_document_result DynamoDB error: %s", e)
+        logger.exception("update_identity_verification_result DynamoDB error: %s", e)
         return
 
+    # Online evals: schema validation
+    try:
+        from crew.evals.online import run_online_evals
+        run_online_evals(stage="identity", task_output=task_output)
+    except Exception:
+        logger.debug("Online eval scoring skipped (identity)", exc_info=True)

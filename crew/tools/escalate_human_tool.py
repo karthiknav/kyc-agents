@@ -16,6 +16,10 @@ class EscalateToHumanInput(BaseModel):
     case_id: str = Field(description="The KYC case ID to escalate")
     reason: str = Field(description="Comma-separated reasons why the case is being escalated")
     escalation_summary: str = Field(description="Human-readable summary of the escalation for the reviewer")
+    additional_documents_needed: str = Field(
+        default="",
+        description='Optional JSON array of additional documents needed from the customer. Each item should be an object with "document_type" and "reason" keys. Empty string if not applicable.'
+    )
 
 
 class EscalateToHumanTool(BaseTool):
@@ -30,7 +34,7 @@ class EscalateToHumanTool(BaseTool):
     )
     args_schema: Type[EscalateToHumanInput] = EscalateToHumanInput
 
-    def _run(self, case_id: str, reason: str, escalation_summary: str) -> str:
+    def _run(self, case_id: str, reason: str, escalation_summary: str, additional_documents_needed: str = "") -> str:
         logger.info(
             "escalate_to_human input: case_id=%s, reason=%s", case_id, reason
         )
@@ -66,22 +70,35 @@ class EscalateToHumanTool(BaseTool):
 
         # Update DynamoDB: case status → PENDING_HUMAN_REVIEW, orchestrator stage → ESCALATED
         table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
+        # Parse additional documents needed if provided
+        parsed_additional_docs = []
+        if additional_documents_needed:
+            try:
+                parsed_additional_docs = json.loads(additional_documents_needed) if isinstance(additional_documents_needed, str) else additional_documents_needed
+                if not isinstance(parsed_additional_docs, list):
+                    parsed_additional_docs = []
+            except (json.JSONDecodeError, TypeError):
+                parsed_additional_docs = []
+
+        escalation_status = "ADDITIONAL_DOCUMENTS_REQUIRED" if parsed_additional_docs else "ESCALATED"
         orchestrator_stage_update = {
-            "status": "ESCALATED",
+            "status": escalation_status,
             "escalatedAt": now,
             "reason": reason,
             "escalation_summary": escalation_summary,
+            "additional_documents_needed": parsed_additional_docs,
         }
         try:
             dynamodb = boto3.resource("dynamodb")
             table = dynamodb.Table(table_name)
 
             # Update top-level case status
+            case_level_status = "ADDITIONAL_DOCUMENTS_REQUESTED" if parsed_additional_docs else "PENDING_HUMAN_REVIEW"
             table.update_item(
                 Key={"CaseId": case_id},
                 UpdateExpression="SET #status = :status",
                 ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={":status": "PENDING_HUMAN_REVIEW"},
+                ExpressionAttributeValues={":status": case_level_status},
             )
 
             # Ensure stages map exists then update orchestrator sub-stage
@@ -114,10 +131,11 @@ class EscalateToHumanTool(BaseTool):
                 sqs = boto3.client("sqs")
                 notification = {
                     "caseId": case_id,
-                    "type": "HUMAN_REVIEW_REQUIRED",
+                    "type": "ADDITIONAL_DOCUMENTS_REQUIRED" if parsed_additional_docs else "HUMAN_REVIEW_REQUIRED",
                     "escalatedAt": now,
                     "reason": reason,
                     "escalation_summary": escalation_summary,
+                    "additional_documents_needed": parsed_additional_docs,
                 }
                 sqs.send_message(
                     QueueUrl=human_review_queue_url,

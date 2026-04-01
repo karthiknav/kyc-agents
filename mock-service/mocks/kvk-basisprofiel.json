@@ -1,0 +1,55 @@
+{
+  "id": "kvk-basisprofiel",
+  "name": "KVK Basisprofiel API",
+  "description": "Simulates the KVK (Kamer van Koophandel) Basisprofiel API for business registration verification. Returns business profile for a given KVK number.",
+  "method": "POST",
+  "path": "/api/v1/kvk/basisprofiel",
+  "request": {
+    "body": {
+      "kvkNummer": { "type": "string", "required": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "persistenceKey": "{{kvkNummer}}",
+    "schema": {
+      "kvkNummer": "{{request.kvkNummer}}",
+      "naam": "{{faker.company.name}}",
+      "formeleRegistratiedatum": "{{faker.date.past}}",
+      "statutaireNaam": "{{faker.company.name}}",
+      "handelsnamen": [
+        {
+          "naam": "{{faker.company.name}}",
+          "volgorde": 1
+        }
+      ],
+      "sbiActiviteiten": [
+        {
+          "sbiCode": "{{faker.string.numeric(5)}}",
+          "sbiOmschrijving": "{{faker.company.buzzPhrase}}",
+          "indHoofdactiviteit": "Ja"
+        }
+      ],
+      "eigenaar": {
+        "rechtsvorm": "{{faker.helpers.arrayElement(['BeslotenVennootschap','Eenmanszaak','NaamlozeVennootschap','VennootschapOnderFirma'])}}",
+        "uitgebreideRechtsvorm": "Besloten Vennootschap",
+        "rsin": "{{faker.string.numeric(9)}}"
+      },
+      "hoofdvestiging": {
+        "vestigingsnummer": "{{faker.string.numeric(12)}}",
+        "eersteHandelsnaam": "{{faker.company.name}}",
+        "totaalWerkzamePersonen": "{{faker.number.int({min:1,max:50})}}",
+        "adressen": [
+          {
+            "type": "bezoekadres",
+            "straatnaam": "{{faker.location.street}}",
+            "huisnummer": "{{faker.number.int({min:1,max:500})}}",
+            "postcode": "{{faker.location.zipCode}}",
+            "plaats": "{{faker.location.city}}"
+          }
+        ]
+      },
+      "_links": {}
+    }
+  }
+}

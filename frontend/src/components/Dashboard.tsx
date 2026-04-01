@@ -179,7 +179,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                             </div>
                                         </td>
                                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Individual</td>
-                                        <td><span className="risk-badge low">Low</span></td>
+                                        <td><span className={`risk-badge ${(sub.stages?.orchestrator?.risk_classification || 'unknown').toLowerCase()}`}>{sub.stages?.orchestrator?.risk_classification || 'Pending'}</span></td>
                                         <td><span className={`decision-badge ${sub.status}`}>{sub.status}</span></td>
                                         <td><span className="agent-indicator" style={{ color: 'var(--accent-cyan)' }}><span className="agent-dot" style={{ background: 'var(--accent-cyan)' }}></span> AI Processing</span></td>
                                         <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{formatDate(sub.createdAt)}</td>
@@ -240,8 +240,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         </div>
                                     </div>
                                     <div className="confidence-meter">
-                                        <div className="cm-header"><span className="cm-label">Agent Confidence</span><span className="cm-value" style={{ color: 'var(--accent-green)' }}>82%</span></div>
-                                        <div className="confidence-bar"><div className="fill" style={{ width: '82%', background: 'linear-gradient(90deg, var(--accent-blue), var(--accent-green))' }}></div></div>
+                                        <div className="cm-header">
+                                            <span className="cm-label">Risk Score</span>
+                                            <span className="cm-value" style={{
+                                                color: (selectedSubmission.stages?.orchestrator?.risk_classification === 'LOW') ? 'var(--accent-green)' :
+                                                    (selectedSubmission.stages?.orchestrator?.risk_classification === 'MEDIUM') ? 'var(--accent-orange)' :
+                                                    (selectedSubmission.stages?.orchestrator?.risk_classification === 'HIGH') ? 'var(--accent-red)' : 'var(--text-muted)'
+                                            }}>
+                                                {selectedSubmission.stages?.orchestrator?.risk_score ?? '--'}
+                                                {selectedSubmission.stages?.orchestrator?.risk_classification && (
+                                                    <span style={{ fontSize: '11px', marginLeft: '6px', fontWeight: 400 }}>({selectedSubmission.stages.orchestrator.risk_classification})</span>
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div className="confidence-bar"><div className="fill" style={{
+                                            width: `${selectedSubmission.stages?.orchestrator?.risk_score ?? 0}%`,
+                                            background: (selectedSubmission.stages?.orchestrator?.risk_classification === 'LOW') ? 'var(--accent-green)' :
+                                                (selectedSubmission.stages?.orchestrator?.risk_classification === 'MEDIUM') ? 'var(--accent-orange)' :
+                                                'var(--accent-red)'
+                                        }}></div></div>
+                                        {selectedSubmission.stages?.orchestrator?.risk_score_breakdown && selectedSubmission.stages.orchestrator.risk_score_breakdown.length > 0 && (
+                                            <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                {selectedSubmission.stages.orchestrator.risk_score_breakdown.map((line: string, i: number) => (
+                                                    <div key={i} style={{ fontFamily: 'monospace', lineHeight: '1.6' }}>{line}</div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="agent-reasoning" style={{ marginBottom: '20px' }}>
                                         <div className="ar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
@@ -264,26 +288,73 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         )}
                                     </div>
 
-                                    {selectedSubmission.stages?.documentProcessing && (
+                                    {selectedSubmission.stages?.identityVerification && (
                                         <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-                                            <div className="section-title" style={{ marginBottom: '10px' }}>Document Verification</div>
+                                            <div className="section-title" style={{ marginBottom: '10px' }}>Identity Verification</div>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', fontSize: '12px' }}>
                                                 <div style={{ marginBottom: '8px' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                         <span style={{ color: 'var(--text-muted)' }}>Status:</span>
-                                                        <span className={`decision-badge ${selectedSubmission.stages.documentProcessing.result || 'PENDING'}`}>
-                                                            {selectedSubmission.stages.documentProcessing.result || 'PENDING'}
+                                                        <span className={`decision-badge ${selectedSubmission.stages.identityVerification.result || 'PENDING'}`}>
+                                                            {selectedSubmission.stages.identityVerification.result || 'PENDING'}
                                                         </span>
                                                     </div>
                                                 </div>
-                                                {selectedSubmission.stages.documentProcessing.discrepancies && selectedSubmission.stages.documentProcessing.discrepancies.length > 0 && (
+                                                {selectedSubmission.stages.identityVerification.discrepancies && selectedSubmission.stages.identityVerification.discrepancies.length > 0 && (
                                                     <div style={{ marginTop: '5px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
                                                         <div style={{ color: 'var(--accent-orange)', fontSize: '11px', fontWeight: '600', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                             <span>⚠️</span> Discrepancies Found:
                                                         </div>
                                                         <ul style={{ fontSize: '11px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
-                                                            {selectedSubmission.stages.documentProcessing.discrepancies.map((d: string, i: number) => (
+                                                            {selectedSubmission.stages.identityVerification.discrepancies.map((d: string, i: number) => (
                                                                 <li key={i} style={{ marginBottom: '2px' }}>{d}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {selectedSubmission.stages?.incomeVerification && (
+                                        <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+                                            <div className="section-title" style={{ marginBottom: '10px' }}>Income & Source of Funds</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', fontSize: '12px' }}>
+                                                <div style={{ marginBottom: '8px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span style={{ color: 'var(--text-muted)' }}>Verification:</span>
+                                                        <span className={`decision-badge ${selectedSubmission.stages.incomeVerification.result || 'PENDING'}`}>
+                                                            {selectedSubmission.stages.incomeVerification.result || 'PENDING'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {selectedSubmission.stages.incomeVerification.incomeSource && (
+                                                    <div><span style={{ color: 'var(--text-muted)' }}>Source:</span> {selectedSubmission.stages.incomeVerification.incomeSource}</div>
+                                                )}
+                                                {selectedSubmission.stages.incomeVerification.monthlyIncomeEur != null && (
+                                                    <div><span style={{ color: 'var(--text-muted)' }}>Monthly Income:</span> EUR {selectedSubmission.stages.incomeVerification.monthlyIncomeEur?.toLocaleString()}</div>
+                                                )}
+                                                {selectedSubmission.stages.incomeVerification.summary && (
+                                                    <div style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-secondary)' }}>{selectedSubmission.stages.incomeVerification.summary}</div>
+                                                )}
+                                                {selectedSubmission.stages.incomeVerification.riskIndicators && selectedSubmission.stages.incomeVerification.riskIndicators.length > 0 && (
+                                                    <div style={{ marginTop: '5px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                                                        <div style={{ color: 'var(--accent-orange)', fontSize: '11px', fontWeight: '600', marginBottom: '5px' }}>Risk Indicators:</div>
+                                                        <ul style={{ fontSize: '11px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
+                                                            {selectedSubmission.stages.incomeVerification.riskIndicators.map((r: string, i: number) => (
+                                                                <li key={i} style={{ marginBottom: '2px' }}>{r}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                                {selectedSubmission.stages.incomeVerification.additionalDocumentsNeeded && selectedSubmission.stages.incomeVerification.additionalDocumentsNeeded.length > 0 && (
+                                                    <div style={{ marginTop: '5px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                                                        <div style={{ color: 'var(--accent-orange)', fontSize: '11px', fontWeight: '600', marginBottom: '5px' }}>Additional Documents Needed:</div>
+                                                        <ul style={{ fontSize: '11px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
+                                                            {selectedSubmission.stages.incomeVerification.additionalDocumentsNeeded.map((d: any, i: number) => (
+                                                                <li key={i} style={{ marginBottom: '4px' }}>
+                                                                    <strong>{d.document_type?.replace(/_/g, ' ')}</strong>: {d.reason}
+                                                                </li>
                                                             ))}
                                                         </ul>
                                                     </div>
@@ -338,6 +409,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                             <div style={{ gridColumn: 'span 2' }}><span style={{ color: 'var(--text-muted)' }}>Address:</span> {selectedSubmission.identity.address}</div>
                                         </div>
                                     </div>
+                                    {/* Additional Documents Uploaded (for analyst review) */}
+                                    {selectedSubmission.status === 'ADDITIONAL_DOCUMENTS_REQUESTED' && (selectedSubmission as any).files?.some((f: any) => f.type?.startsWith('additional_')) && (
+                                        <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px', marginBottom: '20px', borderLeft: '3px solid var(--accent-blue)' }}>
+                                            <div className="section-title" style={{ marginBottom: '10px', color: 'var(--accent-blue)' }}>Additional Documents Uploaded</div>
+                                            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                                                The user has uploaded the requested documents. Review them below and make your decision.
+                                            </p>
+                                            <div style={{ display: 'grid', gap: '8px', fontSize: '12px' }}>
+                                                {(selectedSubmission as any).files?.filter((f: any) => f.type?.startsWith('additional_')).map((f: any, i: number) => (
+                                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: 'var(--bg-primary)', borderRadius: '6px' }}>
+                                                        <div>
+                                                            <div style={{ fontWeight: 500 }}>{f.type.replace('additional_', '').replace(/_/g, ' ')}</div>
+                                                            {f.reason_context && <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Requested because: {f.reason_context}</div>}
+                                                            {f.uploadedAt && <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Uploaded: {new Date(f.uploadedAt).toLocaleString()}</div>}
+                                                        </div>
+                                                        {f.url ? (
+                                                            <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '11px', color: 'var(--accent-blue)', textDecoration: 'none' }}>View</a>
+                                                        ) : (
+                                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No preview</span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="action-buttons" style={{ marginTop: '20px' }}>
                                         <button className="action-btn approve" onClick={() => handleStatusUpdate('APPROVED')}>✓ Approve</button>
                                         <button className="action-btn escalate-btn" onClick={() => handleStatusUpdate('ESCALATED')}>↑ Escalate</button>

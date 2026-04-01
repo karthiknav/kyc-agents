@@ -6,7 +6,7 @@
 import express from 'express';
 import { createDynamicRouter } from './routes/dynamic-router';
 import { getAllRecords, deleteRecord, seedRecord } from './middleware/persistence';
-import { defaultTestCases, BRP_MOCK_ID, pepTestCases, PEP_MOCK_ID } from './data/default-test-cases';
+import { defaultTestCases, BRP_MOCK_ID, pepTestCases, PEP_MOCK_ID, uwvTestCases, UWV_MOCK_ID, kvkTestCases, KVK_MOCK_ID } from './data/default-test-cases';
 
 // PORT is set by Elastic Beanstalk / many PaaS; fallback to MOCK_SERVICE_PORT or 9000
 const PORT = parseInt(process.env.PORT || process.env.MOCK_SERVICE_PORT || '9000', 10);
@@ -82,7 +82,13 @@ if (process.env.SEED_DEFAULT_TEST_CASES !== '0') {
   for (const tc of pepTestCases) {
     seedRecord(PEP_MOCK_ID, tc.key, tc.data);
   }
-  console.log(`Seeded ${defaultTestCases.length} BRP + ${pepTestCases.length} PEP test case(s).`);
+  for (const tc of uwvTestCases) {
+    seedRecord(UWV_MOCK_ID, tc.key, tc.data);
+  }
+  for (const tc of kvkTestCases) {
+    seedRecord(KVK_MOCK_ID, tc.key, tc.data);
+  }
+  console.log(`Seeded ${defaultTestCases.length} BRP + ${pepTestCases.length} PEP + ${uwvTestCases.length} UWV + ${kvkTestCases.length} KVK test case(s).`);
 }
 
 // ------------------------------------------------------------------

@@ -30,6 +30,7 @@ apply_bedrock_stop_sequences_patch()
 apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
 
+from crew.tools.analyze_income_tool import AnalyzeIncomeDocumentTool
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
@@ -39,13 +40,15 @@ from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
+from crew.tools.verify_income_tool import VerifyIncomeUWVTool, VerifyBusinessKVKTool
 from crew.update_case import update_adverse_media_result, update_risk_list_screening_result
-from crew.update_document_result import update_document_result
+from crew.update_document_result import update_identity_verification_result
+from crew.update_income_result import update_income_result
 from crew.update_orchestrator_result import update_orchestrator_result
 
 @CrewBase
 class KYCCrew():
-    """KYC crew: document processing → sanctions screening → final decision (sequential)."""
+    """KYC crew: identity verification → income verification → sanctions screening → final decision (sequential)."""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -80,13 +83,13 @@ class KYCCrew():
         return self._llm_instance
 
     # ------------------------------------------------------------------
-    # Document Processing Agent
+    # Identity Verification Agent
     # ------------------------------------------------------------------
 
     @agent
-    def document_processing_agent(self) -> Agent:
+    def identity_verification_agent(self) -> Agent:
         return Agent(
-            config=self.agents_config['document_processing_agent'],  # type: ignore[index]
+            config=self.agents_config['identity_verification_agent'],  # type: ignore[index]
             verbose=True,
             tools=[
                 GetCaseDetailsTool(),
@@ -94,6 +97,26 @@ class KYCCrew():
                 ExtractDocumentTextTool(),
                 VerifyIdentityDocumentTool(),
                 CompareIdentityDocumentsTool(),
+            ],
+            llm=self.get_llm(),
+        )
+
+    # ------------------------------------------------------------------
+    # Income Verification Agent (source of funds, Wwft)
+    # ------------------------------------------------------------------
+
+    @agent
+    def income_verification_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['income_verification_agent'],  # type: ignore[index]
+            verbose=True,
+            tools=[
+                GetCaseDetailsTool(),
+                GetCaseFilesTool(),
+                ExtractDocumentTextTool(),
+                VerifyIncomeUWVTool(),
+                VerifyBusinessKVKTool(),
+                AnalyzeIncomeDocumentTool(),
             ],
             llm=self.get_llm(),
         )
@@ -149,17 +172,25 @@ class KYCCrew():
 
     # ------------------------------------------------------------------
     # Tasks — order determines sequential execution:
-    #   1. document_processing_task
-    #   2. risk_list_screening_task
-    #   3. adverse_media_task
-    #   4. orchestrator_task  (context: outputs of 1 + 2 + 3)
+    #   1. identity_verification_task
+    #   2. income_verification_task
+    #   3. risk_list_screening_task
+    #   4. adverse_media_task
+    #   5. orchestrator_task  (context: outputs of 1 + 2 + 3 + 4)
     # ------------------------------------------------------------------
 
     @task
-    def document_processing_task(self) -> Task:
+    def identity_verification_task(self) -> Task:
         return Task(
-            config=self.tasks_config['document_processing_task'],  # type: ignore[index]
-            callback=update_document_result,
+            config=self.tasks_config['identity_verification_task'],  # type: ignore[index]
+            callback=update_identity_verification_result,
+        )
+
+    @task
+    def income_verification_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['income_verification_task'],  # type: ignore[index]
+            callback=update_income_result,
         )
 
     @task
@@ -181,7 +212,12 @@ class KYCCrew():
         return Task(
             config=self.tasks_config['orchestrator_task'],  # type: ignore[index]
             callback=update_orchestrator_result,
-            context=[self.document_processing_task(), self.risk_list_screening_task(), self.adverse_media_task()]
+            context=[
+                self.identity_verification_task(),
+                self.income_verification_task(),
+                self.risk_list_screening_task(),
+                self.adverse_media_task(),
+            ]
         )
 
     # ------------------------------------------------------------------
@@ -192,13 +228,15 @@ class KYCCrew():
     def crew(self) -> Crew:
         return Crew(
             agents=[
-                self.document_processing_agent(),
+                self.identity_verification_agent(),
+                self.income_verification_agent(),
                 self.risk_list_screening_agent(),
                 self.adverse_media_agent(),
                 self.orchestrator_agent(),
             ],
             tasks=[
-                self.document_processing_task(),
+                self.identity_verification_task(),
+                self.income_verification_task(),
                 self.risk_list_screening_task(),
                 self.adverse_media_task(),
                 self.orchestrator_task(),
