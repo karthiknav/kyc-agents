@@ -111,7 +111,7 @@ def main() -> int:
     host = _normalize_host(langfuse_host_raw)
     otel_endpoint = f"{host}/api/public/otel"
     token = base64.b64encode(f"{langfuse_public_key}:{langfuse_secret_key}".encode()).decode()
-    otel_auth_header = f"Authorization=Basic {token}"
+    otel_auth_header = f"Authorization=Basic {token}, x-langfuse-ingestion-version=4"
 
     bedrock_model_id = os.getenv("BEDROCK_MODEL_ID") or os.getenv("MODEL")
     system_prompt = os.getenv("SYSTEM_PROMPT")
@@ -126,6 +126,7 @@ def main() -> int:
         "LANGFUSE_TRACING_ENVIRONMENT": tracing_env,
         "OTEL_EXPORTER_OTLP_ENDPOINT": otel_endpoint,
         "OTEL_EXPORTER_OTLP_HEADERS": otel_auth_header,
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
         "DISABLE_ADOT_OBSERVABILITY": "true",
     }
     if bedrock_model_id:
