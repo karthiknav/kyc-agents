@@ -475,9 +475,11 @@ redis:
 
   # Authentication configuration
   auth:
-    # -- Username to use to connect to the redis database deployed with Langfuse. In case `redis.deploy` is set to `true`, the user will be created automatically. Set to null for an empty username in the connection string.
+    # -- Username for Redis authentication. Set to null to omit username from connection string entirely.
+    # In case `redis.deploy` is set to `true`, the user will be created automatically.
     username: "default"
-    # -- Configure the password by value or existing secret reference. Use URL-encoded passwords or avoid special characters in the password.
+    # -- Password for Redis authentication. Set to null to disable authentication (for passwordless Redis like AWS ElastiCache without auth).
+    # Use URL-encoded passwords or avoid special characters in the password.
     password: ""
     # -- If you want to use an existing secret for the redis password, set the name of the secret here. (`redis.auth.password` will be ignored and picked up from this secret).
     existingSecret: ""
@@ -492,6 +494,23 @@ redis:
     enabled: false
     # -- List of Redis cluster nodes in the format "host:port". Example: ["redis-1:6379", "redis-2:6379", "redis-3:6379"]
     nodes: []
+
+  # Redis Sentinel configuration
+  sentinel:
+    # -- Set to `true` to enable Redis Sentinel mode. Cannot be enabled simultaneously with cluster mode. When enabled, you must set `redis.deploy` to `false`.
+    enabled: false
+    # -- Name of the Redis Sentinel master. Required when `redis.sentinel.enabled` is `true`.
+    masterName: ""
+    # -- Comma-separated list of Redis Sentinel nodes in the format "host:port". Example: "sentinel-1:26379,sentinel-2:26379,sentinel-3:26379". Required when `redis.sentinel.enabled` is `true`.
+    nodes: ""
+    # -- Username for Redis Sentinel authentication (optional).
+    username: ""
+    # -- Password for Redis Sentinel authentication (optional).
+    password: ""
+    # -- If you want to use an existing secret for the sentinel password, set the name of the secret here. (`redis.sentinel.password` will be ignored and picked up from this secret).
+    existingSecret: ""
+    # -- The key in the existing secret that contains the sentinel password.
+    existingSecretPasswordKey: ""
 
   # Subchart specific settings
   architecture: standalone

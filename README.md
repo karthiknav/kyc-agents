@@ -185,7 +185,16 @@ chmod +x *.sh
 ./deploy.sh
 ```
 
-To enable Langfuse/OTEL integration during deploy (and apply the runtime env update), run:
+To enable Langfuse/OTEL integration during deploy (and apply the runtime env update), first ensure the following SSM Parameter Store parameters exist in AWS:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `/langfuse/host` | String | Langfuse server URL |
+| `/langfuse/project_name` | String | Langfuse project name |
+| `/langfuse/public_key` | String | Langfuse public API key |
+| `/langfuse/secret_key` | SecureString | Langfuse secret API key |
+
+Then run:
 
 ```bash
 export LANGFUSE_ENABLED=1

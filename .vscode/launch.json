@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: crew.kyc_app (module, step into libraries)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "crew.kyc_app",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "python": "${command:python.interpreterPath}",
+      "envFile": "${workspaceFolder}/crew/.env"
+    },
+    {
+      "name": "Python: current file (step into libraries)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/crew",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "python": "${command:python.interpreterPath}"
+    }
+  ]
+}

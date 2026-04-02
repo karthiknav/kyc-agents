@@ -204,14 +204,13 @@ resource "kubernetes_secret" "langfuse" {
 
 resource "helm_release" "langfuse" {
   name       = "langfuse"
+  repository = null
   chart      = "${path.module}/../charts/langfuse"
+  version    = null
   namespace  = kubernetes_namespace.langfuse.metadata[0].name
 
   # Ensure namespace exists in the API Helm uses (avoids "namespaces langfuse not found" if ordering/API lags).
   create_namespace = true
-
-  # Fetch Bitnami subcharts (Chart.yaml dependencies); requires Helm CLI + registry access on apply host.
-  dependency_update = true
 
   values = compact([
     local.langfuse_values,

@@ -9,11 +9,11 @@ module "langfuse" {
   domain = "langfuse.noonehasthisdomain.click"
 
   # 👇 your existing VPC
-  vpc_id             = "vpc-0b5d62a8e372728e9"
-  private_subnet_ids = ["subnet-026f9234ed6d23623", "subnet-0b8a7a17618511a6a"]
-  public_subnet_ids  = ["subnet-009754e40f5ceabfe", "subnet-0f91f20160c798e26"]
+  vpc_id             = "vpc-01b50e8d924139309"
+  private_subnet_ids = ["subnet-066debb2ea159ed4b", "subnet-025e2f39448f95a45"]
+  public_subnet_ids  = ["subnet-0b6d3c40a09a2d2c8", "subnet-0754a7a3e5ea079a0"]
 
-  private_route_table_ids = ["rtb-0664d2f6c957b8376"]
+  private_route_table_ids = ["rtb-02ac52a23fde86424"]
 }
 
 provider "kubernetes" {

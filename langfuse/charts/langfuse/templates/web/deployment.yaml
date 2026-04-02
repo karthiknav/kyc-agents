@@ -13,7 +13,9 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  replicas: 0
+  {{- if not (or .Values.langfuse.web.hpa.enabled .Values.langfuse.web.keda.enabled) }}
+  replicas: {{ if kindIs "invalid" .Values.langfuse.web.replicas }}{{ .Values.langfuse.replicas }}{{ else }}{{ .Values.langfuse.web.replicas }}{{ end }}
+  {{- end }}
   revisionHistoryLimit: {{ .Values.langfuse.web.revisionHistoryLimit | default .Values.langfuse.revisionHistoryLimit }}
   {{- with (coalesce .Values.langfuse.web.deployment.strategy .Values.langfuse.deployment.strategy) }}
   strategy:
@@ -71,9 +73,11 @@ spec:
             {{- include "langfuse.commonEnv" . | nindent 12 }}
             - name: PORT
               value: {{ .Values.langfuse.web.service.port | quote }}
+            {{- $additionalEnv := concat (.Values.langfuse.additionalEnv | default list ) (.Values.langfuse.web.pod.additionalEnv | default list )}}
+            {{- if not (include "langfuse.getEnvVar" (dict "env" $additionalEnv "name" "HOSTNAME")) }}
             - name: HOSTNAME
               value: "0.0.0.0"
-            {{- $additionalEnv := concat (.Values.langfuse.additionalEnv | default list ) (.Values.langfuse.web.pod.additionalEnv | default list )}}
+            {{- end }}
             {{- with $additionalEnv }}
               {{- toYaml . | nindent 12 }}
             {{- end }}

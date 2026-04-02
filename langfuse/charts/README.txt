@@ -1,4 +1,6 @@
-Vendored chart: copied from https://github.com/langfuse/langfuse-k8s (git tag langfuse-1.5.14; app/chart version in charts/langfuse/Chart.yaml).
+Vendored chart: copied from https://github.com/langfuse/langfuse-k8s (git tag langfuse-1.5.24; app/chart version in charts/langfuse/Chart.yaml).
+
+Local patch applied on top of upstream: templates/web/deployment.yaml replicas line uses `kindIs "invalid"` instead of `| default` to correctly honour an explicit 0 replica count (Helm's `default` filter treats 0 as falsy).
 
 Bitnami subcharts (postgresql, clickhouse, redis, minio, common) are not stored in git. Either:
   - Run: cd langfuse/charts/langfuse && helm dependency build
