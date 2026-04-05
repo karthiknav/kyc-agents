@@ -1,0 +1,14 @@
+{
+  "description": "PEP hit — Willem van den Berg, former government official. Document passes (BRP matches). PEP API returns a hit on dataset 'pep_world'.",
+  "identity": {
+    "fullName": "Willem van den Berg",
+    "firstName": "Willem",
+    "lastName": "van den Berg",
+    "dateOfBirth": "1970-01-20",
+    "nationality": "NL"
+  },
+  "document": {
+    "type": "paspoort",
+    "number": "NL111222333"
+  }
+}
