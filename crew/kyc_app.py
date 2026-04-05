@@ -50,9 +50,11 @@ if LANGFUSE_ENABLED:
                 "from Langfuse. Install with: pip install openinference-instrumentation-bedrock"
             )
 
-        from crew.langfuse_crewai_patches import patch_crewai_structured_tool_for_langfuse
-
-        patch_crewai_structured_tool_for_langfuse()
+        # NOTE: patch_crewai_structured_tool_for_langfuse() is intentionally disabled.
+        # OpenInference CrewAIInstrumentor already instruments BaseTool.run(), creating
+        # a span per tool call. The manual patch additionally wraps CrewStructuredTool.invoke()
+        # for the same call, producing two identically-named spans per tool execution.
+        # This causes online evaluators to score the same tool call twice.
         logger.info("Langfuse enabled (LANGFUSE_ENABLED=1)")
     except Exception:
         logger.exception("Langfuse init failed; continuing without Langfuse")
