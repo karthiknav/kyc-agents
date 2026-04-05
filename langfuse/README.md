@@ -1,4 +1,31 @@
+
 # Langfuse Deployment
+
+## Prerequisite: Install Terraform
+
+You need [Terraform](https://www.terraform.io/downloads.html) installed to deploy Langfuse. Download and install Terraform for your OS:
+
+### macOS (Homebrew)
+```bash
+brew tap hashicorp/tap
+brew install hashicorp/tap/terraform
+```
+
+### Linux
+```bash
+wget https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip
+unzip terraform_1.7.5_linux_amd64.zip
+sudo mv terraform /usr/local/bin/
+```
+
+### Windows
+Download the [Terraform Windows zip](https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_windows_amd64.zip), unzip, and add the executable to your PATH.
+
+Verify installation:
+```bash
+terraform version
+```
+
 
 ## Deployment Steps
 
@@ -28,7 +55,12 @@ ns-4.awsdns-03.co.uk.
 
 Add these as NS records in your parent domain's DNS provider. See [DOMAIN.md](DOMAIN.md) for details on cross-account NS delegation.
 
-### 3. Apply the full stack
+
+### 3. Update Terraform configuration (if needed)
+
+Before applying the full stack, open `main.tf` and update the domain name, VPC ID, and subnet IDs as required for your environment.
+
+### 4. Apply the full stack
 
 ```bash
 terraform apply
