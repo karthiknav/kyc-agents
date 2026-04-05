@@ -39,12 +39,14 @@ from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
+from typing import Any
+
 from crew.update_case import update_adverse_media_result, update_risk_list_screening_result
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
 
 
-def _document_processing_guardrail(output) -> tuple:
+def _document_processing_guardrail(output) -> tuple[bool, Any]:
     """Reject task output if extract_document_text (Textract) was not called.
 
     Evidenced by documents_summary being absent/empty — the agent can only populate
@@ -83,7 +85,7 @@ def _document_processing_guardrail(output) -> tuple:
         )
 
 
-def _adverse_media_guardrail(output) -> tuple:
+def _adverse_media_guardrail(output) -> tuple[bool, Any]:
     """Reject task output if search_internet / produce_adverse_media_analysis were not called.
 
     CrewAI will retry the task (up to max_iter) when this returns (False, reason).
