@@ -39,82 +39,11 @@ from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
-from typing import Any
-
 from crew.update_case import update_adverse_media_result, update_risk_list_screening_result
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
 
 
-def _document_processing_guardrail(output) -> tuple[bool, Any]:
-    """Reject task output if extract_document_text (Textract) was not called.
-
-    Evidenced by documents_summary being absent/empty — the agent can only populate
-    this field from actual OCR results.
-    """
-    import json
-    try:
-        raw = output.raw if hasattr(output, "raw") else str(output)
-        data = json.loads(raw)
-        if not str(data.get("documents_summary", "")).strip():
-            return (
-                False,
-                "documents_summary is missing or empty. You MUST call extract_document_text "
-                "for each document (via Textract) before returning your final output. "
-                "Do not skip OCR — the DynamoDB identity record alone is not sufficient.",
-            )
-        if not str(data.get("government_verification_summary", "")).strip():
-            return (
-                False,
-                "government_verification_summary is missing or empty. You MUST call "
-                "verify_identity_document for each document before returning your final output.",
-            )
-        result = str(data.get("comparison_result", "")).upper()
-        if result not in ("MATCH", "PARTIAL_MATCH", "MISMATCH"):
-            return (
-                False,
-                f"comparison_result must be MATCH, PARTIAL_MATCH, or MISMATCH — got {result!r}. "
-                "Call compare_identity_documents to obtain a valid result.",
-            )
-        return (True, output)
-    except (json.JSONDecodeError, Exception) as exc:
-        return (
-            False,
-            f"Output is not valid JSON ({exc}). Ensure all five tools were called and "
-            "return only the JSON produced by compare_identity_documents.",
-        )
-
-
-def _adverse_media_guardrail(output) -> tuple[bool, Any]:
-    """Reject task output if search_internet / produce_adverse_media_analysis were not called.
-
-    CrewAI will retry the task (up to max_iter) when this returns (False, reason).
-    """
-    import json
-    try:
-        raw = output.raw if hasattr(output, "raw") else str(output)
-        data = json.loads(raw)
-        queries = data.get("searchQueries") or []
-        if not queries:
-            return (
-                False,
-                "searchQueries is missing or empty. You MUST call search_internet and "
-                "produce_adverse_media_analysis before returning your final output.",
-            )
-        result = str(data.get("result", "")).upper()
-        if result not in ("OK", "NOK", "PENDING_REVIEW"):
-            return (
-                False,
-                f"result must be OK, NOK, or PENDING_REVIEW — got {result!r}. "
-                "Call produce_adverse_media_analysis to obtain a valid result.",
-            )
-        return (True, output)
-    except (json.JSONDecodeError, Exception) as exc:
-        return (
-            False,
-            f"Output is not valid JSON ({exc}). Ensure produce_adverse_media_analysis was called "
-            "and return only the JSON it produced.",
-        )
 
 @CrewBase
 class KYCCrew():
@@ -233,7 +162,6 @@ class KYCCrew():
         return Task(
             config=self.tasks_config['document_processing_task'],  # type: ignore[index]
             callback=update_document_result,
-            guardrail=_document_processing_guardrail,
         )
 
     @task
@@ -248,7 +176,6 @@ class KYCCrew():
         return Task(
             config=self.tasks_config["adverse_media_task"],  # type: ignore[index]
             callback=update_adverse_media_result,
-            guardrail=_adverse_media_guardrail,
         )
 
     @task

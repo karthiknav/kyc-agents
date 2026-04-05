@@ -34,7 +34,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     const [docs, setDocs] = useState<DocSection[]>([
         { id: 'id', name: 'Government-Issued ID', requirement: "Passport, National ID, or Driver's License", status: 'idle', icon: '🪪', iconClass: 'id' },
         { id: 'address', name: 'Proof of Address', requirement: 'Utility bill, bank statement (< 3 months)', status: 'idle', icon: '🏠', iconClass: 'address' },
-        { id: 'income', name: 'Proof of Income', requirement: 'Salary slips, tax return', status: 'idle', icon: '💰', iconClass: 'income' }
+        { id: 'income', name: 'Proof of Income', requirement: 'Salary slips, tax return (optional)', status: 'idle', icon: '💰', iconClass: 'income' }
     ]);
 
     const [userDetails, setUserDetails] = useState<UserDetails>({
@@ -205,7 +205,9 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
         formData.append('id_file', uploadedFiles.current['id'] as Blob);
         formData.append('address_file', uploadedFiles.current['address'] as Blob);
-        formData.append('income_file', uploadedFiles.current['income'] as Blob);
+        if (uploadedFiles.current['income']) {
+            formData.append('income_file', uploadedFiles.current['income'] as Blob);
+        }
 
         // Simulate processing states visually while waiting for server
         setDocs(prev => prev.map(doc => ({ ...doc, status: 'processing' })));
@@ -240,7 +242,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
         uploaded: docs.filter(d => d.status !== 'idle').length
     };
 
-    const allUploaded = statusCounts.uploaded === statusCounts.total;
+    const requiredDocs = ['id', 'address'];
+    const allUploaded = requiredDocs.every(id => docs.find(d => d.id === id)?.status !== 'idle');
     const detailsFilled = userDetails.fullName && userDetails.address && userDetails.passportNumber && userDetails.passportExpiry;
 
     useEffect(() => {
@@ -451,7 +454,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                 onClick={handleSubmit}
                                 disabled={!allUploaded}
                             >
-                                {allUploaded ? 'Submit for Verification' : `Upload All Documents (${statusCounts.uploaded}/${statusCounts.total})`}
+                                {allUploaded ? 'Submit for Verification' : `Upload Required Documents (${docs.filter(d => requiredDocs.includes(d.id) && d.status !== 'idle').length}/${requiredDocs.length})`}
                             </button>
                         </div>
                     </div>
