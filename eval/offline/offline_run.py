@@ -144,9 +144,16 @@ def fetch_recent_traces(lf, n: int) -> list:
 # ---------------------------------------------------------------------------
 
 def fetch_observations(lf, trace_id: str) -> list:
-    """Fetch all observations for a trace in one call (v1 API, self-hosted compatible)."""
-    resp = lf.api.legacy.observations_v1.get_many(trace_id=trace_id)
-    return list(resp.data)
+    """Fetch all observations for a trace, paginating through all pages (v1 API)."""
+    all_obs = []
+    page = 1
+    while True:
+        resp = lf.api.legacy.observations_v1.get_many(trace_id=trace_id, page=page, limit=200)
+        all_obs.extend(resp.data)
+        if page >= resp.meta.total_pages:
+            break
+        page += 1
+    return all_obs
 
 
 def group_by_agent(observations: list) -> list[AgentCoverage]:
