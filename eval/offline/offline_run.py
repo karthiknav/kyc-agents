@@ -148,7 +148,7 @@ def fetch_observations(lf, trace_id: str) -> list:
     all_obs = []
     page = 1
     while True:
-        resp = lf.api.legacy.observations_v1.get_many(trace_id=trace_id, page=page, limit=200)
+        resp = lf.api.legacy.observations_v1.get_many(trace_id=trace_id, page=page, limit=100)
         all_obs.extend(resp.data)
         if page >= resp.meta.total_pages:
             break
@@ -174,7 +174,7 @@ def group_by_agent(observations: list) -> list[AgentCoverage]:
         if not obs.name:
             continue
         for role in AGENT_EXPECTED_TOOLS:
-            if obs.name.startswith(f"{role}."):
+            if obs.name.startswith(f"{role}") and obs.type == "GENERATION":
                 agent_spans[obs.id] = AgentCoverage(
                     agent_name=role,
                     agent_obs_id=obs.id,
@@ -224,7 +224,7 @@ def compute_coverage(lf, trace_id: str, trace_name: str, session_id: str) -> Tra
 
 def delete_existing_scores(lf, trace_id: str) -> None:
     """Delete all existing tool-coverage scores on a trace before re-pushing."""
-    resp = lf.api.legacy.score_v1.get_many(trace_id=trace_id)
+    resp = lf.api.scores.get_many(trace_id=trace_id)
     for score in resp.data:
         if score.name and score.name.startswith("tool-coverage"):
             try:
