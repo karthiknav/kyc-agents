@@ -359,18 +359,19 @@ def find_orchestrator_generation(observations: list):
     return None
 
 
-def score_with_llm(input_text: str, output_text: str, model: str) -> tuple[float, str]:
-    """Call Claude as a judge. Returns (score, reasoning)."""
-    import anthropic
+def score_with_llm(input_text: str, output_text: str) -> tuple[float, str]:
+    """Call the Bedrock judge (EVALMODEL env var). Returns (score, reasoning)."""
+    import boto3
 
-    client = anthropic.Anthropic()
+    model_id = os.environ.get("EVALMODEL", "deepseek.v3.2")
+    client = boto3.client("bedrock-runtime")
     prompt = JUDGE_PROMPT.format(input=input_text, output=output_text)
-    message = client.messages.create(
-        model=model,
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}],
+    resp = client.converse(
+        modelId=model_id,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"maxTokens": 512, "temperature": 0.0},
     )
-    raw = message.content[0].text.strip()
+    raw = resp["output"]["message"]["content"][0]["text"].strip()
     try:
         data = json.loads(raw)
         return float(data["score"]), str(data.get("reasoning", ""))
@@ -384,7 +385,6 @@ def compute_decision_quality(
     trace_id: str,
     trace_name: str,
     session_id: str,
-    model: str,
 ) -> DecisionQualityResult:
     observations = fetch_observations(lf, trace_id)
     obs = find_orchestrator_generation(observations)
@@ -401,7 +401,7 @@ def compute_decision_quality(
 
     input_text = _stringify(getattr(obs, "input", None))
     output_text = _stringify(getattr(obs, "output", None))
-    score, reasoning = score_with_llm(input_text, output_text, model)
+    score, reasoning = score_with_llm(input_text, output_text)
     return DecisionQualityResult(
         trace_id=trace_id,
         trace_name=trace_name,
@@ -525,7 +525,7 @@ def run_decision_quality_check(
         name = getattr(trace, "name", None) or ""
         sid  = getattr(trace, "session_id", None) or ""
 
-        result = compute_decision_quality(lf, tid, name, sid, model)
+        result = compute_decision_quality(lf, tid, name, sid)
         results.append(result)
 
         print_decision_quality(result)
@@ -580,14 +580,6 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--model",
-        default=DEFAULT_JUDGE_MODEL,
-        help=(
-            f"Claude model to use as the decision-quality judge "
-            f"(default: {DEFAULT_JUDGE_MODEL})."
-        ),
-    )
-    parser.add_argument(
         "--push-scores",
         action="store_true",
         default=False,
@@ -612,7 +604,6 @@ def main() -> None:
             last_n=args.last,
             trace_id=args.trace_id,
             push=args.push_scores,
-            model=args.model,
         )
 
 
