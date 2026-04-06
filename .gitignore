@@ -10,7 +10,7 @@ __pycache__/
 .terraform/
 # Claude Code
 .claude/
-/.idea/misc.xml
+/idea/misc.xml
 /.idea/modules.xml
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
@@ -23,3 +23,9 @@ langfuse/charts/langfuse/charts/*.tgz
 
 # mock-service build artifacts
 mock-service/deploy.zip
+
+# macOS Finder
+.DS_Store
+.DS_Store?
+**/.DS_Store
+**/.DS_Store?
