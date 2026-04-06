@@ -167,7 +167,7 @@ def group_tools_by_agent(observations: list) -> tuple[list[AgentCoverage], list[
     for obs in observations:
         if not obs.name or not obs.name.endswith(".agent"):
             continue
-        role = obs.name[: -len(".agent")]
+        role = obs.name[: -len(".agent")].strip()
         if role not in AGENT_EXPECTED_TOOLS:
             continue
         expected = AGENT_EXPECTED_TOOLS[role]
