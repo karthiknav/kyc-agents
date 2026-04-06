@@ -1,19 +1,20 @@
 """
 Offline tool-coverage checker for KYC experiment traces.
 
-Fetches recent KYC traces from Langfuse, inspects which tools were actually
-called (TOOL-type observations created by the Langfuse CrewAI patch), compares
-against the expected tool set for each pipeline stage, and pushes a
-"tool-coverage" score back to each trace.
+Fetches recent KYC traces from Langfuse, groups tool observations by the agent
+that called them, compares against the expected tool set per agent, and pushes
+per-agent tool-coverage scores back to each trace.
 
-Requirements:
-  - Traces must have been produced by eval/experiments/run_eval.py, which
-    applies the Langfuse tool patch so each tool call is recorded as a
-    TOOL observation named after the tool.
-  - Langfuse env vars: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL
+The hierarchy in each trace is:
+  crewai-index-trace (root)
+    └── {role}.agent  (SPAN, one per agent)
+          └── tool observations (type=TOOL, name=tool_name)
+
+Tool observations are created by langfuse_crewai_patches.patch_crewai_structured_tool_for_langfuse().
+Agent spans are created by the CrewAI OTEL instrumentor.
 
 Usage (from repo root):
-  # Check last 1 experiment trace (dry run — good for testing)
+  # Check last 1 trace (dry run — good for testing)
   python -m eval.offline.offline_run --last 1
 
   # Check and push scores back to Langfuse
@@ -40,28 +41,39 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Expected tools per pipeline stage
-# Order doesn't matter — we check presence only.
+# Agent → expected tools mapping
+# Keys are the CrewAI agent role names (set in agents.yaml).
+# The OTEL instrumentor names each span "{role}.agent".
 # ---------------------------------------------------------------------------
 
-EXPECTED_TOOLS: dict[str, list[str]] = {
-    "document_processing": [
+AGENT_EXPECTED_TOOLS: dict[str, list[str]] = {
+    "Document Processing Agent": [
         "get_case_details",
         "get_case_files",
         "extract_document_text",
         "verify_identity_document",
         "compare_identity_documents",
     ],
-    "risk_list_screening": [
+    "Risk List Screening Agent": [
+        "get_case_details",
         "risk_list_screening",
     ],
-    "adverse_media": [
+    "Adverse Media Screening Agent": [
+        "get_case_details",
         "search_internet",
         "produce_adverse_media_analysis",
     ],
+    "KYC Decision Orchestrator": [
+        "escalate_to_human",  # only present on ESCALATED cases
+    ],
 }
 
-ALL_EXPECTED_TOOLS: set[str] = {t for tools in EXPECTED_TOOLS.values() for t in tools}
+ALL_EXPECTED_TOOLS: set[str] = {
+    t for tools in AGENT_EXPECTED_TOOLS.values() for t in tools
+}
+
+# Agents where missing tools are always a hard failure (vs. conditional)
+OPTIONAL_TOOLS: set[str] = {"escalate_to_human"}
 
 
 # ---------------------------------------------------------------------------
@@ -69,17 +81,21 @@ ALL_EXPECTED_TOOLS: set[str] = {t for tools in EXPECTED_TOOLS.values() for t in 
 # ---------------------------------------------------------------------------
 
 @dataclass
-class StageCoverage:
-    stage: str
+class AgentCoverage:
+    agent_name: str
+    agent_obs_id: str
     expected: list[str]
     called: list[str]
     missing: list[str] = field(default_factory=list)
 
     @property
     def score(self) -> float:
-        if not self.expected:
+        # Exclude optional tools from the denominator
+        required = [t for t in self.expected if t not in OPTIONAL_TOOLS]
+        if not required:
             return 1.0
-        return len(self.called) / len(self.expected)
+        called_required = [t for t in self.called if t not in OPTIONAL_TOOLS]
+        return len(called_required) / len(required)
 
 
 @dataclass
@@ -87,20 +103,14 @@ class TraceCoverage:
     trace_id: str
     trace_name: str
     session_id: str
-    stages: list[StageCoverage]
-    all_tool_observations: list[str]
+    agents: list[AgentCoverage]
+    unattributed_tools: list[str]   # tool obs with no recognized parent agent
 
     @property
     def overall_score(self) -> float:
-        called = {t for s in self.stages for t in s.called}
-        if not ALL_EXPECTED_TOOLS:
-            return 1.0
-        return len(called) / len(ALL_EXPECTED_TOOLS)
-
-    @property
-    def missing_tools(self) -> list[str]:
-        called = {t for s in self.stages for t in s.called}
-        return sorted(ALL_EXPECTED_TOOLS - called)
+        if not self.agents:
+            return 0.0
+        return sum(a.score for a in self.agents) / len(self.agents)
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +127,11 @@ def _langfuse_client():
 
 
 # ---------------------------------------------------------------------------
-# Trace + observation fetching
+# Trace fetching
 # ---------------------------------------------------------------------------
 
 def fetch_recent_traces(lf, n: int) -> list:
-    """Return up to n recent KYC traces (identified by the CrewAI root span name)."""
+    """Return up to n recent KYC traces by the CrewAI root span name."""
     result = lf.api.trace.list(
         name="crewai-index-trace",
         limit=n,
@@ -130,55 +140,82 @@ def fetch_recent_traces(lf, n: int) -> list:
     return list(result.data)
 
 
-def fetch_tool_observations(lf, trace_id: str) -> list[str]:
-    """
-    Return the names of all tool observations in a trace using the v1 API
-    (compatible with self-hosted Langfuse).
-    These are created by langfuse_crewai_patches.patch_crewai_structured_tool_for_langfuse()
-    as observations with as_type="tool".
-    Falls back to scanning all observations by name if no TOOL-typed ones are found.
-    """
-    resp = lf.api.legacy.observations_v1.get_many(
-        trace_id=trace_id,
-        type="TOOL",
-    )
-    names = [obs.name for obs in resp.data if obs.name]
+# ---------------------------------------------------------------------------
+# Observation fetching + grouping by agent
+# ---------------------------------------------------------------------------
 
-    # Fallback: if TOOL type returned nothing, scan all observations by name
-    if not names:
-        resp_all = lf.api.legacy.observations_v1.get_many(
-            trace_id=trace_id,
+def fetch_all_observations(lf, trace_id: str) -> list:
+    """Fetch all observations for a trace using the v1 API (self-hosted compatible)."""
+    resp = lf.api.legacy.observations_v1.get_many(trace_id=trace_id)
+    return list(resp.data)
+
+
+def group_tools_by_agent(observations: list) -> tuple[list[AgentCoverage], list[str]]:
+    """
+    Build an index of agent spans, then attach each tool observation to the
+    agent it belongs to via parent_observation_id.
+
+    Returns:
+        agents          — list of AgentCoverage, one per recognized agent span
+        unattributed    — tool names whose parent is not a recognized agent span
+    """
+    # Index all observations by id for O(1) parent lookup
+    by_id: dict[str, object] = {obs.id: obs for obs in observations}
+
+    # Find agent spans: named "{role}.agent", type SPAN
+    agent_spans: dict[str, AgentCoverage] = {}   # obs.id → AgentCoverage
+    for obs in observations:
+        if not obs.name or not obs.name.endswith(".agent"):
+            continue
+        role = obs.name[: -len(".agent")]
+        if role not in AGENT_EXPECTED_TOOLS:
+            continue
+        expected = AGENT_EXPECTED_TOOLS[role]
+        agent_spans[obs.id] = AgentCoverage(
+            agent_name=role,
+            agent_obs_id=obs.id,
+            expected=expected,
+            called=[],
         )
-        names = [
-            obs.name for obs in resp_all.data
-            if obs.name and obs.name in ALL_EXPECTED_TOOLS
-        ]
 
-    return names
+    # Attach tool observations to their parent agent
+    unattributed: list[str] = []
+    for obs in observations:
+        if not obs.name or obs.name not in ALL_EXPECTED_TOOLS:
+            continue
+        # Walk up the parent chain until we find an agent span or run out
+        parent_id = getattr(obs, "parent_observation_id", None)
+        matched = False
+        while parent_id:
+            if parent_id in agent_spans:
+                agent_spans[parent_id].called.append(obs.name)
+                matched = True
+                break
+            parent_obs = by_id.get(parent_id)
+            parent_id = getattr(parent_obs, "parent_observation_id", None) if parent_obs else None
+        if not matched:
+            unattributed.append(obs.name)
+
+    # Compute missing for each agent
+    for ac in agent_spans.values():
+        called_set = set(ac.called)
+        ac.missing = [t for t in ac.expected if t not in called_set]
+
+    return list(agent_spans.values()), unattributed
 
 
 # ---------------------------------------------------------------------------
 # Coverage computation
 # ---------------------------------------------------------------------------
 
-def compute_coverage(trace_id: str, trace_name: str, session_id: str, tool_names: list[str]) -> TraceCoverage:
-    called_set = set(tool_names)
-    stages = []
-    for stage, expected in EXPECTED_TOOLS.items():
-        called = [t for t in expected if t in called_set]
-        missing = [t for t in expected if t not in called_set]
-        stages.append(StageCoverage(
-            stage=stage,
-            expected=expected,
-            called=called,
-            missing=missing,
-        ))
+def compute_coverage(trace_id: str, trace_name: str, session_id: str, observations: list) -> TraceCoverage:
+    agents, unattributed = group_tools_by_agent(observations)
     return TraceCoverage(
         trace_id=trace_id,
         trace_name=trace_name,
         session_id=session_id,
-        stages=stages,
-        all_tool_observations=tool_names,
+        agents=agents,
+        unattributed_tools=unattributed,
     )
 
 
@@ -186,25 +223,30 @@ def compute_coverage(trace_id: str, trace_name: str, session_id: str, tool_names
 # Score pushing
 # ---------------------------------------------------------------------------
 
+def delete_existing_scores(lf, trace_id: str) -> None:
+    """Delete all existing tool-coverage scores on a trace before re-pushing."""
+    resp = lf.api.legacy.score_v1.get_many(trace_id=trace_id)
+    for score in resp.data:
+        if score.name and score.name.startswith("tool-coverage"):
+            try:
+                lf.api.legacy.score_v1.delete(score.id)
+                logger.debug("Deleted score %s (%s)", score.id, score.name)
+            except Exception as e:
+                logger.warning("Could not delete score %s: %s", score.id, e)
+
+
 def push_scores(lf, coverage: TraceCoverage) -> None:
-    """Push overall + per-stage tool coverage scores to the trace."""
-    lf.create_score(
-        trace_id=coverage.trace_id,
-        name="tool-coverage",
-        value=coverage.overall_score,
-        comment=(
-            f"missing: {coverage.missing_tools}" if coverage.missing_tools
-            else "all tools called"
-        ),
-    )
-    for stage in coverage.stages:
+    """Delete stale scores, then push per-agent tool-coverage scores to each agent observation."""
+    delete_existing_scores(lf, coverage.trace_id)
+
+    for agent in coverage.agents:
         lf.create_score(
             trace_id=coverage.trace_id,
-            name=f"tool-coverage.{stage.stage}",
-            value=stage.score,
+            observation_id=agent.agent_obs_id,
+            name="tool-coverage",
+            value=agent.score,
             comment=(
-                f"missing: {stage.missing}" if stage.missing
-                else "all tools called"
+                f"missing: {agent.missing}" if agent.missing else "all tools called"
             ),
         )
     lf.flush()
@@ -223,20 +265,25 @@ def print_coverage(coverage: TraceCoverage) -> None:
         coverage.trace_name or "(unnamed)",
         coverage.overall_score,
     )
-    for stage in coverage.stages:
-        stage_status = "OK" if stage.score == 1.0 else "MISS"
+
+    if not coverage.agents:
+        logger.info("       (no recognized agent spans found — check OTEL instrumentor is active)")
+        return
+
+    for agent in coverage.agents:
+        agent_status = "OK" if agent.score == 1.0 else "MISS"
         logger.info(
-            "       [%s] %-25s  %.0f/%d called%s",
-            stage_status,
-            stage.stage,
-            len(stage.called),
-            len(stage.expected),
-            f"  missing={stage.missing}" if stage.missing else "",
+            "       [%s] %-35s  %d/%d tools  called=%s%s",
+            agent_status,
+            agent.agent_name,
+            len(agent.called),
+            len([t for t in agent.expected if t not in OPTIONAL_TOOLS]),
+            agent.called,
+            f"  missing={agent.missing}" if agent.missing else "",
         )
-    if coverage.all_tool_observations:
-        unexpected = sorted(set(coverage.all_tool_observations) - ALL_EXPECTED_TOOLS)
-        if unexpected:
-            logger.info("       [INFO] unexpected tool calls: %s", unexpected)
+
+    if coverage.unattributed_tools:
+        logger.info("       [INFO] unattributed tool calls: %s", coverage.unattributed_tools)
 
 
 # ---------------------------------------------------------------------------
@@ -268,17 +315,16 @@ def run_coverage_check(
         name = getattr(trace, "name", None) or ""
         sid  = getattr(trace, "session_id", None) or ""
 
-        tool_names = fetch_tool_observations(lf, tid)
-        coverage   = compute_coverage(tid, name, sid, tool_names)
+        observations = fetch_all_observations(lf, tid)
+        coverage     = compute_coverage(tid, name, sid, observations)
         coverages.append(coverage)
 
         print_coverage(coverage)
         logger.info("")
 
-    # Summary
-    total    = len(coverages)
-    full     = sum(1 for c in coverages if c.overall_score == 1.0)
-    avg      = sum(c.overall_score for c in coverages) / total if total else 0.0
+    total = len(coverages)
+    full  = sum(1 for c in coverages if c.overall_score == 1.0)
+    avg   = sum(c.overall_score for c in coverages) / total if total else 0.0
     logger.info("─" * 70)
     logger.info("Summary  : %d / %d full coverage  (avg %.2f)", full, total, avg)
 
@@ -297,14 +343,14 @@ def run_coverage_check(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Offline tool-coverage checker for KYC experiment traces"
+        description="Offline tool-coverage checker — groups tools by agent, pushes scores to Langfuse"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--last",
         type=int,
         metavar="N",
-        help="Check the last N traces tagged 'kyc'.",
+        help="Check the last N traces named 'crewai-index-trace'.",
     )
     group.add_argument(
         "--trace-id",
