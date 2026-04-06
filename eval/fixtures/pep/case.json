@@ -7,8 +7,8 @@
     "dateOfBirth": "1970-01-20",
     "nationality": "NL"
   },
-  "document": {
-    "type": "paspoort",
-    "number": "NL111222333"
-  }
+  "documents": [
+    { "type": "passport", "file": "passport.pdf" },
+    { "type": "license", "file": "license.pdf" }
+  ]
 }

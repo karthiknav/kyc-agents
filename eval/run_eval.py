@@ -276,7 +276,7 @@ def _build_judge():
 
     class BedrockClaudeJudge(DeepEvalBaseLLM):
         def __init__(self):
-            self.model_id = os.environ.get("MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            self.model_id = os.environ.get("EVALMODEL", "deepseek.v3.2")
             self.client = _boto3.client("bedrock-runtime")
 
         def get_model_name(self) -> str:
@@ -399,7 +399,7 @@ def run_experiment(experiment_name: str) -> None:
         task=task_fn,
         evaluators=[accuracy_evaluator, justification_evaluator],
         max_concurrency=1,  # sequential — one Bedrock call at a time
-        metadata={"model": os.environ.get("MODEL", "")},
+        metadata={"model": "deepseek.v3.2"},
     )
 
     # ---- Print summary ----

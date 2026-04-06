@@ -40,7 +40,7 @@ eval/
 ```bash
 cd crew
 source .venv/Scripts/activate
-pip install deepeval
+uv pip install deepeval
 ```
 
 ---
@@ -101,7 +101,7 @@ Go to **Langfuse → Datasets → kyc-pipeline-accuracy** to verify.
 DEEPEVAL_TELEMETRY_OPT_OUT=YES \
 python -m eval.run_eval \
   --run-experiment \
-  --experiment-name "claude-sonnet-3-5-v1"
+  --experiment-name "openai"
 ```
 
 Runs the full crew on all 4 cases (~2–5 min per case), scores with exact-match + GEval judge,

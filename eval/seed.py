@@ -107,9 +107,9 @@ def seed_fixture(fixture_name: str, existing_ids: dict[str, str]) -> str:
             ExtraArgs={"ContentType": CONTENT_TYPES.get(doc_file.suffix.lower(), "application/octet-stream")},
         )
         file_refs.append({
-            "s3Bucket":     bucket,
-            "s3Key":        s3_key,
-            "documentType": doc_cfg.get("type", "paspoort"),
+            "bucket":     bucket,
+            "key":        s3_key,
+            "type": doc_cfg.get("type", "paspoort"),
         })
 
     # Create DynamoDB record
