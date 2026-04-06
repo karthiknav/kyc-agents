@@ -214,8 +214,51 @@ def run_pipeline(case_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Langfuse client
+# Langfuse client + SSM bootstrap
 # ---------------------------------------------------------------------------
+
+def _load_langfuse_env_from_ssm() -> None:
+    """Fetch Langfuse credentials from SSM and inject into os.environ."""
+    import boto3
+    from botocore.exceptions import ClientError
+
+    ssm_prefix = os.environ.get("LANGFUSE_SSM_PREFIX", "/langfuse")
+    paths = {
+        "LANGFUSE_PROJECT_NAME": (f"{ssm_prefix}/project_name", False),
+        "LANGFUSE_SECRET_KEY":   (f"{ssm_prefix}/secret_key",   True),
+        "LANGFUSE_PUBLIC_KEY":   (f"{ssm_prefix}/public_key",   True),
+        "LANGFUSE_HOST":         (f"{ssm_prefix}/host",         False),
+    }
+
+    session = boto3.session.Session()
+    region = (
+        session.region_name
+        or os.environ.get("AWS_DEFAULT_REGION")
+        or os.environ.get("AWS_REGION")
+    )
+    ssm = session.client("ssm", region_name=region)
+
+    try:
+        values: dict[str, str] = {}
+        for env_key, (param_path, decrypt) in paths.items():
+            resp = ssm.get_parameter(Name=param_path, WithDecryption=decrypt)
+            values[env_key] = resp["Parameter"]["Value"].strip()
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        logger.warning("SSM fetch failed (%s): %s — falling back to existing env", code, e)
+        return
+
+    host = values["LANGFUSE_HOST"].rstrip("/")
+    if not host.startswith(("http://", "https://")):
+        host = f"https://{host}"
+
+    os.environ["LANGFUSE_PROJECT_NAME"] = values["LANGFUSE_PROJECT_NAME"]
+    os.environ["LANGFUSE_SECRET_KEY"]   = values["LANGFUSE_SECRET_KEY"]
+    os.environ["LANGFUSE_PUBLIC_KEY"]   = values["LANGFUSE_PUBLIC_KEY"]
+    os.environ["LANGFUSE_HOST"]         = host
+    os.environ["LANGFUSE_BASE_URL"]     = host
+    logger.info("Loaded Langfuse config from SSM (project=%s)", values["LANGFUSE_PROJECT_NAME"])
+
 
 def _langfuse_client():
     from langfuse import Langfuse
@@ -287,7 +330,7 @@ def seed_dataset() -> None:
 
 
 # ---------------------------------------------------------------------------
-# LLM judge (GEval via DeepEval + Bedrock)
+# LLM judge (GEval via DeepEval + LLM)
 # ---------------------------------------------------------------------------
 
 def _build_judge():
@@ -352,6 +395,7 @@ def _build_justification_metric(judge):
 # ---------------------------------------------------------------------------
 
 def run_experiment(experiment_name: str) -> None:
+    _load_langfuse_env_from_ssm()
     lf     = _langfuse_client()
     golden = _load_golden()
     judge  = _build_judge()
@@ -419,10 +463,44 @@ def run_experiment(experiment_name: str) -> None:
             logger.warning("GEval failed: %s", e)
             return Evaluation(name="decision-justification", value=0.0, comment=str(e))
 
+    def doc_result_evaluator(
+        *,
+        input: dict,        # noqa: A002
+        output: dict | None,
+        **kwargs,
+    ) -> Evaluation:
+        got      = (output or {}).get("doc_output", {}).get("comparison_result")
+        expected = input.get("expected_doc_result")
+        if expected is None:
+            return Evaluation(name="doc-result-accuracy", value=None, comment="no expected value")
+        correct = got == expected
+        return Evaluation(
+            name="doc-result-accuracy",
+            value=1.0 if correct else 0.0,
+            comment=f"got={got}  expected={expected}",
+        )
+
+    def risk_result_evaluator(
+        *,
+        input: dict,        # noqa: A002
+        output: dict | None,
+        **kwargs,
+    ) -> Evaluation:
+        got      = (output or {}).get("risk_output", {}).get("result")
+        expected = input.get("expected_risk_result")
+        if expected is None:
+            return Evaluation(name="risk-result-accuracy", value=None, comment="no expected value")
+        correct = got == expected
+        return Evaluation(
+            name="risk-result-accuracy",
+            value=1.0 if correct else 0.0,
+            comment=f"got={got}  expected={expected}",
+        )
+
     result = dataset.run_experiment(
         name=experiment_name,
         task=task_fn,
-        evaluators=[accuracy_evaluator, justification_evaluator],
+        evaluators=[accuracy_evaluator, justification_evaluator, doc_result_evaluator, risk_result_evaluator],
         max_concurrency=1,
         metadata={"model": os.environ.get("MODEL", "unknown")},
     )
