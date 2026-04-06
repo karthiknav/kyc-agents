@@ -10,16 +10,20 @@ For each golden fixture the script:
           reason[] logically follow from what the agents actually found?
   4. Posts scores to a Langfuse dataset experiment for side-by-side comparison.
 
+Tool observations (for offline tool-coverage checks) are captured via the
+Langfuse CrewAI patch — each tool call appears as a TOOL-type observation
+in the trace, named after the tool (e.g. "risk_list_screening").
+
 Usage (from repo root):
   # First time: seed the Langfuse dataset
-  python -m eval.run_eval --seed-dataset
+  python -m eval.experiments.run_eval --seed-dataset
 
   # Each experiment run (e.g. after a model or prompt change):
-  python -m eval.run_eval --run-experiment --experiment-name "claude-sonnet-v1"
+  python -m eval.experiments.run_eval --run-experiment --experiment-name "claude-sonnet-v1"
 
 Prerequisites:
   1. Mock service running  (MOCK_SERVICE_URL in env)
-  2. eval/case_ids.json    (produced by python -m eval.seed)
+  2. eval/case_ids.json    (produced by python -m eval.experiments.seed)
   3. AWS credentials + KYC_CASES_TABLE, KYC_RESULTS_BUCKET in env
   4. Langfuse env vars     (LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL)
 
@@ -39,7 +43,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent / "crew" / ".env")
+load_dotenv(Path(__file__).parent.parent.parent / "crew" / ".env")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -48,10 +52,9 @@ logger = logging.getLogger(__name__)
 # Paths
 # ---------------------------------------------------------------------------
 
-EVAL_DIR       = Path(__file__).parent
-FIXTURES_DIR   = EVAL_DIR / "fixtures"
-CASE_IDS_FILE  = EVAL_DIR / "case_ids.json"
-GOLDEN_FILE    = EVAL_DIR / "golden_dataset.json"
+EVAL_DIR      = Path(__file__).parent.parent   # eval/
+CASE_IDS_FILE = EVAL_DIR / "case_ids.json"
+GOLDEN_FILE   = EVAL_DIR / "golden_dataset.json"
 LANGFUSE_DATASET_NAME = "kyc-pipeline-accuracy"
 
 # ---------------------------------------------------------------------------
@@ -91,13 +94,24 @@ except Exception as e:
 from crew.crew import KYCCrew
 
 # ---------------------------------------------------------------------------
+# Langfuse tool observation patch — records each tool call as a TOOL
+# observation in the trace so offline/tool_coverage.py can check coverage
+# ---------------------------------------------------------------------------
+
+from crew.langfuse_crewai_patches import patch_crewai_structured_tool_for_langfuse
+try:
+    patch_crewai_structured_tool_for_langfuse()
+except Exception as e:
+    logger.warning("Langfuse tool patch failed: %s", e)
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _load_case_ids() -> dict[str, str]:
     if not CASE_IDS_FILE.exists():
         sys.exit(
-            f"ERROR: {CASE_IDS_FILE} not found. Run 'python -m eval.seed' first."
+            f"ERROR: {CASE_IDS_FILE} not found. Run 'python -m eval.experiments.seed' first."
         )
     return json.loads(CASE_IDS_FILE.read_text())
 
@@ -148,7 +162,6 @@ def run_pipeline(case_id: str) -> dict[str, Any]:
     logger.info("Running crew for caseId=%s ...", case_id)
     crew_output = crew_obj.kickoff(inputs={"caseId": case_id})
 
-    # Read task outputs from the crew's task objects (populated after kickoff)
     tasks = crew_obj.tasks
     doc_raw     = tasks[0].output.raw if tasks[0].output else ""
     risk_raw    = tasks[1].output.raw if tasks[1].output else ""
@@ -162,7 +175,6 @@ def run_pipeline(case_id: str) -> dict[str, Any]:
 
     action = orch_out.get("action") or _extract_field(orch_raw, "action")
 
-    # Compact summary of what the agents actually found — used as LLM judge INPUT
     context_summary = json.dumps({
         "documentProcessing": {
             "comparison_result": doc_out.get("comparison_result"),
@@ -202,7 +214,7 @@ def run_pipeline(case_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Langfuse helpers
+# Langfuse client
 # ---------------------------------------------------------------------------
 
 def _langfuse_client():
@@ -233,7 +245,6 @@ def seed_dataset() -> None:
     )
     logger.info("Dataset '%s' ready.", LANGFUSE_DATASET_NAME)
 
-    # Collect existing item IDs to avoid duplicates
     existing: set[str] = set()
     try:
         ds = lf.get_dataset(LANGFUSE_DATASET_NAME)
@@ -251,7 +262,7 @@ def seed_dataset() -> None:
             logger.info("  skip (exists): %s", fixture)
             continue
         if fixture not in case_ids:
-            logger.warning("  skip (no case_id): %s — run eval.seed first", fixture)
+            logger.warning("  skip (no case_id): %s — run eval.experiments.seed first", fixture)
             continue
 
         lf.create_dataset_item(
@@ -280,7 +291,6 @@ def seed_dataset() -> None:
 # ---------------------------------------------------------------------------
 
 def _build_judge():
-    """Build a DeepEval-compatible judge backed by Bedrock Claude."""
     from deepeval.models.base_model import DeepEvalBaseLLM
     import boto3 as _boto3
 
@@ -342,10 +352,10 @@ def _build_justification_metric(judge):
 # ---------------------------------------------------------------------------
 
 def run_experiment(experiment_name: str) -> None:
-    lf      = _langfuse_client()
-    golden  = _load_golden()
-    judge   = _build_judge()
-    geval   = _build_justification_metric(judge)
+    lf     = _langfuse_client()
+    golden = _load_golden()
+    judge  = _build_judge()
+    geval  = _build_justification_metric(judge)
 
     dataset = lf.get_dataset(LANGFUSE_DATASET_NAME)
     if not dataset.items:
@@ -358,9 +368,6 @@ def run_experiment(experiment_name: str) -> None:
         experiment_name,
         len(dataset.items),
     )
-
-    # Build a lookup: fixture → golden row (for expected values)
-    golden_by_fixture = {row["fixture"]: row for row in golden}
 
     from langfuse import propagate_attributes, Evaluation
 
@@ -416,8 +423,8 @@ def run_experiment(experiment_name: str) -> None:
         name=experiment_name,
         task=task_fn,
         evaluators=[accuracy_evaluator, justification_evaluator],
-        max_concurrency=1,  # sequential — one Bedrock call at a time
-        metadata={"model": "deepseek.v3.2"},
+        max_concurrency=1,
+        metadata={"model": os.environ.get("MODEL", "unknown")},
     )
 
     # ---- Print summary ----
@@ -439,11 +446,11 @@ def run_experiment(experiment_name: str) -> None:
     logger.info("─" * 60)
 
     for r in item_results:
-        fixture  = (r.item.metadata or {}).get("fixture", "?")
-        evals    = r.evaluations
-        acc      = next((e for e in evals if e.name == "decision-accuracy"), None)
-        just     = next((e for e in evals if e.name == "decision-justification"), None)
-        status   = "PASS" if acc and acc.value == 1.0 else "FAIL"
+        fixture = (r.item.metadata or {}).get("fixture", "?")
+        evals   = r.evaluations
+        acc     = next((e for e in evals if e.name == "decision-accuracy"), None)
+        just    = next((e for e in evals if e.name == "decision-justification"), None)
+        status  = "PASS" if acc and acc.value == 1.0 else "FAIL"
         logger.info(
             "  [%s] %-20s  accuracy=%s  justification=%.2f  %s",
             status,
