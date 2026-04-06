@@ -1,0 +1,3 @@
+case_id,missing_artifacts,has_any_artifact,has_all_artifacts
+41ce03e0-beea-42b2-8e40-163e2a0caeaf,,True,True
+41ce03e0-beea-42b2-8e40-1632a0caeaf,"document-processing-report.md, risk-list-report.json, adverse-media-report.md",False,False
