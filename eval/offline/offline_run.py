@@ -1,32 +1,42 @@
 """
-Offline tool-coverage checker for KYC experiment traces.
+Offline evals for KYC experiment traces.
 
-Fetches recent KYC traces from Langfuse, groups tool observations by the agent
-that called them, compares against the expected tool set per agent, and pushes
-per-agent tool-coverage scores back to each trace.
+Two evaluations are available:
+
+  tool-coverage
+    Fetches recent KYC traces from Langfuse, groups tool observations by the
+    agent that called them, compares against the expected tool set per agent,
+    and pushes per-agent tool-coverage scores back to each trace.
+
+  orchestrator-decision-quality
+    Fetches recent KYC traces, finds the GENERATION observation belonging to
+    the KYC Decision Orchestrator agent, and uses Claude as a judge to score
+    decision correctness and reason completeness (0.0–1.0).
 
 The hierarchy in each trace is:
   crewai-index-trace (root)
     └── {role}.agent  (SPAN, one per agent)
+          └── GENERATION observations (type=GENERATION, name starts with role)
           └── tool observations (type=TOOL, name=tool_name)
 
-Tool observations are created by langfuse_crewai_patches.patch_crewai_structured_tool_for_langfuse().
-Agent spans are created by the CrewAI OTEL instrumentor.
-
 Usage (from repo root):
-  # Check last 1 trace (dry run — good for testing)
-  python -m eval.offline.offline_run --last 1
+  # Tool-coverage check — last 5 traces, dry run
+  python -m eval.offline.offline_run --last 5
 
-  # Check and push scores back to Langfuse
-  python -m eval.offline.offline_run --last 5 --push-scores
+  # Decision-quality check — last 10 traces, push scores back
+  python -m eval.offline.offline_run --last 10 --eval decision-quality --push-scores
 
-  # Check a specific trace
-  python -m eval.offline.offline_run --trace-id <id> --push-scores
+  # Both evals on a single trace
+  python -m eval.offline.offline_run --trace-id <id> --eval all --push-scores
+
+  # Use a specific judge model (default: claude-haiku-4-5-20251001)
+  python -m eval.offline.offline_run --last 5 --eval decision-quality --model claude-sonnet-4-6
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -75,6 +85,46 @@ ALL_EXPECTED_TOOLS: set[str] = {
 # Agents where missing tools are always a hard failure (vs. conditional)
 OPTIONAL_TOOLS: set[str] = {"escalate_to_human"}
 
+ORCHESTRATOR_ROLE = "KYC Decision Orchestrator"
+
+# ---------------------------------------------------------------------------
+# Judge prompt for orchestrator-decision-quality
+# ---------------------------------------------------------------------------
+
+JUDGE_PROMPT = """\
+You are a compliance QA reviewer auditing an automated KYC decision.
+
+The agent's reasoning and tool execution (shows what the agent actually found):
+<input>
+{input}
+</input>
+
+The agent's final structured decision:
+<output>
+{output}
+</output>
+
+Evaluate on TWO dimensions, return a score from 0.0 to 1.0:
+
+1. DECISION CORRECTNESS (did the right action follow from the findings?)
+   - APPROVED is only valid if document=MATCH AND risk=CLEAR AND adverse=OK
+   - ESCALATED is valid if at least one check failed
+
+2. REASON COMPLETENESS (does reason[] reflect what the agent actually found?)
+   - Compare the detail in <input> (Thought + Observation) against reason[] in <output>
+   - Penalise if reason[] is vague (e.g. "Adverse media result is NOK") when the \
+input reveals specific findings (e.g. fraud conviction, money laundering)
+   - A good reason[] should mention the person, the specific finding, and the result
+
+Score HIGH (0.8-1.0): correct decision AND reason[] captures the specific findings from input
+Score MEDIUM (0.5-0.7): correct decision BUT reason[] is vague relative to what input shows
+Score LOW (0.0-0.4): wrong decision OR reason[] contradicts the input OR output is not valid JSON
+
+Respond with a JSON object only, no preamble:
+{{"score": <float 0.0-1.0>, "reasoning": "<one sentence>"}}
+"""
+
+
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -110,6 +160,16 @@ class TraceCoverage:
         if not self.agents:
             return 0.0
         return sum(a.score for a in self.agents) / len(self.agents)
+
+
+@dataclass
+class DecisionQualityResult:
+    trace_id: str
+    trace_name: str
+    session_id: str
+    obs_id: Optional[str]
+    score: Optional[float]
+    reasoning: str
 
 
 # ---------------------------------------------------------------------------
@@ -219,25 +279,11 @@ def compute_coverage(lf, trace_id: str, trace_name: str, session_id: str) -> Tra
 
 
 # ---------------------------------------------------------------------------
-# Score pushing
+# Tool-coverage score pushing
 # ---------------------------------------------------------------------------
 
-def delete_existing_scores(lf, trace_id: str) -> None:
-    """Delete all existing tool-coverage scores on a trace before re-pushing."""
-    resp = lf.api.scores.get_many(trace_id=trace_id)
-    for score in resp.data:
-        if score.name and score.name.startswith("tool-coverage"):
-            try:
-                lf.api.legacy.score_v1.delete(score.id)
-                logger.debug("Deleted score %s (%s)", score.id, score.name)
-            except Exception as e:
-                logger.warning("Could not delete score %s: %s", score.id, e)
-
-
-def push_scores(lf, coverage: TraceCoverage) -> None:
-    """Delete stale scores, then push per-agent tool-coverage scores to each agent observation."""
-    delete_existing_scores(lf, coverage.trace_id)
-
+def push_coverage_scores(lf, coverage: TraceCoverage) -> None:
+    """Push per-agent tool-coverage scores to each agent observation."""
     for agent in coverage.agents:
         lf.create_score(
             trace_id=coverage.trace_id,
@@ -252,7 +298,7 @@ def push_scores(lf, coverage: TraceCoverage) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Reporting
+# Tool-coverage reporting
 # ---------------------------------------------------------------------------
 
 def print_coverage(coverage: TraceCoverage) -> None:
@@ -281,6 +327,123 @@ def print_coverage(coverage: TraceCoverage) -> None:
             f"  missing={agent.missing}" if agent.missing else "",
         )
 
+
+# ---------------------------------------------------------------------------
+# Decision quality helpers
+# ---------------------------------------------------------------------------
+
+def _stringify(value) -> str:
+    """Convert any Langfuse observation input/output value to a string."""
+    if value is None:
+        return "(empty)"
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, indent=2, default=str)
+    except Exception:
+        return str(value)
+
+
+def find_orchestrator_generation(observations: list):
+    """Return the GENERATION observation whose parent span is the KYC Decision Orchestrator, or None."""
+    by_id = {obs.id: obs for obs in observations}
+    for obs in observations:
+        if obs.type != "GENERATION":
+            continue
+        parent_id = getattr(obs, "parent_observation_id", None)
+        if not parent_id:
+            continue
+        parent = by_id.get(parent_id)
+        if parent and parent.name and parent.name.startswith(ORCHESTRATOR_ROLE):
+            return obs
+    return None
+
+
+def score_with_llm(input_text: str, output_text: str, model: str) -> tuple[float, str]:
+    """Call Claude as a judge. Returns (score, reasoning)."""
+    import anthropic
+
+    client = anthropic.Anthropic()
+    prompt = JUDGE_PROMPT.format(input=input_text, output=output_text)
+    message = client.messages.create(
+        model=model,
+        max_tokens=256,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = message.content[0].text.strip()
+    try:
+        data = json.loads(raw)
+        return float(data["score"]), str(data.get("reasoning", ""))
+    except Exception:
+        logger.warning("Judge returned non-JSON: %r", raw)
+        return 0.0, f"parse error: {raw[:120]}"
+
+
+def compute_decision_quality(
+    lf,
+    trace_id: str,
+    trace_name: str,
+    session_id: str,
+    model: str,
+) -> DecisionQualityResult:
+    observations = fetch_observations(lf, trace_id)
+    obs = find_orchestrator_generation(observations)
+    if obs is None:
+        logger.warning("[%s] No orchestrator GENERATION found — skipping.", trace_id)
+        return DecisionQualityResult(
+            trace_id=trace_id,
+            trace_name=trace_name,
+            session_id=session_id,
+            obs_id=None,
+            score=None,
+            reasoning="no orchestrator generation found",
+        )
+
+    input_text = _stringify(getattr(obs, "input", None))
+    output_text = _stringify(getattr(obs, "output", None))
+    score, reasoning = score_with_llm(input_text, output_text, model)
+    return DecisionQualityResult(
+        trace_id=trace_id,
+        trace_name=trace_name,
+        session_id=session_id,
+        obs_id=obs.id,
+        score=score,
+        reasoning=reasoning,
+    )
+
+
+def push_decision_quality_score(lf, result: DecisionQualityResult) -> None:
+    """Push the decision-quality score to the orchestrator observation."""
+    if result.score is None or result.obs_id is None:
+        return
+    lf.create_score(
+        trace_id=result.trace_id,
+        observation_id=result.obs_id,
+        name="orchestrator-decision-quality",
+        value=result.score,
+        comment=result.reasoning,
+    )
+    lf.flush()
+
+
+def print_decision_quality(result: DecisionQualityResult) -> None:
+    if result.score is None:
+        logger.info(
+            "[SKIP] trace=%-36s  name=%-20s  %s",
+            result.trace_id,
+            result.trace_name or "(unnamed)",
+            result.reasoning,
+        )
+        return
+    band = "HIGH" if result.score >= 0.8 else ("MED" if result.score >= 0.5 else "LOW")
+    logger.info(
+        "[%-4s] trace=%-36s  name=%-20s  score=%.2f  %s",
+        band,
+        result.trace_id,
+        result.trace_name or "(unnamed)",
+        result.score,
+        result.reasoning,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +490,60 @@ def run_coverage_check(
     if push:
         logger.info("Pushing scores to Langfuse ...")
         for coverage in coverages:
-            push_scores(lf, coverage)
+            push_coverage_scores(lf, coverage)
+        logger.info("Done.")
+    else:
+        logger.info("(dry run — add --push-scores to write scores to Langfuse)")
+
+
+def run_decision_quality_check(
+    last_n: Optional[int] = None,
+    trace_id: Optional[str] = None,
+    push: bool = False
+) -> None:
+    lf = _langfuse_client()
+
+    if trace_id:
+        traces = [lf.api.trace.get(trace_id)]
+    else:
+        traces = fetch_recent_traces(lf, last_n or 10)
+
+    if not traces:
+        logger.warning("No traces found.")
+        return
+
+    logger.info(
+        "Checking orchestrator-decision-quality for %d trace(s) (judge: %s) ...",
+        len(traces),
+        os.environ.get("EVALMODEL", "deepseek.v3.2"),
+    )
+    logger.info("─" * 70)
+
+    results: list[DecisionQualityResult] = []
+    for trace in traces:
+        tid  = trace.id
+        name = getattr(trace, "name", None) or ""
+        sid  = getattr(trace, "session_id", None) or ""
+
+        result = compute_decision_quality(lf, tid, name, sid, model)
+        results.append(result)
+
+        print_decision_quality(result)
+
+    scored = [r for r in results if r.score is not None]
+    avg = sum(r.score for r in scored) / len(scored) if scored else 0.0  # type: ignore[arg-type]
+    logger.info("─" * 70)
+    logger.info(
+        "Summary  : %d / %d scored  (avg %.2f)",
+        len(scored),
+        len(results),
+        avg,
+    )
+
+    if push:
+        logger.info("Pushing scores to Langfuse ...")
+        for result in results:
+            push_decision_quality_score(lf, result)
         logger.info("Done.")
     else:
         logger.info("(dry run — add --push-scores to write scores to Langfuse)")
@@ -339,7 +555,9 @@ def run_coverage_check(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Offline tool-coverage checker — groups tools by agent, pushes scores to Langfuse"
+        description=(
+            "Offline evals for KYC traces: tool-coverage and/or orchestrator-decision-quality"
+        )
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -354,18 +572,48 @@ def main() -> None:
         help="Check a specific trace by ID.",
     )
     parser.add_argument(
+        "--eval",
+        choices=["tool-coverage", "decision-quality", "all"],
+        default="tool-coverage",
+        help=(
+            "Which eval to run: tool-coverage (default), decision-quality, or all."
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_JUDGE_MODEL,
+        help=(
+            f"Claude model to use as the decision-quality judge "
+            f"(default: {DEFAULT_JUDGE_MODEL})."
+        ),
+    )
+    parser.add_argument(
         "--push-scores",
         action="store_true",
         default=False,
-        help="Push tool-coverage scores back to each trace in Langfuse (default: dry run).",
+        help="Push scores back to each trace in Langfuse (default: dry run).",
     )
     args = parser.parse_args()
 
-    run_coverage_check(
-        last_n=args.last,
-        trace_id=args.trace_id,
-        push=args.push_scores,
-    )
+    run_coverage = args.eval in ("tool-coverage", "all")
+    run_quality  = args.eval in ("decision-quality", "all")
+
+    if run_coverage:
+        run_coverage_check(
+            last_n=args.last,
+            trace_id=args.trace_id,
+            push=args.push_scores,
+        )
+
+    if run_quality:
+        if run_coverage:
+            logger.info("")
+        run_decision_quality_check(
+            last_n=args.last,
+            trace_id=args.trace_id,
+            push=args.push_scores,
+            model=args.model,
+        )
 
 
 if __name__ == "__main__":
