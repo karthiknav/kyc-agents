@@ -75,6 +75,16 @@ apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
 
 # ---------------------------------------------------------------------------
+# OpenTelemetry CrewAI instrumentation (after patches, before crew import)
+# ---------------------------------------------------------------------------
+
+from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
+try:
+    CrewAIInstrumentor().instrument()
+except Exception as e:
+    logger.warning("CrewAIInstrumentor failed: %s", e)
+
+# ---------------------------------------------------------------------------
 # Crew import (after patches)
 # ---------------------------------------------------------------------------
 
@@ -352,9 +362,17 @@ def run_experiment(experiment_name: str) -> None:
     # Build a lookup: fixture → golden row (for expected values)
     golden_by_fixture = {row["fixture"]: row for row in golden}
 
+    from langfuse import propagate_attributes
+
     def task_fn(*, item, **kwargs) -> dict[str, Any]:
         case_id = item.input["case_id"]
-        return run_pipeline(case_id)
+        fixture = item.input.get("fixture", case_id)
+        with propagate_attributes(
+            tags=["kyc", "experiment"],
+            session_id=case_id,
+            trace_name=fixture,
+        ):
+            return run_pipeline(case_id)
 
     def accuracy_evaluator(
         *,
