@@ -208,7 +208,7 @@ echo "✓ UI stack ready"
 #   echo "Warning: skipping evaluation setup (missing agent runtime ARN)."
 # fi
 
-"$PYTHON" "$SCRIPT_DIR/deploy_ui.py" "$INFRA_STACK_NAME" "$REGION"
+python3 "$SCRIPT_DIR/deploy_ui.py" "$INFRA_STACK_NAME" "$REGION"
 
 echo ""
 echo "=========================================="
