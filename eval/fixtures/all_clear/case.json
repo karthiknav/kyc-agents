@@ -1,0 +1,14 @@
+{
+  "description": "Clean approval — all three checks pass. Jan de Vries, paspoort NL123456789. BRP returns matching identity. PEP: no hit.",
+  "identity": {
+    "fullName": "Jan de Vries",
+    "firstName": "Jan",
+    "lastName": "de Vries",
+    "dateOfBirth": "1985-03-15",
+    "nationality": "NL"
+  },
+  "document": {
+    "type": "paspoort",
+    "number": "NL123456789"
+  }
+}

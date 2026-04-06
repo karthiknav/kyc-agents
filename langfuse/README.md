@@ -55,7 +55,12 @@ ns-4.awsdns-03.co.uk.
 
 Add these as NS records in your parent domain's DNS provider. See [DOMAIN.md](DOMAIN.md) for details on cross-account NS delegation.
 
-### 3. Apply the full stack
+
+### 3. Update Terraform configuration (if needed)
+
+Before applying the full stack, open `main.tf` and update the domain name, VPC ID, and subnet IDs as required for your environment.
+
+### 4. Apply the full stack
 
 ```bash
 terraform apply

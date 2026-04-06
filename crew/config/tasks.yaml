@@ -26,18 +26,33 @@ orchestrator_task:
 
 document_processing_task:
   description: >
-    Given caseId {caseId}:
-    1. Use get_case_details to fetch identity info (fullName, DOB, etc.) from DynamoDB.
-    2. Use get_case_files to get the list of uploaded document S3 references.
-    3. Use extract_document_text for each document (once per s3_bucket/s3_key pair).
-    4. Use verify_identity_document for each document — extract the document type
-       (paspoort, identiteitskaart, or rijbewijs) and document number from the OCR text,
-       then call the tool to verify it against the BRP government registry.
-    5. Use compare_identity_documents with the case_details JSON, a JSON array of all
-       Textract extraction results, and a JSON array of all government verification
-       results to produce the final comparison analysis across all three sources.
-    Return valid JSON with case_id, name, comparison_result, discrepancies,
-    comparison_summary, documents_summary, and government_verification_summary.
+    Given caseId {caseId}, you MUST complete all five steps in order. Do NOT produce
+    your final output until every tool call has returned results — no exceptions.
+    The DynamoDB identity record alone is NOT sufficient; you must OCR each document.
+
+    STEP 1 — get_case_details (REQUIRED):
+    Call get_case_details with the caseId to fetch identity info (fullName, DOB, etc.).
+
+    STEP 2 — get_case_files (REQUIRED):
+    Call get_case_files with the caseId to retrieve the list of uploaded document S3 references.
+
+    STEP 3 — extract_document_text (REQUIRED, once per document, do not skip):
+    For each s3_bucket/s3_key pair from get_case_files, call extract_document_text.
+    You MUST call this tool — never assume or fabricate OCR text. Do not skip even
+    if you think you already know what the document contains.
+
+    STEP 4 — verify_identity_document (REQUIRED, once per document, do not skip):
+    For each document, extract the document type (paspoort, identiteitskaart, or rijbewijs)
+    and document number from the OCR text, then call verify_identity_document to verify
+    against the Dutch BRP government registry.
+
+    STEP 5 — compare_identity_documents (REQUIRED):
+    Call compare_identity_documents with the case_details JSON, a JSON array of all
+    Textract extraction results, and a JSON array of all BRP verification results.
+
+    Only after all five tool calls have completed, return valid JSON with case_id, name,
+    comparison_result, discrepancies, comparison_summary, documents_summary, and
+    government_verification_summary.
   expected_output: >
     Valid JSON object with exactly these keys:
     - "case_id": the case ID (string)
@@ -69,15 +84,26 @@ risk_list_screening_task:
 
 adverse_media_task:
   description: >
-    Given caseId {caseId}:
-    1. Use get_case_details to fetch the case from DynamoDB and extract identity.fullName.
-    2. Run a single web search using search_internet with this query (construct it using the extracted identity.fullName):
-       "<FULL_NAME> fraud crime money laundering arrest investigation adverse media"
-    3. Call produce_adverse_media_analysis with:
-       - person_name: identity.fullName
-       - search_query: the exact same string you passed to search_internet
-       - search_results_json: the exact string returned by search_internet (valid JSON array; do not reformat)
-    Return JSON with result, summary, searchQueries, and rawResponse (object with searchQueries and searchResults).
+    Given caseId {caseId}, you MUST complete all three steps in order. Do NOT produce your
+    final output until all three tool calls have returned results — no exceptions.
+
+    STEP 1 — get_case_details (REQUIRED):
+    Call get_case_details with the caseId to retrieve the case from DynamoDB. Extract identity.fullName.
+
+    STEP 2 — search_internet (REQUIRED, do not skip):
+    Call search_internet with this exact query (substitute the real fullName for <FULL_NAME>):
+      "<FULL_NAME> fraud crime money laundering arrest investigation adverse media"
+    You MUST call search_internet. Do not assume you already know the results. Do not skip this step
+    even if you believe the person is clean.
+
+    STEP 3 — produce_adverse_media_analysis (REQUIRED, do not skip):
+    Call produce_adverse_media_analysis with:
+      - person_name: identity.fullName
+      - search_query: the exact string you passed to search_internet
+      - search_results_json: the exact string returned by search_internet (valid JSON array; do not reformat or summarise)
+
+    Only after all three tool calls have completed, return JSON with result, summary, searchQueries,
+    and rawResponse (object with searchQueries and searchResults).
   expected_output: >
     Valid JSON object with exactly these keys:
     - "case_id": the case ID from the case (string)

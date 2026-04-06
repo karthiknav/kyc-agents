@@ -18,14 +18,6 @@ def _should_remember_format_disabled(self) -> bool:
 
 def apply_slim_tool_observations_patch() -> None:
     """Stop appending full tool definitions to tool results (ReAct path)."""
-    if os.getenv("KYC_CREWAI_TOOL_FORMAT_REMINDERS", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    ):
-        return
-
     from crewai.tools.tool_usage import ToolUsage
 
     ToolUsage._should_remember_format = _should_remember_format_disabled  # type: ignore[method-assign]

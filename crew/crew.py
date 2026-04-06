@@ -43,6 +43,8 @@ from crew.update_case import update_adverse_media_result, update_risk_list_scree
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
 
+
+
 @CrewBase
 class KYCCrew():
     """KYC crew: document processing → sanctions screening → final decision (sequential)."""
@@ -173,7 +175,7 @@ class KYCCrew():
     def adverse_media_task(self) -> Task:
         return Task(
             config=self.tasks_config["adverse_media_task"],  # type: ignore[index]
-            callback=update_adverse_media_result
+            callback=update_adverse_media_result,
         )
 
     @task
