@@ -1,0 +1,9 @@
+{
+  "aws_region": "us-east-1",
+  "kyc_results_bucket": "kyc-agent-storage-926529379586-us-east-1",
+  "kyc_cases_table": "kyc-agent-storage-kyc-cases-926529379586-us-east-1",
+  "ragas_eval_bedrock_model_id": "amazon.nova-pro-v1:0",
+  "ragas_eval_bedrock_embedding_model_id": "amazon.titan-embed-text-v2:0",
+  "max_cases": 100,
+  "s3_max_bytes": 250000
+}
