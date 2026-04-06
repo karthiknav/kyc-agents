@@ -132,24 +132,22 @@ def fetch_recent_traces(lf, n: int) -> list:
 
 def fetch_tool_observations(lf, trace_id: str) -> list[str]:
     """
-    Return the names of all tool observations in a trace.
+    Return the names of all tool observations in a trace using the v1 API
+    (compatible with self-hosted Langfuse).
     These are created by langfuse_crewai_patches.patch_crewai_structured_tool_for_langfuse()
     as observations with as_type="tool".
-    Falls back to fetching all observations and filtering by name against known tools
-    if no TOOL-typed observations are found (type casing varies by Langfuse version).
+    Falls back to scanning all observations by name if no TOOL-typed ones are found.
     """
-    resp = lf.api.observations.get_many(
+    resp = lf.api.legacy.observations_v1.get_many(
         trace_id=trace_id,
         type="TOOL",
-        fields="core,basic",
     )
     names = [obs.name for obs in resp.data if obs.name]
 
     # Fallback: if TOOL type returned nothing, scan all observations by name
     if not names:
-        resp_all = lf.api.observations.get_many(
+        resp_all = lf.api.legacy.observations_v1.get_many(
             trace_id=trace_id,
-            fields="core,basic",
         )
         names = [
             obs.name for obs in resp_all.data
