@@ -362,7 +362,7 @@ def run_experiment(experiment_name: str) -> None:
     # Build a lookup: fixture → golden row (for expected values)
     golden_by_fixture = {row["fixture"]: row for row in golden}
 
-    from langfuse import propagate_attributes
+    from langfuse import propagate_attributes, Evaluation
 
     def task_fn(*, item, **kwargs) -> dict[str, Any]:
         case_id = item.input["case_id"]
@@ -379,38 +379,38 @@ def run_experiment(experiment_name: str) -> None:
         output: dict | None,
         expected_output: dict | None = None,
         **kwargs,
-    ) -> dict:
+    ) -> Evaluation:
         got      = (output or {}).get("action")
         expected = (expected_output or {}).get("action")
         correct  = got == expected
-        return {
-            "name":    "decision-accuracy",
-            "value":   1.0 if correct else 0.0,
-            "comment": f"got={got}  expected={expected}",
-        }
+        return Evaluation(
+            name="decision-accuracy",
+            value=1.0 if correct else 0.0,
+            comment=f"got={got}  expected={expected}",
+        )
 
     def justification_evaluator(
         *,
         input: dict,        # noqa: A002
         output: dict | None,
         **kwargs,
-    ) -> dict:
+    ) -> Evaluation:
         from deepeval.test_case import LLMTestCase
         context_summary = (output or {}).get("context_summary", "")
         orch_raw        = (output or {}).get("orch_raw", "")
         if not context_summary or not orch_raw:
-            return {"name": "decision-justification", "value": 0.0, "comment": "missing output"}
+            return Evaluation(name="decision-justification", value=0.0, comment="missing output")
         try:
             test_case = LLMTestCase(input=context_summary, actual_output=orch_raw)
             geval.measure(test_case)
-            return {
-                "name":    "decision-justification",
-                "value":   geval.score,
-                "comment": geval.reason or "",
-            }
+            return Evaluation(
+                name="decision-justification",
+                value=geval.score,
+                comment=geval.reason or "",
+            )
         except Exception as e:
             logger.warning("GEval failed: %s", e)
-            return {"name": "decision-justification", "value": 0.0, "comment": str(e)}
+            return Evaluation(name="decision-justification", value=0.0, comment=str(e))
 
     result = dataset.run_experiment(
         name=experiment_name,
@@ -426,8 +426,8 @@ def run_experiment(experiment_name: str) -> None:
     passed = sum(
         1 for r in item_results
         if any(
-            e.get("name") == "decision-accuracy" and e.get("value") == 1.0
-            for e in (r.get("evaluations") or [])
+            e.name == "decision-accuracy" and e.value == 1.0
+            for e in r.evaluations
         )
     )
 
@@ -439,18 +439,18 @@ def run_experiment(experiment_name: str) -> None:
     logger.info("─" * 60)
 
     for r in item_results:
-        fixture  = (r.get("item") or {}).get("metadata", {}).get("fixture", "?")
-        evals    = r.get("evaluations") or []
-        acc      = next((e for e in evals if e.get("name") == "decision-accuracy"), {})
-        just     = next((e for e in evals if e.get("name") == "decision-justification"), {})
-        status   = "PASS" if acc.get("value") == 1.0 else "FAIL"
+        fixture  = (r.item.metadata or {}).get("fixture", "?")
+        evals    = r.evaluations
+        acc      = next((e for e in evals if e.name == "decision-accuracy"), None)
+        just     = next((e for e in evals if e.name == "decision-justification"), None)
+        status   = "PASS" if acc and acc.value == 1.0 else "FAIL"
         logger.info(
             "  [%s] %-20s  accuracy=%s  justification=%.2f  %s",
             status,
             fixture,
-            acc.get("comment", ""),
-            just.get("value", 0.0),
-            f"({just.get('comment', '')[:60]})" if just.get("comment") else "",
+            acc.comment if acc else "",
+            just.value if just else 0.0,
+            f"({just.comment[:60]})" if just and just.comment else "",
         )
 
 
