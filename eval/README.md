@@ -8,7 +8,7 @@ eval/
     seed.py             seeds DynamoDB + S3 fixtures and the Langfuse dataset
     run_eval.py         runs crew + LLM judge + posts experiment to Langfuse
   offline/              post-hoc trace analysis — no crew execution
-    offline_run.py      checks which tools were called per trace, pushes scores
+    offline_run.py      fetches traces, checks tool coverage + decision quality, pushes scores
   fixtures/
     all_clear/          case.json + document(s)
     document_mismatch/  case.json + document(s)
@@ -30,7 +30,11 @@ eval/
 
 ---
 
-## Step 1 — Install eval dependencies
+## Running Experiments (online eval)
+
+Experiments run the full 4-agent crew against seeded fixtures, score with both deterministic and LLM-judge evaluators, and post results to a Langfuse dataset experiment for side-by-side comparison.
+
+### Step 1 — Install eval dependencies
 
 ```bash
 cd crew
@@ -38,34 +42,28 @@ source .venv/Scripts/activate
 uv pip install deepeval
 ```
 
----
-
-## Step 2 — Drop mock documents into fixture folders
+### Step 2 — Drop mock documents into fixture folders
 
 Place at least one image or PDF per fixture folder:
 
 ```
-eval/fixtures/all_clear/          ← passport image(s) for Jan de Vries
-eval/fixtures/document_mismatch/  ← passport image(s) for Maria Jansen
-eval/fixtures/sanction/           ← passport image(s) for Ahmed Al-Rashid
-eval/fixtures/pep/                ← passport image(s) for Willem van den Berg
+eval/fixtures/all_clear/          ← passport + license for Jan de Vries
+eval/fixtures/document_mismatch/  ← passport + license for Maria Jansen
+eval/fixtures/sanction/           ← passport + license for Ahmed Al-Rashid
+eval/fixtures/pep/                ← passport + license for Willem van den Berg
 ```
 
 Supported formats: `.png`, `.jpg`, `.jpeg`, `.pdf`, `.tiff`
 
----
-
-## Step 3 — Seed DynamoDB + S3
+### Step 3 — Seed DynamoDB + S3
 
 ```bash
 python -m eval.experiments.seed
 ```
 
-Writes `eval/case_ids.json` (fixture name → caseId). Safe to re-run.
+Writes `eval/case_ids.json` (fixture name → caseId). Safe to re-run — existing case IDs are reused.
 
----
-
-## Step 4 — Seed the Langfuse dataset (once)
+### Step 4 — Seed the Langfuse dataset (once)
 
 ```bash
 python -m eval.experiments.run_eval --seed-dataset
@@ -73,9 +71,7 @@ python -m eval.experiments.run_eval --seed-dataset
 
 Creates the `kyc-pipeline-accuracy` dataset in Langfuse with one item per fixture.
 
----
-
-## Step 5 — Run an experiment
+### Step 5 — Run an experiment
 
 ```bash
 DEEPEVAL_TELEMETRY_OPT_OUT=YES \
@@ -84,40 +80,39 @@ python -m eval.experiments.run_eval \
   --experiment-name "claude-sonnet-v1"
 ```
 
-Runs the full 4-agent crew on all cases, scores with exact-match + GEval judge,
-and posts results to Langfuse. Each tool call is recorded as a TOOL observation
-in the trace for later offline analysis.
+Runs the full 4-agent crew on all cases, scores with four evaluators (see [EVALS.md](EVALS.md)), and posts results to Langfuse.
 
 Re-run with a new `--experiment-name` after any model or prompt change.
 
+### View experiment results
+
+Go to **Datasets → kyc-pipeline-accuracy → Runs** in Langfuse for the side-by-side comparison table.
+
 ---
 
-## Step 6 — Check tool coverage offline
+## Running Offline Evals (post-hoc trace analysis)
+
+Offline evals fetch existing traces from Langfuse and push scores without re-running the crew. Both evaluations run together and always push scores.
 
 ```bash
-# Inspect last 5 experiment traces (dry run)
+# Check the last 10 traces (default)
+python -m eval.offline.offline_run
+
+# Check the last N traces
 python -m eval.offline.offline_run --last 5
-
-# Push tool-coverage scores back to each trace
-python -m eval.offline.offline_run --last 5 --push-scores
-
-# Check a specific trace
-python -m eval.offline.offline_run --trace-id <id> --push-scores
 ```
 
 Scores pushed per trace:
-- `tool-coverage` — fraction of all expected tools that were called (0.0–1.0)
-- `tool-coverage.document_processing` — per-stage score
-- `tool-coverage.risk_list_screening` — per-stage score
-- `tool-coverage.adverse_media` — per-stage score
 
----
+**Tool coverage** (per agent observation):
+- `tool-coverage` — fraction of expected tools called (0.0–1.0), attached to each agent GENERATION span
 
-## View results in Langfuse
+**Orchestrator decision quality** (per orchestrator GENERATION observation):
+- `orchestrator-decision-quality` — LLM-judged score (0.0–1.0) for decision correctness and reason completeness
 
-Go to **Datasets → kyc-pipeline-accuracy → Runs** for the experiment comparison table.
+### View offline scores
 
-Go to **Traces** (filter by tag `kyc`) for individual trace scores including tool coverage.
+Go to **Traces** (filter by tag `kyc`) in Langfuse. Individual agent spans show `tool-coverage`; the orchestrator span shows `orchestrator-decision-quality`.
 
 ---
 
@@ -126,7 +121,8 @@ Go to **Traces** (filter by tag `kyc`) for individual trace scores including too
 - **all_clear uses a common Dutch name** ("Jan de Vries") so DuckDuckGo may occasionally return adverse results for other people, causing a correct ESCALATED outcome instead of APPROVED.
 - `case_ids.json` is generated — do not commit it.
 - All eval commands must be run from the **repo root**.
-- Tool coverage only works for traces produced after applying the Langfuse CrewAI patch (enabled by default in `experiments/run_eval.py`).
+- Tool coverage and decision-quality offline evals only work for traces produced with the Langfuse CrewAI patch enabled (active by default in `experiments/run_eval.py`).
+- The judge model for offline evals defaults to `deepseek.v3.2`; override with the `EVALMODEL` env var.
 
 ---
 
@@ -140,3 +136,4 @@ Go to **Traces** (filter by tag `kyc`) for individual trace scores including too
 | `BRP/PEP connection error` | Check mock service is reachable at the URL in `crew/.env` |
 | `deepeval` JSON parse error | Add `DEEPEVAL_TELEMETRY_OPT_OUT=YES` to the command |
 | tool-coverage shows 0 tools | Ensure experiment was run with the current `run_eval.py` (has Langfuse patch) |
+| `No orchestrator GENERATION found` | Trace may predate the Langfuse CrewAI patch — re-run the experiment |
