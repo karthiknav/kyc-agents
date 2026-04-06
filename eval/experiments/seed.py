@@ -13,7 +13,7 @@ Writes eval/case_ids.json — fixture name → caseId.
 Re-running is safe: existing case IDs are reused (no duplicates created).
 
 Usage (from repo root):
-  python -m eval.seed
+  python -m eval.experiments.seed
 
 Required env (read from crew/.env):
   KYC_CASES_TABLE     DynamoDB table name
@@ -32,12 +32,12 @@ from pathlib import Path
 import boto3
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent / "crew" / ".env")
+load_dotenv(Path(__file__).parent.parent.parent / "crew" / ".env")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-EVAL_DIR      = Path(__file__).parent
+EVAL_DIR      = Path(__file__).parent.parent   # eval/
 FIXTURES_DIR  = EVAL_DIR / "fixtures"
 CASE_IDS_FILE = EVAL_DIR / "case_ids.json"
 
@@ -95,7 +95,6 @@ def seed_fixture(fixture_name: str, existing_ids: dict[str, str]) -> str:
     iden    = fixture["identity"]
     doc_cfg = fixture.get("document", {})
 
-    # Upload each document file to S3
     file_refs = []
     for doc_file in doc_files:
         s3_key = f"cases/{case_id}/{doc_file.name}"
@@ -107,12 +106,11 @@ def seed_fixture(fixture_name: str, existing_ids: dict[str, str]) -> str:
             ExtraArgs={"ContentType": CONTENT_TYPES.get(doc_file.suffix.lower(), "application/octet-stream")},
         )
         file_refs.append({
-            "s3Bucket":     bucket,
-            "s3Key":        s3_key,
-            "documentType": doc_cfg.get("type", "paspoort"),
+            "bucket": bucket,
+            "key":    s3_key,
+            "type":   doc_cfg.get("type", "paspoort"),
         })
 
-    # Create DynamoDB record
     item = {
         "CaseId":   case_id,
         "identity": {
@@ -154,7 +152,7 @@ def main() -> None:
     logger.info("Done. case_ids.json:")
     for k, v in updated_ids.items():
         logger.info("  %-25s → %s", k, v)
-    logger.info("\nNext: python -m eval.run_eval --seed-dataset")
+    logger.info("\nNext: python -m eval.experiments.run_eval --seed-dataset")
 
 
 if __name__ == "__main__":

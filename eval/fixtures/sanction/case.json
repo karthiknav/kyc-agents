@@ -7,8 +7,8 @@
     "dateOfBirth": "1978-11-03",
     "nationality": "NL"
   },
-  "document": {
-    "type": "paspoort",
-    "number": "NL555666777"
-  }
+   "documents": [
+    { "type": "passport", "file": "passport.pdf" },
+    { "type": "license", "file": "license.pdf" }
+  ]
 }

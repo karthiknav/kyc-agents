@@ -10,16 +10,20 @@ For each golden fixture the script:
           reason[] logically follow from what the agents actually found?
   4. Posts scores to a Langfuse dataset experiment for side-by-side comparison.
 
+Tool observations (for offline tool-coverage checks) are captured via the
+Langfuse CrewAI patch — each tool call appears as a TOOL-type observation
+in the trace, named after the tool (e.g. "risk_list_screening").
+
 Usage (from repo root):
   # First time: seed the Langfuse dataset
-  python -m eval.run_eval --seed-dataset
+  python -m eval.experiments.run_eval --seed-dataset
 
   # Each experiment run (e.g. after a model or prompt change):
-  python -m eval.run_eval --run-experiment --experiment-name "claude-sonnet-v1"
+  python -m eval.experiments.run_eval --run-experiment --experiment-name "claude-sonnet-v1"
 
 Prerequisites:
   1. Mock service running  (MOCK_SERVICE_URL in env)
-  2. eval/case_ids.json    (produced by python -m eval.seed)
+  2. eval/case_ids.json    (produced by python -m eval.experiments.seed)
   3. AWS credentials + KYC_CASES_TABLE, KYC_RESULTS_BUCKET in env
   4. Langfuse env vars     (LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL)
 
@@ -39,7 +43,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent / "crew" / ".env")
+load_dotenv(Path(__file__).parent.parent.parent / "crew" / ".env")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -48,10 +52,9 @@ logger = logging.getLogger(__name__)
 # Paths
 # ---------------------------------------------------------------------------
 
-EVAL_DIR       = Path(__file__).parent
-FIXTURES_DIR   = EVAL_DIR / "fixtures"
-CASE_IDS_FILE  = EVAL_DIR / "case_ids.json"
-GOLDEN_FILE    = EVAL_DIR / "golden_dataset.json"
+EVAL_DIR      = Path(__file__).parent.parent   # eval/
+CASE_IDS_FILE = EVAL_DIR / "case_ids.json"
+GOLDEN_FILE   = EVAL_DIR / "golden_dataset.json"
 LANGFUSE_DATASET_NAME = "kyc-pipeline-accuracy"
 
 # ---------------------------------------------------------------------------
@@ -75,10 +78,31 @@ apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
 
 # ---------------------------------------------------------------------------
+# OpenTelemetry CrewAI instrumentation (after patches, before crew import)
+# ---------------------------------------------------------------------------
+
+from opentelemetry.instrumentation.crewai import CrewAIInstrumentor
+try:
+    CrewAIInstrumentor().instrument()
+except Exception as e:
+    logger.warning("CrewAIInstrumentor failed: %s", e)
+
+# ---------------------------------------------------------------------------
 # Crew import (after patches)
 # ---------------------------------------------------------------------------
 
 from crew.crew import KYCCrew
+
+# ---------------------------------------------------------------------------
+# Langfuse tool observation patch — records each tool call as a TOOL
+# observation in the trace so offline/tool_coverage.py can check coverage
+# ---------------------------------------------------------------------------
+
+from crew.langfuse_crewai_patches import patch_crewai_structured_tool_for_langfuse
+try:
+    patch_crewai_structured_tool_for_langfuse()
+except Exception as e:
+    logger.warning("Langfuse tool patch failed: %s", e)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,7 +111,7 @@ from crew.crew import KYCCrew
 def _load_case_ids() -> dict[str, str]:
     if not CASE_IDS_FILE.exists():
         sys.exit(
-            f"ERROR: {CASE_IDS_FILE} not found. Run 'python -m eval.seed' first."
+            f"ERROR: {CASE_IDS_FILE} not found. Run 'python -m eval.experiments.seed' first."
         )
     return json.loads(CASE_IDS_FILE.read_text())
 
@@ -138,7 +162,6 @@ def run_pipeline(case_id: str) -> dict[str, Any]:
     logger.info("Running crew for caseId=%s ...", case_id)
     crew_output = crew_obj.kickoff(inputs={"caseId": case_id})
 
-    # Read task outputs from the crew's task objects (populated after kickoff)
     tasks = crew_obj.tasks
     doc_raw     = tasks[0].output.raw if tasks[0].output else ""
     risk_raw    = tasks[1].output.raw if tasks[1].output else ""
@@ -152,7 +175,6 @@ def run_pipeline(case_id: str) -> dict[str, Any]:
 
     action = orch_out.get("action") or _extract_field(orch_raw, "action")
 
-    # Compact summary of what the agents actually found — used as LLM judge INPUT
     context_summary = json.dumps({
         "documentProcessing": {
             "comparison_result": doc_out.get("comparison_result"),
@@ -192,8 +214,51 @@ def run_pipeline(case_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Langfuse helpers
+# Langfuse client + SSM bootstrap
 # ---------------------------------------------------------------------------
+
+def _load_langfuse_env_from_ssm() -> None:
+    """Fetch Langfuse credentials from SSM and inject into os.environ."""
+    import boto3
+    from botocore.exceptions import ClientError
+
+    ssm_prefix = os.environ.get("LANGFUSE_SSM_PREFIX", "/langfuse")
+    paths = {
+        "LANGFUSE_PROJECT_NAME": (f"{ssm_prefix}/project_name", False),
+        "LANGFUSE_SECRET_KEY":   (f"{ssm_prefix}/secret_key",   True),
+        "LANGFUSE_PUBLIC_KEY":   (f"{ssm_prefix}/public_key",   True),
+        "LANGFUSE_HOST":         (f"{ssm_prefix}/host",         False),
+    }
+
+    session = boto3.session.Session()
+    region = (
+        session.region_name
+        or os.environ.get("AWS_DEFAULT_REGION")
+        or os.environ.get("AWS_REGION")
+    )
+    ssm = session.client("ssm", region_name=region)
+
+    try:
+        values: dict[str, str] = {}
+        for env_key, (param_path, decrypt) in paths.items():
+            resp = ssm.get_parameter(Name=param_path, WithDecryption=decrypt)
+            values[env_key] = resp["Parameter"]["Value"].strip()
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        logger.warning("SSM fetch failed (%s): %s — falling back to existing env", code, e)
+        return
+
+    host = values["LANGFUSE_HOST"].rstrip("/")
+    if not host.startswith(("http://", "https://")):
+        host = f"https://{host}"
+
+    os.environ["LANGFUSE_PROJECT_NAME"] = values["LANGFUSE_PROJECT_NAME"]
+    os.environ["LANGFUSE_SECRET_KEY"]   = values["LANGFUSE_SECRET_KEY"]
+    os.environ["LANGFUSE_PUBLIC_KEY"]   = values["LANGFUSE_PUBLIC_KEY"]
+    os.environ["LANGFUSE_HOST"]         = host
+    os.environ["LANGFUSE_BASE_URL"]     = host
+    logger.info("Loaded Langfuse config from SSM (project=%s)", values["LANGFUSE_PROJECT_NAME"])
+
 
 def _langfuse_client():
     from langfuse import Langfuse
@@ -223,7 +288,6 @@ def seed_dataset() -> None:
     )
     logger.info("Dataset '%s' ready.", LANGFUSE_DATASET_NAME)
 
-    # Collect existing item IDs to avoid duplicates
     existing: set[str] = set()
     try:
         ds = lf.get_dataset(LANGFUSE_DATASET_NAME)
@@ -241,7 +305,7 @@ def seed_dataset() -> None:
             logger.info("  skip (exists): %s", fixture)
             continue
         if fixture not in case_ids:
-            logger.warning("  skip (no case_id): %s — run eval.seed first", fixture)
+            logger.warning("  skip (no case_id): %s — run eval.experiments.seed first", fixture)
             continue
 
         lf.create_dataset_item(
@@ -266,17 +330,16 @@ def seed_dataset() -> None:
 
 
 # ---------------------------------------------------------------------------
-# LLM judge (GEval via DeepEval + Bedrock)
+# LLM judge (GEval via DeepEval + LLM)
 # ---------------------------------------------------------------------------
 
 def _build_judge():
-    """Build a DeepEval-compatible judge backed by Bedrock Claude."""
     from deepeval.models.base_model import DeepEvalBaseLLM
     import boto3 as _boto3
 
     class BedrockClaudeJudge(DeepEvalBaseLLM):
         def __init__(self):
-            self.model_id = os.environ.get("MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            self.model_id = os.environ.get("EVALMODEL", "deepseek.v3.2")
             self.client = _boto3.client("bedrock-runtime")
 
         def get_model_name(self) -> str:
@@ -332,10 +395,11 @@ def _build_justification_metric(judge):
 # ---------------------------------------------------------------------------
 
 def run_experiment(experiment_name: str) -> None:
-    lf      = _langfuse_client()
-    golden  = _load_golden()
-    judge   = _build_judge()
-    geval   = _build_justification_metric(judge)
+    _load_langfuse_env_from_ssm()
+    lf     = _langfuse_client()
+    golden = _load_golden()
+    judge  = _build_judge()
+    geval  = _build_justification_metric(judge)
 
     dataset = lf.get_dataset(LANGFUSE_DATASET_NAME)
     if not dataset.items:
@@ -349,57 +413,96 @@ def run_experiment(experiment_name: str) -> None:
         len(dataset.items),
     )
 
-    # Build a lookup: fixture → golden row (for expected values)
-    golden_by_fixture = {row["fixture"]: row for row in golden}
+    from langfuse import propagate_attributes, Evaluation
 
     def task_fn(*, item, **kwargs) -> dict[str, Any]:
         case_id = item.input["case_id"]
-        return run_pipeline(case_id)
+        fixture = item.input.get("fixture", case_id)
+        with propagate_attributes(
+            tags=["kyc", "experiment"],
+            session_id=case_id,
+            trace_name=fixture,
+        ):
+            return run_pipeline(case_id)
 
     def accuracy_evaluator(
         *,
         output: dict | None,
         expected_output: dict | None = None,
         **kwargs,
-    ) -> dict:
+    ) -> Evaluation:
         got      = (output or {}).get("action")
         expected = (expected_output or {}).get("action")
         correct  = got == expected
-        return {
-            "name":    "decision-accuracy",
-            "value":   1.0 if correct else 0.0,
-            "comment": f"got={got}  expected={expected}",
-        }
+        return Evaluation(
+            name="decision-accuracy",
+            value=1.0 if correct else 0.0,
+            comment=f"got={got}  expected={expected}",
+        )
 
     def justification_evaluator(
         *,
         input: dict,        # noqa: A002
         output: dict | None,
         **kwargs,
-    ) -> dict:
+    ) -> Evaluation:
         from deepeval.test_case import LLMTestCase
         context_summary = (output or {}).get("context_summary", "")
         orch_raw        = (output or {}).get("orch_raw", "")
         if not context_summary or not orch_raw:
-            return {"name": "decision-justification", "value": 0.0, "comment": "missing output"}
+            return Evaluation(name="decision-justification", value=0.0, comment="missing output")
         try:
             test_case = LLMTestCase(input=context_summary, actual_output=orch_raw)
             geval.measure(test_case)
-            return {
-                "name":    "decision-justification",
-                "value":   geval.score,
-                "comment": geval.reason or "",
-            }
+            return Evaluation(
+                name="decision-justification",
+                value=geval.score,
+                comment=geval.reason or "",
+            )
         except Exception as e:
             logger.warning("GEval failed: %s", e)
-            return {"name": "decision-justification", "value": 0.0, "comment": str(e)}
+            return Evaluation(name="decision-justification", value=0.0, comment=str(e))
+
+    def doc_result_evaluator(
+        *,
+        input: dict,        # noqa: A002
+        output: dict | None,
+        **kwargs,
+    ) -> Evaluation:
+        got      = (output or {}).get("doc_output", {}).get("comparison_result")
+        expected = input.get("expected_doc_result")
+        if expected is None:
+            return Evaluation(name="doc-result-accuracy", value=None, comment="no expected value")
+        correct = got == expected
+        return Evaluation(
+            name="doc-result-accuracy",
+            value=1.0 if correct else 0.0,
+            comment=f"got={got}  expected={expected}",
+        )
+
+    def risk_result_evaluator(
+        *,
+        input: dict,        # noqa: A002
+        output: dict | None,
+        **kwargs,
+    ) -> Evaluation:
+        got      = (output or {}).get("risk_output", {}).get("result")
+        expected = input.get("expected_risk_result")
+        if expected is None:
+            return Evaluation(name="risk-result-accuracy", value=None, comment="no expected value")
+        correct = got == expected
+        return Evaluation(
+            name="risk-result-accuracy",
+            value=1.0 if correct else 0.0,
+            comment=f"got={got}  expected={expected}",
+        )
 
     result = dataset.run_experiment(
         name=experiment_name,
         task=task_fn,
-        evaluators=[accuracy_evaluator, justification_evaluator],
-        max_concurrency=1,  # sequential — one Bedrock call at a time
-        metadata={"model": os.environ.get("MODEL", "")},
+        evaluators=[accuracy_evaluator, justification_evaluator, doc_result_evaluator, risk_result_evaluator],
+        max_concurrency=1,
+        metadata={"model": os.environ.get("MODEL", "unknown")},
     )
 
     # ---- Print summary ----
@@ -408,8 +511,8 @@ def run_experiment(experiment_name: str) -> None:
     passed = sum(
         1 for r in item_results
         if any(
-            e.get("name") == "decision-accuracy" and e.get("value") == 1.0
-            for e in (r.get("evaluations") or [])
+            e.name == "decision-accuracy" and e.value == 1.0
+            for e in r.evaluations
         )
     )
 
@@ -421,18 +524,18 @@ def run_experiment(experiment_name: str) -> None:
     logger.info("─" * 60)
 
     for r in item_results:
-        fixture  = (r.get("item") or {}).get("metadata", {}).get("fixture", "?")
-        evals    = r.get("evaluations") or []
-        acc      = next((e for e in evals if e.get("name") == "decision-accuracy"), {})
-        just     = next((e for e in evals if e.get("name") == "decision-justification"), {})
-        status   = "PASS" if acc.get("value") == 1.0 else "FAIL"
+        fixture = (r.item.metadata or {}).get("fixture", "?")
+        evals   = r.evaluations
+        acc     = next((e for e in evals if e.name == "decision-accuracy"), None)
+        just    = next((e for e in evals if e.name == "decision-justification"), None)
+        status  = "PASS" if acc and acc.value == 1.0 else "FAIL"
         logger.info(
             "  [%s] %-20s  accuracy=%s  justification=%.2f  %s",
             status,
             fixture,
-            acc.get("comment", ""),
-            just.get("value", 0.0),
-            f"({just.get('comment', '')[:60]})" if just.get("comment") else "",
+            acc.comment if acc else "",
+            just.value if just else 0.0,
+            f"({just.comment[:60]})" if just and just.comment else "",
         )
 
 
