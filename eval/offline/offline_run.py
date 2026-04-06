@@ -345,8 +345,9 @@ def _stringify(value) -> str:
 
 
 def find_orchestrator_generation(observations: list):
-    """Return the GENERATION observation whose parent span is the KYC Decision Orchestrator, or None."""
+    """Return a list of GENERATION observations whose parent span is the KYC Decision Orchestrator."""
     by_id = {obs.id: obs for obs in observations}
+    result = []
     for obs in observations:
         if obs.type != "GENERATION":
             continue
@@ -355,8 +356,8 @@ def find_orchestrator_generation(observations: list):
             continue
         parent = by_id.get(parent_id)
         if parent and parent.name and parent.name.startswith(ORCHESTRATOR_ROLE):
-            return obs
-    return None
+            result.append(obs)
+    return result
 
 
 def score_with_llm(input_text: str, output_text: str) -> tuple[float, str]:
@@ -385,31 +386,38 @@ def compute_decision_quality(
     trace_id: str,
     trace_name: str,
     session_id: str,
-) -> DecisionQualityResult:
+) -> list[DecisionQualityResult]:
     observations = fetch_observations(lf, trace_id)
-    obs = find_orchestrator_generation(observations)
-    if obs is None:
+    orchestrator_gens = find_orchestrator_generation(observations)
+    results = []
+    if not orchestrator_gens:
         logger.warning("[%s] No orchestrator GENERATION found — skipping.", trace_id)
-        return DecisionQualityResult(
+        results.append(DecisionQualityResult(
             trace_id=trace_id,
             trace_name=trace_name,
             session_id=session_id,
             obs_id=None,
             score=None,
             reasoning="no orchestrator generation found",
-        )
+        ))
+        return results
 
-    input_text = _stringify(getattr(obs, "input", None))
-    output_text = _stringify(getattr(obs, "output", None))
-    score, reasoning = score_with_llm(input_text, output_text)
-    return DecisionQualityResult(
-        trace_id=trace_id,
-        trace_name=trace_name,
-        session_id=session_id,
-        obs_id=obs.id,
-        score=score,
-        reasoning=reasoning,
-    )
+    for obs in orchestrator_gens:
+        input_text = _stringify(getattr(obs, "input", None))
+        output_text = _stringify(getattr(obs, "output", None))
+        if not input_text.strip() or not output_text.strip() or input_text == "(empty)" or output_text == "(empty)":
+            logger.warning(f"[%s] Skipping orchestrator GENERATION with empty input/output.", trace_id)
+            continue
+        score, reasoning = score_with_llm(input_text, output_text)
+        results.append(DecisionQualityResult(
+            trace_id=trace_id,
+            trace_name=trace_name,
+            session_id=session_id,
+            obs_id=obs.id,
+            score=score,
+            reasoning=reasoning,
+        ))
+    return results
 
 
 def push_decision_quality_score(lf, result: DecisionQualityResult) -> None:
@@ -519,30 +527,31 @@ def run_decision_quality_check(
     )
     logger.info("─" * 70)
 
-    results: list[DecisionQualityResult] = []
+    all_results: list[DecisionQualityResult] = []
     for trace in traces:
         tid  = trace.id
         name = getattr(trace, "name", None) or ""
         sid  = getattr(trace, "session_id", None) or ""
 
-        result = compute_decision_quality(lf, tid, name, sid)
-        results.append(result)
+        results = compute_decision_quality(lf, tid, name, sid)
+        all_results.extend(results)
 
-        print_decision_quality(result)
+        for result in results:
+            print_decision_quality(result)
 
-    scored = [r for r in results if r.score is not None]
+    scored = [r for r in all_results if r.score is not None]
     avg = sum(r.score for r in scored) / len(scored) if scored else 0.0  # type: ignore[arg-type]
     logger.info("─" * 70)
     logger.info(
         "Summary  : %d / %d scored  (avg %.2f)",
         len(scored),
-        len(results),
+        len(all_results),
         avg,
     )
 
     if push:
         logger.info("Pushing scores to Langfuse ...")
-        for result in results:
+        for result in all_results:
             push_decision_quality_score(lf, result)
         logger.info("Done.")
     else:
@@ -555,57 +564,27 @@ def run_decision_quality_check(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Offline evals for KYC traces: tool-coverage and/or orchestrator-decision-quality"
-        )
+        description="Offline tool-coverage and decision-quality checker — always pushes scores to Langfuse"
     )
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
+    parser.add_argument(
         "--last",
         type=int,
         metavar="N",
-        help="Check the last N traces named 'crewai-index-trace'.",
-    )
-    group.add_argument(
-        "--trace-id",
-        metavar="ID",
-        help="Check a specific trace by ID.",
-    )
-    parser.add_argument(
-        "--eval",
-        choices=["tool-coverage", "decision-quality", "all"],
-        default="tool-coverage",
-        help=(
-            "Which eval to run: tool-coverage (default), decision-quality, or all."
-        ),
-    )
-    parser.add_argument(
-        "--push-scores",
-        action="store_true",
-        default=False,
-        help="Push scores back to each trace in Langfuse (default: dry run).",
+        default=10,
+        help="Check the last N traces named 'crewai-index-trace'. (default: 10)",
     )
     args = parser.parse_args()
 
-    run_coverage = args.eval in ("tool-coverage", "all")
-    run_quality  = args.eval in ("decision-quality", "all")
-
-    if run_coverage:
-        run_coverage_check(
-            last_n=args.last,
-            trace_id=args.trace_id,
-            push=args.push_scores,
-        )
-
-    if run_quality:
-        if run_coverage:
-            logger.info("")
-        run_decision_quality_check(
-            last_n=args.last,
-            trace_id=args.trace_id,
-            push=args.push_scores,
-        )
-
+    run_coverage_check(
+        last_n=args.last,
+        trace_id=None,
+        push=True,  # Always push scores
+    )
+    run_decision_quality_check(
+        last_n=args.last,
+        trace_id=None,
+        push=True,  # Always push scores
+    )
 
 if __name__ == "__main__":
     main()
