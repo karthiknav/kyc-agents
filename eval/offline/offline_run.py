@@ -104,7 +104,6 @@ class TraceCoverage:
     trace_name: str
     session_id: str
     agents: list[AgentCoverage]
-    unattributed_tools: list[str]   # tool obs with no recognized parent agent
 
     @property
     def overall_score(self) -> float:
@@ -144,78 +143,71 @@ def fetch_recent_traces(lf, n: int) -> list:
 # Observation fetching + grouping by agent
 # ---------------------------------------------------------------------------
 
-def fetch_all_observations(lf, trace_id: str) -> list:
-    """Fetch all observations for a trace using the v1 API (self-hosted compatible)."""
+def fetch_observations(lf, trace_id: str) -> list:
+    """Fetch all observations for a trace in one call (v1 API, self-hosted compatible)."""
     resp = lf.api.legacy.observations_v1.get_many(trace_id=trace_id)
     return list(resp.data)
 
 
-def group_tools_by_agent(observations: list) -> tuple[list[AgentCoverage], list[str]]:
+def group_by_agent(observations: list) -> list[AgentCoverage]:
     """
-    Build an index of agent spans, then attach each tool observation to the
-    agent it belongs to via parent_observation_id.
+    Single pass over all observations:
+      1. Find agent spans by name prefix matching agent role names.
+      2. For each TOOL observation, walk parent_observation_id up until
+         an agent span is found — this correctly handles overlap (e.g.
+         get_case_details called by multiple agents).
 
-    Returns:
-        agents          — list of AgentCoverage, one per recognized agent span
-        unattributed    — tool names whose parent is not a recognized agent span
+    Returns one AgentCoverage per recognized agent, with called/missing filled in.
     """
-    # Index all observations by id for O(1) parent lookup
-    by_id: dict[str, object] = {obs.id: obs for obs in observations}
+    by_id = {obs.id: obs for obs in observations}
 
-    # Find agent spans: named "{role}.agent", type SPAN
-    agent_spans: dict[str, AgentCoverage] = {}   # obs.id → AgentCoverage
+    # agent obs.id → AgentCoverage
+    agent_spans: dict[str, AgentCoverage] = {}
     for obs in observations:
-        if not obs.name or not obs.name.endswith(".agent"):
+        if not obs.name:
             continue
-        role = obs.name[: -len(".agent")].strip()
-        if role not in AGENT_EXPECTED_TOOLS:
-            continue
-        expected = AGENT_EXPECTED_TOOLS[role]
-        agent_spans[obs.id] = AgentCoverage(
-            agent_name=role,
-            agent_obs_id=obs.id,
-            expected=expected,
-            called=[],
-        )
+        for role in AGENT_EXPECTED_TOOLS:
+            if obs.name.startswith(f"{role}."):
+                agent_spans[obs.id] = AgentCoverage(
+                    agent_name=role,
+                    agent_obs_id=obs.id,
+                    expected=AGENT_EXPECTED_TOOLS[role],
+                    called=[],
+                )
+                break
 
-    # Attach tool observations to their parent agent
-    unattributed: list[str] = []
+    # Walk each TOOL observation up to its parent agent span
     for obs in observations:
-        if not obs.name or obs.name not in ALL_EXPECTED_TOOLS:
+        if obs.type != "TOOL" or not obs.name:
             continue
-        # Walk up the parent chain until we find an agent span or run out
         parent_id = getattr(obs, "parent_observation_id", None)
-        matched = False
         while parent_id:
             if parent_id in agent_spans:
                 agent_spans[parent_id].called.append(obs.name)
-                matched = True
                 break
             parent_obs = by_id.get(parent_id)
             parent_id = getattr(parent_obs, "parent_observation_id", None) if parent_obs else None
-        if not matched:
-            unattributed.append(obs.name)
 
-    # Compute missing for each agent
+    # Compute missing
     for ac in agent_spans.values():
         called_set = set(ac.called)
         ac.missing = [t for t in ac.expected if t not in called_set]
 
-    return list(agent_spans.values()), unattributed
+    return list(agent_spans.values())
 
 
 # ---------------------------------------------------------------------------
 # Coverage computation
 # ---------------------------------------------------------------------------
 
-def compute_coverage(trace_id: str, trace_name: str, session_id: str, observations: list) -> TraceCoverage:
-    agents, unattributed = group_tools_by_agent(observations)
+def compute_coverage(lf, trace_id: str, trace_name: str, session_id: str) -> TraceCoverage:
+    observations = fetch_observations(lf, trace_id)
+    agents = group_by_agent(observations)
     return TraceCoverage(
         trace_id=trace_id,
         trace_name=trace_name,
         session_id=session_id,
         agents=agents,
-        unattributed_tools=unattributed,
     )
 
 
@@ -282,8 +274,6 @@ def print_coverage(coverage: TraceCoverage) -> None:
             f"  missing={agent.missing}" if agent.missing else "",
         )
 
-    if coverage.unattributed_tools:
-        logger.info("       [INFO] unattributed tool calls: %s", coverage.unattributed_tools)
 
 
 # ---------------------------------------------------------------------------
@@ -315,8 +305,7 @@ def run_coverage_check(
         name = getattr(trace, "name", None) or ""
         sid  = getattr(trace, "session_id", None) or ""
 
-        observations = fetch_all_observations(lf, tid)
-        coverage     = compute_coverage(tid, name, sid, observations)
+        coverage = compute_coverage(lf, tid, name, sid)
         coverages.append(coverage)
 
         print_coverage(coverage)
