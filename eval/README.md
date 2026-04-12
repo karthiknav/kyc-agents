@@ -75,9 +75,7 @@ Creates the `kyc-pipeline-accuracy` dataset in Langfuse with one item per fixtur
 
 ```bash
 DEEPEVAL_TELEMETRY_OPT_OUT=YES \
-python -m eval.experiments.run_eval \
-  --run-experiment \
-  --experiment-name "claude-sonnet-v1"
+python -m eval.experiments.run_eval --run-experiment --experiment-name "claude-sonnet-v1"
 ```
 
 Runs the full 4-agent crew on all cases, scores with four evaluators (see [EVALS.md](EVALS.md)), and posts results to Langfuse.

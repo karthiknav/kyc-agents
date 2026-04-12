@@ -65,11 +65,9 @@ AGENT_EXPECTED_TOOLS: dict[str, list[str]] = {
         "compare_identity_documents",
     ],
     "Risk List Screening Agent": [
-        "get_case_details",
         "risk_list_screening",
     ],
     "Adverse Media Screening Agent": [
-        "get_case_details",
         "search_internet",
         "produce_adverse_media_analysis",
     ],
@@ -258,6 +256,7 @@ def group_by_agent(observations: list) -> list[AgentCoverage]:
     # Compute missing
     for ac in agent_spans.values():
         called_set = set(ac.called)
+        ac.called = called_set
         ac.missing = [t for t in ac.expected if t not in called_set]
 
     return list(agent_spans.values())
