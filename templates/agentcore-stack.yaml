@@ -215,6 +215,7 @@ Resources:
         DEPLOY_SOURCE_KEY: !Ref SourceZipKey
         CREWAI_DISABLE_TELEMETRY: "true"
         OTEL_PYTHON_EXCLUDED_URLS: "https://api.scarf.sh/"
+        USE_TEXTRACT_MOCK: "1"
       RoleArn: !ImportValue
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:
