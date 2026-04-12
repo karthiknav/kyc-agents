@@ -60,6 +60,30 @@ class CompareIdentityDocumentsTool(BaseTool):
         except json.JSONDecodeError:
             return json.dumps({"error": "Invalid extracted_documents JSON"})
 
+        # Guard: reject empty document list — agent must call extract_document_text first
+        if not isinstance(docs, list) or len(docs) == 0:
+            return json.dumps({
+                "error": (
+                    "extracted_documents is empty — you MUST call extract_document_text for each "
+                    "document before calling compare_identity_documents. Do not skip Step 3."
+                )
+            })
+
+        # Guard: reject if all entries are Textract errors (no OCR content produced)
+        has_ocr_content = any(
+            isinstance(doc, dict) and (doc.get("full_text") or doc.get("pages"))
+            for doc in docs
+        )
+        if not has_ocr_content:
+            return json.dumps({
+                "error": (
+                    "All extract_document_text calls returned errors — no OCR content available. "
+                    "You MUST successfully extract at least one document before comparing. "
+                    "Check that extract_document_text returned 'full_text' or 'pages' fields. "
+                    "Do NOT call compare_identity_documents with only error responses."
+                )
+            })
+
         try:
             govt_results = json.loads(government_verification_results) if isinstance(government_verification_results, str) else government_verification_results
         except json.JSONDecodeError:

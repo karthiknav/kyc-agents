@@ -4,6 +4,7 @@
 
 export const BRP_MOCK_ID = 'brp-identity-verification';
 export const PEP_MOCK_ID = 'pep-match';
+export const TEXTRACT_MOCK_ID = 'textract-extract';
 
 export interface DefaultTestCase {
   key: string;
@@ -240,6 +241,97 @@ export const defaultTestCases: DefaultTestCase[] = [
       status: 'VERIFIED',
       verificationTimestamp: '2025-01-15T10:00:00.000Z',
     },
+  },
+];
+
+// Textract mock test cases — keys match persistenceKey: {{full_name}} (the person's full name from identity.fullName)
+// These are returned when USE_TEXTRACT_MOCK=1 and real Textract times out.
+// OCR data matches the identity fields in the BRP test cases above so comparisons resolve correctly.
+export interface TextractTestCase {
+  key: string;       // full name, e.g. "Jan de Vries"
+  data: Record<string, unknown>;
+  description: string;
+}
+
+function makeOcrData(lines: string[]): Record<string, unknown> {
+  return {
+    document_type: '',
+    s3_key: 'seeded',
+    mock: true,
+    pages: [{ page: 1, lines }],
+    full_text: lines.join('\n'),
+    block_count: lines.length,
+  };
+}
+
+export const textractTestCases: TextractTestCase[] = [
+  {
+    key: 'Jan de Vries',
+    description: 'Case 1: Jan de Vries — identity document OCR (paspoort / rijbewijs)',
+    data: makeOcrData([
+      'NEDERLAND',
+      'PASPOORT / PASSPORT',
+      'Naam / Surname: DE VRIES',
+      'Voornamen / Given names: JAN',
+      'Nationaliteit / Nationality: NEDERLANDSE',
+      'Geboorteplaats / Place of birth: AMSTERDAM',
+      'Geboortedatum / Date of birth: 15 MRT 1985',
+      'Documentnummer / Document number: NL123456789',
+      'Geslacht / Sex: M',
+      'Geldig tot / Date of expiry: 10 JAN 2030',
+      'Afgegeven te / Place of issue: AMSTERDAM',
+    ]),
+  },
+  {
+    key: 'Maria Bakker',
+    description: 'Case 2: Maria Bakker — identity document OCR (paspoort / rijbewijs)',
+    data: makeOcrData([
+      'NEDERLAND',
+      'PASPOORT / PASSPORT',
+      'Naam / Surname: BAKKER',
+      'Voornamen / Given names: MARIA',
+      'Nationaliteit / Nationality: NEDERLANDSE',
+      'Geboorteplaats / Place of birth: ROTTERDAM',
+      'Geboortedatum / Date of birth: 22 JUL 1990',
+      'Documentnummer / Document number: NL987654321',
+      'Geslacht / Sex: V',
+      'Geldig tot / Date of expiry: 01 JUN 2029',
+      'Afgegeven te / Place of issue: ROTTERDAM',
+    ]),
+  },
+  {
+    key: 'Ahmed Al-Rashid',
+    description: 'Case 3: Ahmed Al-Rashid — identity document OCR (paspoort / rijbewijs)',
+    data: makeOcrData([
+      'NEDERLAND',
+      'PASPOORT / PASSPORT',
+      'Naam / Surname: AL-RASHID',
+      'Voornamen / Given names: AHMED',
+      'Nationaliteit / Nationality: NEDERLANDSE',
+      'Geboorteplaats / Place of birth: DEN HAAG',
+      'Geboortedatum / Date of birth: 03 NOV 1978',
+      'Documentnummer / Document number: NL555666777',
+      'Geslacht / Sex: M',
+      'Geldig tot / Date of expiry: 20 MRT 2031',
+      'Afgegeven te / Place of issue: DEN HAAG',
+    ]),
+  },
+  {
+    key: 'Willem van den Berg',
+    description: 'Case 4: Willem van den Berg — identity document OCR (paspoort / rijbewijs)',
+    data: makeOcrData([
+      'NEDERLAND',
+      'PASPOORT / PASSPORT',
+      'Naam / Surname: VAN DEN BERG',
+      'Voornamen / Given names: WILLEM',
+      'Nationaliteit / Nationality: NEDERLANDSE',
+      'Geboorteplaats / Place of birth: UTRECHT',
+      'Geboortedatum / Date of birth: 20 JAN 1970',
+      'Documentnummer / Document number: NL111222333',
+      'Geslacht / Sex: M',
+      'Geldig tot / Date of expiry: 15 SEP 2032',
+      'Afgegeven te / Place of issue: UTRECHT',
+    ]),
   },
 ];
 
