@@ -1,4 +1,3 @@
-
 # Langfuse Deployment
 
 ## Prerequisite: Install Terraform
@@ -189,3 +188,27 @@ Finally, restart the web deployment to re-trigger the migration:
 ```bash
 kubectl rollout restart deployment langfuse-web -n langfuse
 ```
+
+# Troubleshooting
+
+## Helm dependency error
+
+If you see an error like:
+
+```
+Error: found in Chart.yaml, but missing in charts/ directory: postgresql, clickhouse, valkey, minio, common
+```
+
+This means the required Helm chart dependencies listed in `Chart.yaml` are missing from the `charts/` directory.
+
+**Resolution:**
+
+From the `langfuse/charts/langfuse` directory (where `Chart.yaml` is present), run:
+
+```sh
+helm dependency update
+```
+
+This will download the required dependencies into the `charts/` directory. After this, you can proceed with your deployment (e.g., `terraform apply`).
+
+---
