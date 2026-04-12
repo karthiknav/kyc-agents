@@ -130,12 +130,15 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     }, [currentStep, caseStatus]);
 
     const handleFile = (id: string, file: File) => {
-        // Validation: Types
+        // Validation: Types — check extension OR MIME type (handles files with no extension, pasted images, phone photos)
         const allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif'];
+        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/bmp', 'image/tiff', 'application/pdf'];
         const fileExtension = file.name.split('.').pop()?.toLowerCase();
+        const isValidExtension = !!fileExtension && allowedExtensions.includes(fileExtension);
+        const isValidMime = allowedMimeTypes.includes(file.type) || file.type.startsWith('image/');
 
-        if (!fileExtension || !allowedExtensions.includes(fileExtension)) {
-            showToast(`Invalid file type: .${fileExtension}. Please upload JPG, PNG, PDF, WEBP, or HEIC.`, 'error');
+        if (!isValidExtension && !isValidMime) {
+            showToast(`Invalid file type${fileExtension ? ` (.${fileExtension})` : ''}. Please upload JPG, PNG, PDF, WEBP, or HEIC.`, 'error');
             return;
         }
 
@@ -184,6 +187,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
         if (e.target.files && e.target.files[0]) {
             handleFile(id, e.target.files[0]);
+            e.target.value = ''; // reset so same file can be re-selected after Replace
         }
     };
 
