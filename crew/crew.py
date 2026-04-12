@@ -159,9 +159,41 @@ class KYCCrew():
 
     @task
     def document_processing_task(self) -> Task:
+        def _guardrail(output) -> tuple[bool, str]:
+            """Reject outputs that show the agent skipped OCR or BRP steps."""
+            import json as _json
+            raw = output.raw if hasattr(output, "raw") else str(output)
+            try:
+                parsed = _json.loads(raw)
+            except Exception:
+                parsed = {}
+
+            # documents_summary must be non-trivial — a real OCR run always produces one
+            docs_summary = str(parsed.get("documents_summary") or "").strip()
+            if not docs_summary or docs_summary.lower() in ("", "none", "no documents processed", "n/a"):
+                return (
+                    False,
+                    "REJECTED: documents_summary is empty or missing. You MUST call "
+                    "get_case_files → extract_document_text → verify_identity_document → "
+                    "compare_identity_documents before producing your final output. "
+                    "Go back and complete all required steps.",
+                )
+
+            govt_summary = str(parsed.get("government_verification_summary") or "").strip()
+            if not govt_summary or govt_summary.lower() in ("", "none", "no government verification data available.", "n/a"):
+                return (
+                    False,
+                    "REJECTED: government_verification_summary is empty or missing. "
+                    "You MUST call verify_identity_document for each document before producing "
+                    "your final output. Go back and complete Step 4.",
+                )
+
+            return (True, "")
+
         return Task(
             config=self.tasks_config['document_processing_task'],  # type: ignore[index]
             callback=update_document_result,
+            guardrail=_guardrail,
         )
 
     @task

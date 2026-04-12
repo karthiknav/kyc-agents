@@ -34,7 +34,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     const [docs, setDocs] = useState<DocSection[]>([
         { id: 'id', name: 'Government-Issued ID', requirement: "Passport, National ID, or Driver's License", status: 'idle', icon: '🪪', iconClass: 'id' },
         { id: 'address', name: 'Proof of Address', requirement: 'Utility bill, bank statement (< 3 months)', status: 'idle', icon: '🏠', iconClass: 'address' },
-        { id: 'income', name: 'Proof of Income', requirement: 'Salary slips, tax return (optional)', status: 'idle', icon: '💰', iconClass: 'income' }
+        { id: 'income', name: 'Proof of Income', requirement: 'Salary slips, tax return', status: 'idle', icon: '💰', iconClass: 'income' }
     ]);
 
     const [userDetails, setUserDetails] = useState<UserDetails>({
@@ -131,11 +131,11 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
     const handleFile = (id: string, file: File) => {
         // Validation: Types
-        const allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+        const allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif'];
         const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
         if (!fileExtension || !allowedExtensions.includes(fileExtension)) {
-            showToast(`Invalid file type: .${fileExtension}. Please upload JPG, PNG or PDF.`, 'error');
+            showToast(`Invalid file type: .${fileExtension}. Please upload JPG, PNG, PDF, WEBP, or HEIC.`, 'error');
             return;
         }
 
@@ -392,7 +392,12 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                         <div className="left">
                                             <div className={`doc-icon ${doc.iconClass}`}>{doc.icon}</div>
                                             <div>
-                                                <div className="doc-name">{doc.name}</div>
+                                                <div className="doc-name">
+                                                    {doc.name}
+                                                    {!requiredDocs.includes(doc.id) && (
+                                                        <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: 500, padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', color: 'var(--text-muted)', verticalAlign: 'middle' }}>Optional</span>
+                                                    )}
+                                                </div>
                                                 <div className="doc-req">{doc.requirement}</div>
                                             </div>
                                         </div>
@@ -400,7 +405,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                         {doc.status === 'processing' && <span className="status-chip processing">⟳ Processing</span>}
                                         {doc.status === 'failed' && <span className="status-chip failed">✕ Re-upload</span>}
                                         {doc.status === 'uploaded' && <span className="status-chip" style={{ background: 'var(--accent-blue-dim)', color: 'var(--accent-blue)' }}>Ready</span>}
-                                        {doc.status === 'idle' && <span className="status-chip pending">○ Pending</span>}
+                                        {doc.status === 'idle' && !requiredDocs.includes(doc.id) && <span className="status-chip" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>○ Skip</span>}
+                                        {doc.status === 'idle' && requiredDocs.includes(doc.id) && <span className="status-chip pending">○ Pending</span>}
                                     </div>
 
                                     {doc.status === 'idle' ? (
@@ -417,11 +423,12 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                                 ref={el => { fileInputRefs.current[doc.id] = el; }}
                                                 style={{ display: 'none' }}
                                                 onChange={(e) => handleFileInputChange(e, doc.id)}
-                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.bmp,.tiff,.tif,image/*"
                                             />
                                             <div style={{ flex: 1, textAlign: 'center' }}>
                                                 <div className="icon">⬆️</div>
                                                 <div className="text">Drag & drop or click</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>JPG, PNG, PDF, WEBP, HEIC · Max 10 MB</div>
                                             </div>
                                         </div>
                                     ) : (

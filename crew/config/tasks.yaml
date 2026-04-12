@@ -41,13 +41,13 @@ document_processing_task:
     Always pass full_name from the identity.fullName field retrieved in Step 1.
     You MUST call this tool — never assume or fabricate OCR text. Do not skip even
     if you think you already know what the document contains.
-    - If extract_document_text returns a response containing "full_text" or "pages" fields,
-      it succeeded (even if mock=true). Proceed to Step 4.
-    - If it returns only an "error" field with no "full_text" or "pages", the extraction
-      failed. Do NOT proceed to compare_identity_documents — it will reject the call.
-      Report the failure in your final output.
+    - A successful result contains "full_text" or "pages" fields (even if mock=true). Proceed to Step 4.
+    - If ALL documents return only an "error" field, set comparison_result to "MISMATCH",
+      list the errors in discrepancies, and still proceed through Steps 4 and 5 using an
+      empty verified-documents list. You may NOT skip Steps 4 and 5 even on failure.
     - Note: compare_identity_documents will REJECT the call if you pass it an empty array
-      or an array containing only error responses. You cannot skip this step.
+      or an array containing only error responses — pass the error objects instead so it
+      can record the failure.
 
     STEP 4 — verify_identity_document (REQUIRED, once per document, do not skip):
     For each document, extract the document type (paspoort, identiteitskaart, or rijbewijs)
