@@ -30,7 +30,7 @@ apply_bedrock_stop_sequences_patch()
 apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
 
-from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool
+from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool, get_last_run_id, reset_run_id
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
@@ -159,8 +159,17 @@ class KYCCrew():
 
     @task
     def document_processing_task(self) -> Task:
+        reset_run_id()
+
         def _guardrail(output) -> tuple[bool, str]:
-            """Reject outputs that show the agent skipped OCR or BRP steps."""
+            """Reject outputs that don't contain the nonce from compare_identity_documents.
+
+            compare_identity_documents generates a UUID run_id only when it successfully
+            processes real OCR data. The agent cannot know this value without calling the
+            tool — and the tool rejects empty/fabricated OCR arrays — so a matching run_id
+            proves the full pipeline (get_case_files → extract_document_text →
+            verify_identity_document → compare_identity_documents) actually ran.
+            """
             import json as _json
             raw = output.raw if hasattr(output, "raw") else str(output)
             try:
@@ -168,24 +177,23 @@ class KYCCrew():
             except Exception:
                 parsed = {}
 
-            # documents_summary must be non-trivial — a real OCR run always produces one
-            docs_summary = str(parsed.get("documents_summary") or "").strip()
-            if not docs_summary or docs_summary.lower() in ("", "none", "no documents processed", "n/a"):
+            expected = get_last_run_id()
+            if not expected:
                 return (
                     False,
-                    "REJECTED: documents_summary is empty or missing. You MUST call "
-                    "get_case_files → extract_document_text → verify_identity_document → "
-                    "compare_identity_documents before producing your final output. "
-                    "Go back and complete all required steps.",
+                    "REJECTED: compare_identity_documents was never called (no run_id issued). "
+                    "You MUST complete all 5 steps — get_case_details, get_case_files, "
+                    "extract_document_text, verify_identity_document, compare_identity_documents "
+                    "— before producing your final output.",
                 )
 
-            govt_summary = str(parsed.get("government_verification_summary") or "").strip()
-            if not govt_summary or govt_summary.lower() in ("", "none", "no government verification data available.", "n/a"):
+            actual = parsed.get("run_id")
+            if actual != expected:
                 return (
                     False,
-                    "REJECTED: government_verification_summary is empty or missing. "
-                    "You MUST call verify_identity_document for each document before producing "
-                    "your final output. Go back and complete Step 4.",
+                    f"REJECTED: run_id in your output ('{actual}') does not match the one "
+                    f"returned by compare_identity_documents. Copy the exact run_id from the "
+                    f"compare_identity_documents tool result into your final JSON.",
                 )
 
             return (True, "")

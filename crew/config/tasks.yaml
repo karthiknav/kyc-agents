@@ -65,6 +65,7 @@ document_processing_task:
     government_verification_summary.
   expected_output: >
     Valid JSON object with exactly these keys:
+    - "run_id": the exact run_id string returned by compare_identity_documents (string, REQUIRED)
     - "case_id": the case ID (string)
     - "name": full name from identity.fullName (string)
     - "comparison_result": one of "MATCH", "PARTIAL_MATCH", "MISMATCH" (string)
@@ -72,6 +73,9 @@ document_processing_task:
     - "comparison_summary": explanation of the comparison outcome (string)
     - "documents_summary": brief summary of each document processed (string)
     - "government_verification_summary": summary of BRP government verification results (string)
+
+    IMPORTANT: The run_id field must be copied verbatim from the compare_identity_documents
+    tool result. Do not invent or omit it — the output will be rejected without it.
   agent: document_processing_agent
 
 risk_list_screening_task:

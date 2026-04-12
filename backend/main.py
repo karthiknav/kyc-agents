@@ -362,16 +362,17 @@ async def submit_kyc(
     nationality: str = Form("NL"),
     id_file: UploadFile = File(...),
     address_file: UploadFile = File(...),
-    income_file: UploadFile = File(...)
+    income_file: Optional[UploadFile] = File(None)
 ):
     case_id = f"CASE-{uuid.uuid4().hex[:8].upper()}"
     timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    
+
     files_to_upload = {
         "passport": id_file,
         "address": address_file,
-        "income": income_file
     }
+    if income_file is not None:
+        files_to_upload["income"] = income_file
     
     uploaded_files = []
     
@@ -413,7 +414,7 @@ async def submit_kyc(
             "Form data: fullName=%s, address=%s, passport=%s, expiry=%s, dob=%s, nationality=%s",
             fullName, address, passportNumber, passportExpiry, dateOfBirth, nationality,
         )
-        logger.debug("Files: id=%s, addr=%s, inc=%s", id_file.filename, address_file.filename, income_file.filename)
+        logger.debug("Files: id=%s, addr=%s, inc=%s", id_file.filename, address_file.filename, income_file.filename if income_file else None)
         
         table = get_submissions_table()
         table.put_item(Item=submission_data)

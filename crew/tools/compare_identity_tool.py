@@ -2,6 +2,8 @@
 import json
 import logging
 import os
+import threading
+import uuid
 from typing import Type
 
 import boto3
@@ -11,6 +13,21 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 _MAX_EXTRACTED_DOCS_CHARS = 12000
+
+# Thread-local nonce: set when compare_identity_documents succeeds with real OCR data.
+# The guardrail in crew.py checks that the agent's final answer contains the exact run_id
+# produced here — the agent can only obtain it by actually calling this tool with valid OCR.
+_run_state = threading.local()
+
+
+def get_last_run_id() -> str | None:
+    """Return the run_id from the last successful compare_identity_documents call."""
+    return getattr(_run_state, "run_id", None)
+
+
+def reset_run_id() -> None:
+    """Clear the run_id (call at the start of each document processing task)."""
+    _run_state.run_id = None
 
 
 class CompareIdentityInput(BaseModel):
@@ -103,7 +120,11 @@ class CompareIdentityDocumentsTool(BaseTool):
             identity_from_db, docs, govt_results
         )
 
+        run_id = str(uuid.uuid4())
+        _run_state.run_id = run_id
+
         result = {
+            "run_id": run_id,
             "case_id": case_id,
             "name": name,
             "comparison_result": comparison_result,
@@ -112,7 +133,7 @@ class CompareIdentityDocumentsTool(BaseTool):
             "documents_summary": documents_summary,
             "government_verification_summary": government_verification_summary,
         }
-        logger.info("compare_identity_documents output: comparison_result=%s", comparison_result)
+        logger.info("compare_identity_documents output: comparison_result=%s run_id=%s", comparison_result, run_id)
         return json.dumps(result, indent=2)
 
     def _compare_with_llm(self, identity_from_db: dict, extracted_docs: list, govt_results: list = None):
