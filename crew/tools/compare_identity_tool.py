@@ -25,9 +25,19 @@ def get_last_run_id() -> str | None:
     return getattr(_run_state, "run_id", None)
 
 
+def get_last_result() -> dict | None:
+    """Return the full result dict from the last successful compare_identity_documents call.
+
+    Used as a fallback in the document-processing callback when the LLM's final answer
+    is empty or unparseable (e.g. Bedrock empty-response bug exhausts guardrail retries).
+    """
+    return getattr(_run_state, "last_result", None)
+
+
 def reset_run_id() -> None:
-    """Clear the run_id (call at the start of each document processing task)."""
+    """Clear the run_id and cached result (call at the start of each document processing task)."""
     _run_state.run_id = None
+    _run_state.last_result = None
 
 
 class CompareIdentityInput(BaseModel):
@@ -123,7 +133,7 @@ class CompareIdentityDocumentsTool(BaseTool):
         run_id = str(uuid.uuid4())
         _run_state.run_id = run_id
 
-        result = {
+        result: dict = {
             "run_id": run_id,
             "case_id": case_id,
             "name": name,
@@ -133,6 +143,7 @@ class CompareIdentityDocumentsTool(BaseTool):
             "documents_summary": documents_summary,
             "government_verification_summary": government_verification_summary,
         }
+        _run_state.last_result = result
         logger.info("compare_identity_documents output: comparison_result=%s run_id=%s", comparison_result, run_id)
         return json.dumps(result, indent=2)
 
