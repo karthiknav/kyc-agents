@@ -18,3 +18,4 @@ requests
 langfuse
 openinference-instrumentation-crewai
 openinference-instrumentation-bedrock
+opentelemetry-instrumentation-botocore
