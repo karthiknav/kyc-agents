@@ -1,9 +1,10 @@
-import json
 import logging
 import os
 from datetime import datetime, timezone
 
 import boto3
+
+from crew.utils import parse_task_output
 
 logger = logging.getLogger(__name__)
 
@@ -11,14 +12,10 @@ logger = logging.getLogger(__name__)
 def update_orchestrator_result(task_output):
     """Persist the orchestrator's final decision to DynamoDB."""
     logger.info("update_orchestrator_result input: task_output=%s", task_output)
-    if hasattr(task_output, "raw"):
-        task_output = task_output.raw
-    if isinstance(task_output, str):
-        try:
-            task_output = json.loads(task_output)
-        except json.JSONDecodeError:
-            logger.error("update_orchestrator_result: task_output is not valid JSON")
-            return
+    task_output = parse_task_output(task_output)
+    if task_output is None:
+        logger.error("update_orchestrator_result: task_output is not valid JSON, skipping DB update")
+        return
 
     case_id = task_output.get("case_id")
     action = task_output.get("action", "")
