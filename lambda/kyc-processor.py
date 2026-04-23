@@ -278,18 +278,25 @@ def handler(event, context):
                 )
                 failed += 1
                 continue
-            if not _mark_case_processing_or_skip(cases_table, case_id):
+            analyst_comments = (body.get("analystComments") or "").strip()
+            is_override = bool(analyst_comments)
+
+            if not is_override and not _mark_case_processing_or_skip(cases_table, case_id):
                 logger.info("Skipping agent invocation for caseId=%s as it is duplicate", case_id)
                 continue
 
             message_id = record.get("messageId")
+            prefix = "kyc-override" if is_override else "kyc-case"
             stable_session_id = (
-                f"kyc-case-{case_id}-{message_id}" if isinstance(message_id, str) and message_id else None
+                f"{prefix}-{case_id}-{message_id}" if isinstance(message_id, str) and message_id else None
             )
+            payload = {"caseId": case_id}
+            if is_override:
+                payload["analystComments"] = analyst_comments
             _invoke_agent_fire_and_forget(
                 agentcore_client,
                 agent_arn,
-                {"caseId": case_id},
+                payload,
                 runtime_session_id=stable_session_id,
             )
         except Exception as e:

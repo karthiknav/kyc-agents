@@ -3,13 +3,13 @@ import os
 import json
 import uuid
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 
 import boto3
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -368,7 +368,7 @@ async def submit_kyc(
     income_file: Optional[UploadFile] = File(None)
 ):
     case_id = f"CASE-{uuid.uuid4().hex[:8].upper()}"
-    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     files_to_upload = {
         "passport": id_file,
@@ -529,7 +529,7 @@ async def get_analytics_summary():
 @app.patch("/submissions/{caseId}/status")
 async def update_submission_status(caseId: str, request: StatusUpdateRequest):
     try:
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat()
         table = get_submissions_table()
         
         # 1. Update status in DynamoDB
@@ -580,42 +580,8 @@ async def get_submission_by_case_id(caseId: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _invoke_agentcore_override(case_id: str, analyst_comments: str) -> None:
-    """Fire-and-forget AgentCore invocation for override validation."""
-    agent_arn = os.getenv("KYC_AGENT_ARN", "").strip()
-    if not agent_arn:
-        logger.warning("KYC_AGENT_ARN not set — skipping AgentCore invocation for override caseId=%s", case_id)
-        return
-    try:
-        import uuid
-        from botocore.config import Config
-        config = Config(
-            connect_timeout=60,
-            read_timeout=120,
-            retries={"total_max_attempts": 1, "max_attempts": 0, "mode": "standard"},
-        )
-        client = boto3.client("bedrock-agentcore", region_name=AWS_REGION, config=config)
-        session_id = f"kyc-override-{case_id}-{uuid.uuid4().hex}"
-        boto3_response = client.invoke_agent_runtime(
-            agentRuntimeArn=agent_arn,
-            runtimeSessionId=session_id,
-            qualifier="DEFAULT",
-            payload=json.dumps({"caseId": case_id, "analystComments": analyst_comments}),
-        )
-        try:
-            body = boto3_response.get("response")
-            if body:
-                body.read()
-                body.close()
-        except Exception:
-            pass
-        logger.info("AgentCore override invocation sent for caseId=%s session=%s", case_id, session_id)
-    except Exception as e:
-        logger.exception("AgentCore override invocation failed for caseId=%s: %s", case_id, e)
-
-
 @app.post("/submissions/{caseId}/override")
-async def request_override(caseId: str, request: OverrideRequest, background_tasks: BackgroundTasks):
+async def request_override(caseId: str, request: OverrideRequest):
     if not request.analystComments or not request.analystComments.strip():
         raise HTTPException(status_code=400, detail="analystComments is required")
     try:
@@ -630,14 +596,24 @@ async def request_override(caseId: str, request: OverrideRequest, background_tas
                 status_code=409,
                 detail=f"Override can only be requested for cases in PENDING_HUMAN_REVIEW. Current: {current_status}",
             )
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat()
         table.update_item(
             Key={"CaseId": caseId},
             UpdateExpression="SET #s = :s, statusUpdatedAt = :t",
             ExpressionAttributeNames={"#s": "status"},
             ExpressionAttributeValues={":s": "OVERRIDE_PENDING_AI_REVIEW", ":t": timestamp},
         )
-        background_tasks.add_task(_invoke_agentcore_override, caseId, request.analystComments.strip())
+        queue_url = _get_sqs_queue_url()
+        sqs_client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({
+                "caseId": caseId,
+                "analystComments": request.analystComments.strip(),
+                "status": "OVERRIDE_INITIATED",
+                "timestamp": timestamp,
+            }),
+        )
+        logger.info("SQS override message sent for caseId=%s", caseId)
         return {"status": "override_review_started", "caseId": caseId}
     except HTTPException:
         raise
