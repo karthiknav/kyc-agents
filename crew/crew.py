@@ -51,6 +51,9 @@ from crew.update_override_result import update_override_result
 class KYCCrew():
     """KYC crew: document processing → sanctions screening → final decision (sequential)."""
 
+    agents_config = 'config/kyc_agents.yaml'
+    tasks_config = 'config/kyc_tasks.yaml'
+
     agents: List[BaseAgent]
     tasks: List[Task]
     # Use a Bedrock model that supports both system prompts and tool use (e.g. Claude 3.5 Sonnet v2, Nova Pro).
@@ -255,6 +258,9 @@ class KYCCrew():
 @CrewBase
 class OverrideValidationCrew():
     """Single-agent crew that evaluates an analyst's override justification against persisted risk flags."""
+
+    agents_config = 'config/override_agents.yaml'
+    tasks_config = 'config/override_tasks.yaml'
 
     agents: List[BaseAgent]
     tasks: List[Task]
