@@ -9,7 +9,7 @@ from typing import Optional, List
 import boto3
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -153,6 +153,9 @@ class UserResponse(BaseModel):
 
 class StatusUpdateRequest(BaseModel):
     status: str
+
+class OverrideRequest(BaseModel):
+    analystComments: str
 
 # Mock database for login
 USERS = [
@@ -543,6 +546,105 @@ async def update_submission_status(caseId: str, request: StatusUpdateRequest):
     except Exception as e:
         logger.exception("Error updating status")
         raise HTTPException(status_code=500, detail=f"Failed to update status: {str(e)}")
+
+@app.get("/submissions/{caseId}")
+async def get_submission_by_case_id(caseId: str):
+    try:
+        table = get_submissions_table()
+        response = table.get_item(Key={"CaseId": caseId})
+        item = response.get("Item")
+        if not item:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if "CaseId" in item and "caseId" not in item:
+            item["caseId"] = item["CaseId"]
+        item["document_urls"] = {}
+        for f in item.get("files", []):
+            s3_key = f.get("key")
+            if s3_key:
+                try:
+                    url = s3_client.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": f.get("bucket", S3_BUCKET), "Key": s3_key},
+                        ExpiresIn=3600,
+                    )
+                    if "localstack:4566" in url:
+                        url = url.replace("localstack:4566", "localhost:4566")
+                    item["document_urls"][f.get("type")] = url
+                except Exception:
+                    pass
+        return item
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error fetching case %s", caseId)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _invoke_agentcore_override(case_id: str, analyst_comments: str) -> None:
+    """Fire-and-forget AgentCore invocation for override validation."""
+    agent_arn = os.getenv("KYC_AGENT_ARN", "").strip()
+    if not agent_arn:
+        logger.warning("KYC_AGENT_ARN not set — skipping AgentCore invocation for override caseId=%s", case_id)
+        return
+    try:
+        import uuid
+        from botocore.config import Config
+        config = Config(
+            connect_timeout=60,
+            read_timeout=120,
+            retries={"total_max_attempts": 1, "max_attempts": 0, "mode": "standard"},
+        )
+        client = boto3.client("bedrock-agentcore", region_name=AWS_REGION, config=config)
+        session_id = f"kyc-override-{case_id}-{uuid.uuid4().hex}"
+        boto3_response = client.invoke_agent_runtime(
+            agentRuntimeArn=agent_arn,
+            runtimeSessionId=session_id,
+            qualifier="DEFAULT",
+            payload=json.dumps({"caseId": case_id, "analystComments": analyst_comments}),
+        )
+        try:
+            body = boto3_response.get("response")
+            if body:
+                body.read()
+                body.close()
+        except Exception:
+            pass
+        logger.info("AgentCore override invocation sent for caseId=%s session=%s", case_id, session_id)
+    except Exception as e:
+        logger.exception("AgentCore override invocation failed for caseId=%s: %s", case_id, e)
+
+
+@app.post("/submissions/{caseId}/override")
+async def request_override(caseId: str, request: OverrideRequest, background_tasks: BackgroundTasks):
+    if not request.analystComments or not request.analystComments.strip():
+        raise HTTPException(status_code=400, detail="analystComments is required")
+    try:
+        table = get_submissions_table()
+        response = table.get_item(Key={"CaseId": caseId})
+        item = response.get("Item")
+        if not item:
+            raise HTTPException(status_code=404, detail="Case not found")
+        current_status = item.get("status", "")
+        if current_status != "PENDING_HUMAN_REVIEW":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Override can only be requested for cases in PENDING_HUMAN_REVIEW. Current: {current_status}",
+            )
+        timestamp = datetime.utcnow().isoformat() + "Z"
+        table.update_item(
+            Key={"CaseId": caseId},
+            UpdateExpression="SET #s = :s, statusUpdatedAt = :t",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":s": "OVERRIDE_PENDING_AI_REVIEW", ":t": timestamp},
+        )
+        background_tasks.add_task(_invoke_agentcore_override, caseId, request.analystComments.strip())
+        return {"status": "override_review_started", "caseId": caseId}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error requesting override for case %s", caseId)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/health")
 async def health_check():

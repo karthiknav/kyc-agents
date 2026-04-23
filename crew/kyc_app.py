@@ -89,7 +89,7 @@ if LANGFUSE_ENABLED:
 else:
     logger.info("Langfuse disabled (set LANGFUSE_ENABLED=1 to enable)")
 
-from crew.crew import KYCCrew
+from crew.crew import KYCCrew, OverrideValidationCrew
 
 
 app = BedrockAgentCoreApp()
@@ -175,6 +175,30 @@ def _run_kyc_crew_background(*, case_id: str, job_id: str) -> None:
         logger.exception("[job=%s] Background kickoff failed (caseId=%s)", job_id, case_id)
 
 
+def _run_override_validation_background(*, case_id: str, analyst_comments: str, job_id: str) -> None:
+    try:
+        logger.info("[job=%s] Override validation starting (caseId=%s)", job_id, case_id)
+        ensure_model_env_from_ssm(max_age_seconds=int(os.getenv("MODEL_SSM_REFRESH_SECONDS", "300")))
+        with _langfuse_span("override-validation-trace"):
+            result = OverrideValidationCrew().crew().kickoff(inputs={
+                "caseId": case_id,
+                "analystComments": analyst_comments,
+            })
+            logger.info("[job=%s] Override validation finished (caseId=%s)", job_id, case_id)
+            try:
+                logger.info("[job=%s] Result: %s", job_id, result.raw)
+            except Exception:
+                logger.info("[job=%s] Result produced (raw unavailable)", job_id)
+
+        if langfuse:
+            try:
+                langfuse.flush()
+            except Exception:
+                logger.exception("[job=%s] Langfuse flush failed; continuing", job_id)
+    except Exception:
+        logger.exception("[job=%s] Override validation failed (caseId=%s)", job_id, case_id)
+
+
 
 
 @app.entrypoint
@@ -193,9 +217,22 @@ def agent_invocation(payload, context):
             logger.warning("No caseId provided in payload")
             return {"error": "Missing 'caseId' in payload"}
 
-        logger.info("KYC screening for caseId: %s", case_id)
+        analyst_comments = payload.get("analystComments", "").strip()
 
         job_id = str(uuid.uuid4())
+
+        if analyst_comments:
+            logger.info("Override validation request for caseId: %s", case_id)
+            thread = threading.Thread(
+                target=_run_override_validation_background,
+                kwargs={"case_id": case_id, "analyst_comments": analyst_comments, "job_id": job_id},
+                name=f"kyc-override-{job_id}",
+                daemon=True,
+            )
+            thread.start()
+            return {"status": "override_review_started", "caseId": case_id, "jobId": job_id}
+
+        logger.info("KYC screening for caseId: %s", case_id)
         thread = threading.Thread(
             target=_run_kyc_crew_background,
             kwargs={"case_id": case_id, "job_id": job_id},

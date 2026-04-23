@@ -50,6 +50,14 @@ export interface OrchestratorStage {
     updatedAt?: string;
 }
 
+export interface OverrideReviewStage {
+    verdict: 'APPROVED' | 'REJECTED';
+    reasoning: string;
+    riskFlagsEvaluated: string[];
+    analystComments: string;
+    reviewedAt: string;
+}
+
 export interface User {
     user_id: string;
     email: string;
@@ -70,6 +78,7 @@ export interface User {
         documentProcessing?: DocumentProcessingStage;
         screening?: ScreeningStage;
         orchestrator?: OrchestratorStage;
+        overrideReview?: OverrideReviewStage;
     };
     finalDecision?: string;
 }
@@ -93,6 +102,7 @@ export interface KycSubmission {
         documentProcessing?: DocumentProcessingStage;
         screening?: ScreeningStage;
         orchestrator?: OrchestratorStage;
+        overrideReview?: OverrideReviewStage;
     };
     document_urls: Record<string, string>;
     finalDecision: string;

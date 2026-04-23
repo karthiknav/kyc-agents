@@ -1,3 +1,44 @@
+override_validation_task:
+  description: >
+    A KYC analyst has requested to override the escalation decision for case {caseId}.
+    Their justification is:
+
+    "{analystComments}"
+
+    You MUST complete both steps before producing your verdict:
+
+    STEP 1 — get_case_stages (REQUIRED):
+    Call get_case_stages with caseId {caseId} to retrieve the existing stage results:
+    - documentProcessing.result (MATCH / PARTIAL_MATCH / MISMATCH)
+    - stages.screening.riskListScreening.result (CLEAR / HIT) and pepStatus, sanctionsStatus, datasetsMatched
+    - stages.screening.adverseMedia.result (OK / NOK / PENDING_REVIEW) and summary
+
+    STEP 2 — get_case_details (REQUIRED):
+    Call get_case_details with caseId {caseId} to retrieve the subject's identity
+    (fullName, dateOfBirth, nationality) for context when evaluating the justification.
+
+    STEP 3 — Evaluate the justification:
+    For each risk flag that caused the escalation, assess whether the analyst's justification
+    specifically and credibly addresses it:
+    - A PEP/sanctions HIT requires the analyst to explain why the match is a false positive
+      (e.g. different nationality, DOB mismatch, confirmed distinct individual). Generic
+      statements are insufficient.
+    - An adverse media NOK requires the analyst to explain why the negative coverage does
+      not apply to this subject.
+    - A document MISMATCH requires the analyst to explain the discrepancies.
+
+    STEP 4 — Return your verdict as JSON.
+
+  expected_output: >
+    Valid JSON object with exactly these keys:
+    - "case_id": the case ID (string)
+    - "override_verdict": one of "APPROVED" or "REJECTED" (string)
+    - "reasoning": detailed explanation of why the justification was accepted or rejected,
+      referencing the specific risk flags from the stage results (string)
+    - "risk_flags_evaluated": list of risk flags that were present and considered (array of strings)
+    - "analyst_comments": the original analyst justification echoed back (string)
+  agent: override_validation_agent
+
 orchestrator_task:
   description: >
     Given caseId {caseId} and the outputs of the document processing and screening

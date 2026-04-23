@@ -34,6 +34,7 @@ from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool, get_l
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
+from crew.tools.get_case_stages_tool import GetCasestagesTool
 from crew.tools.risk_list_screening_tool import RiskListScreeningTool
 from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
@@ -42,6 +43,7 @@ from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
 from crew.update_case import update_adverse_media_result, update_risk_list_screening_result
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
+from crew.update_override_result import update_override_result
 
 
 
@@ -245,6 +247,55 @@ class KYCCrew():
                 self.adverse_media_task(),
                 self.orchestrator_task(),
             ],
+            process=Process.sequential,
+            verbose=True,
+        )
+
+
+@CrewBase
+class OverrideValidationCrew():
+    """Single-agent crew that evaluates an analyst's override justification against persisted risk flags."""
+
+    agents: List[BaseAgent]
+    tasks: List[Task]
+
+    _default_bedrock_model = "bedrock/openai.gpt-oss-120b-1:0"
+
+    def get_llm(self) -> LLM:
+        resolved_model = _resolve_bedrock_model_from_env(
+            default_model=self._default_bedrock_model
+        )
+        logger.info(
+            "OverrideValidationCrew using Bedrock model: %s (MODEL env=%r)",
+            resolved_model,
+            (os.getenv("MODEL") or "").strip(),
+        )
+        return LLM(model=resolved_model)
+
+    @agent
+    def override_validation_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['override_validation_agent'],  # type: ignore[index]
+            verbose=True,
+            tools=[
+                GetCaseDetailsTool(),
+                GetCasestagesTool(),
+            ],
+            llm=self.get_llm(),
+        )
+
+    @task
+    def override_validation_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['override_validation_task'],  # type: ignore[index]
+            callback=update_override_result,
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        return Crew(
+            agents=[self.override_validation_agent()],
+            tasks=[self.override_validation_task()],
             process=Process.sequential,
             verbose=True,
         )
