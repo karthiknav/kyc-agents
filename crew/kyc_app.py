@@ -247,9 +247,44 @@ def agent_invocation(payload, context):
         return {"error": str(e)}
 
 
+def test_kyc_flow(case_id: str) -> None:
+    """Run KYC crew synchronously — for local testing only."""
+    logger.info("test_kyc_flow: caseId=%s", case_id)
+    ensure_model_env_from_ssm(max_age_seconds=0, force=True)
+    with _langfuse_span("crewai-index-trace"):
+        result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
+    logger.info("test_kyc_flow result: %s", result.raw)
+
+
+def test_override_flow(case_id: str, analyst_comments: str) -> None:
+    """Run override validation crew synchronously — for local testing only."""
+    logger.info("test_override_flow: caseId=%s comments=%r", case_id, analyst_comments)
+    ensure_model_env_from_ssm(max_age_seconds=0, force=True)
+    with _langfuse_span("override-validation-trace"):
+        result = OverrideValidationCrew().crew().kickoff(inputs={
+            "caseId": case_id,
+            "analystComments": analyst_comments,
+        })
+    logger.info("test_override_flow result: %s", result.raw)
+
+
 if __name__ == "__main__":
-    app.run()
-    # payload = {"caseId": "1234"}
-    # logger.info("Testing locally with payload: %s", payload)
-    # response = agent_invocation(payload)
-    # logger.info("Response: %s", response)
+    import sys
+
+    # Usage:
+    #   python -m crew.kyc_app kyc <caseId>
+    #   python -m crew.kyc_app override <caseId> "analyst justification text"
+
+    args = sys.argv[1:]
+    if not args:
+        logger.error("Usage: kyc <caseId> | override <caseId> <comments>")
+        sys.exit(1)
+
+    mode = args[0]
+    if mode == "kyc":
+        test_kyc_flow(case_id=args[1])
+    elif mode == "override":
+        test_override_flow(case_id=args[1], analyst_comments=args[2])
+    else:
+        logger.error("Unknown mode %r. Use 'kyc' or 'override'.", mode)
+        sys.exit(1)

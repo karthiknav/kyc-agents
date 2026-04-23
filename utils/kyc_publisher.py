@@ -92,7 +92,7 @@ class KycCasePublisher:
 
         try:
             self._put_dynamodb(payload)
-            self._send_sqs(payload)
+            #self._send_sqs(payload)
             logger.info("Pushed caseId=%s to DynamoDB and SQS", case_id)
             return True, None
         except ClientError as e:
