@@ -5,36 +5,37 @@ override_validation_task:
 
     "{analystComments}"
 
-    You MUST complete both steps before producing your verdict:
+    Their requested outcome is: APPROVED
 
-    STEP 1 — get_case_stages (REQUIRED):
-    Call get_case_stages with caseId {caseId} to retrieve the existing stage results:
-    - documentProcessing.result (MATCH / PARTIAL_MATCH / MISMATCH)
-    - stages.screening.riskListScreening.result (CLEAR / HIT) and pepStatus, sanctionsStatus, datasetsMatched
-    - stages.screening.adverseMedia.result (OK / NOK / PENDING_REVIEW) and summary
+    You MUST complete all three steps in order before producing your final answer.
+
+    STEP 1 — get_case_stage_details (REQUIRED):
+    Call get_case_stage_details with caseId {caseId}.
+    This returns a structured JSON with result and summary for each stage:
+    - documentProcessing.result and summary (MATCH / PARTIAL_MATCH / MISMATCH)
+    - riskListScreening.result, pepStatus, sanctionsStatus, datasetsMatched, summary (CLEAR / HIT)
+    - adverseMedia.result, summary, searchQueries (OK / NOK / PENDING_REVIEW)
 
     STEP 2 — get_case_details (REQUIRED):
     Call get_case_details with caseId {caseId} to retrieve the subject's identity
-    (fullName, dateOfBirth, nationality) for context when evaluating the justification.
+    (fullName, dateOfBirth, nationality). This provides context for the analysis.
 
-    STEP 3 — Evaluate the justification:
-    For each risk flag that caused the escalation, assess whether the analyst's justification
-    specifically and credibly addresses it:
-    - A PEP/sanctions HIT requires the analyst to explain why the match is a false positive
-      (e.g. different nationality, DOB mismatch, confirmed distinct individual). Generic
-      statements are insufficient.
-    - An adverse media NOK requires the analyst to explain why the negative coverage does
-      not apply to this subject.
-    - A document MISMATCH requires the analyst to explain the discrepancies.
-
-    STEP 4 — Return your verdict as JSON.
+    STEP 3 — analyze_override (REQUIRED):
+    Call analyze_override with:
+    - stage_details_json: the exact JSON string returned by get_case_stage_details
+    - identity_json: the exact JSON string returned by get_case_details
+    - analyst_comments: "{analystComments}"
+    - analyst_decision: "APPROVED"
+    This tool performs the structured LLM analysis and returns the final verdict.
+    Do NOT skip this step or reason about the justification yourself.
 
   expected_output: >
-    Valid JSON object with exactly these keys:
+    Valid JSON object with exactly these keys, copied verbatim from the analyze_override result:
     - "case_id": the case ID (string)
     - "override_verdict": one of "APPROVED" or "REJECTED" (string)
-    - "reasoning": detailed explanation of why the justification was accepted or rejected,
-      referencing the specific risk flags from the stage results (string)
-    - "risk_flags_evaluated": list of risk flags that were present and considered (array of strings)
+    - "reasoning": detailed explanation referencing each risk flag and whether the justification
+      addressed it (string)
+    - "risk_flags_evaluated": list of risk flags that were present and evaluated (array of strings)
     - "analyst_comments": the original analyst justification echoed back (string)
+    - "analyst_decision": the decision the analyst requested (string)
   agent: override_validation_agent

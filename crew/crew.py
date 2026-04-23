@@ -34,7 +34,9 @@ from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool, get_l
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
-from crew.tools.get_case_stages_tool import GetCasestagesTool
+
+from crew.tools.get_case_stage_details_tool import GetCaseStageDetailsTool
+from crew.tools.analyze_override_tool import AnalyzeOverrideTool
 from crew.tools.risk_list_screening_tool import RiskListScreeningTool
 from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
@@ -285,7 +287,8 @@ class OverrideValidationCrew():
             verbose=True,
             tools=[
                 GetCaseDetailsTool(),
-                GetCasestagesTool(),
+                GetCaseStageDetailsTool(),
+                AnalyzeOverrideTool(),
             ],
             llm=self.get_llm(),
         )
