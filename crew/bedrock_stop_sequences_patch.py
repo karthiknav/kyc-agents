@@ -23,25 +23,28 @@ def _deep_remove_stop_fields(x: Any) -> None:
 
 _REASONING_TAG_RE = re.compile(r"<reasoning>.*?</reasoning>", re.DOTALL)
 
+# Matches Observation: only when immediately followed by Thought: (empty, self-generated).
+# Covers both "\nObservation:Thought:" and "</reasoning>Observation:Thought:" patterns.
+_FAKE_OBS_RE = re.compile(r"(?:\n|(?<=>))Observation:\s*(?=Thought:)")
+
 
 def _clean_response_text(text: str) -> str:
-    """Remove <reasoning> tags and truncate at self-generated Observation:.
+    """Remove <reasoning> tags and truncate at self-generated empty Observation:.
 
     Some models on Bedrock don't support stopSequences. Without a stop, the model
-    generates the full ReAct cycle in one shot — including writing 'Observation:'
-    itself (with no content), which causes CrewAI to see an empty tool result and
-    never actually call the tool.
+    generates the full ReAct cycle in one shot — outputting 'Observation:' itself
+    (with no content, immediately followed by 'Thought:'), which causes CrewAI to
+    treat the tool result as empty and never actually call the tool.
 
-    This strips <reasoning>...</reasoning> blocks and truncates at the first
-    'Observation:' so CrewAI receives only the action JSON and can inject the
-    real tool result.
+    Only truncates when Observation: is immediately followed by Thought: — this
+    distinguishes a fake empty observation from legitimate text containing the word
+    'Observation:'.
     """
     text = _REASONING_TAG_RE.sub("", text)
-    # Truncate at the first self-generated Observation: marker
-    obs_idx = text.find("\nObservation:")
-    if obs_idx != -1:
-        logger.info("✅ Truncated model output at self-generated Observation: (index %d)", obs_idx)
-        text = text[:obs_idx]
+    match = _FAKE_OBS_RE.search(text)
+    if match:
+        logger.info("✅ Truncated model output at self-generated empty Observation: (index %d)", match.start())
+        text = text[:match.start()]
     return text.rstrip()
 
 
