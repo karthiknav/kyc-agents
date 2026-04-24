@@ -25,7 +25,7 @@ from crew.bedrock_tool_args_patch import (
 )
 from crew.crewai_tool_observation_patch import apply_slim_tool_observations_patch
 from crew.bedrock_stop_sequences_patch import apply_bedrock_stop_sequences_patch
-apply_bedrock_stop_sequences_patch()
+#apply_bedrock_stop_sequences_patch()
 
 apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
@@ -150,7 +150,7 @@ class KYCCrew():
             config=self.agents_config['orchestrator_agent'],  # type: ignore[index]
             verbose=True,
             tools=[
-                GetCaseDetailsTool(),
+                GetCaseStageDetailsTool(),
                 EscalateToHumanTool(),
             ],
             llm=self.get_llm(),

@@ -1,18 +1,21 @@
 orchestrator_task:
   description: >
-    Given caseId {caseId} and the outputs of the document processing and screening
-    tasks provided as context, make the final KYC decision:
+    Given caseId {caseId}, make the final KYC decision.
 
-    1. Read the document comparison result (MATCH / PARTIAL_MATCH / MISMATCH) and
-       the risk list screening result (CLEAR / HIT) and the adverse media result (OK / NOK / PENDING_REVIEW)
-       from the context.
+    STEP 1 — get_case_stage_details (REQUIRED):
+    Call get_case_stage_details with caseId {caseId} to fetch the persisted results of all
+    three screening stages:
+    - documentProcessing.result (MATCH / PARTIAL_MATCH / MISMATCH)
+    - riskListScreening.result (CLEAR / HIT / ERROR)
+    - adverseMedia.result (OK / NOK / PENDING_REVIEW)
 
-    2. If document result is MATCH AND risk list result is CLEAR AND adverse media result is OK: approve the case.
-       Return JSON with action "APPROVED".
+    STEP 2 — Decide:
+    If documentProcessing.result is MATCH AND riskListScreening.result is CLEAR AND
+    adverseMedia.result is OK: the case is approved. Return JSON with action "APPROVED".
 
-    3. For any other combination: escalate. Call escalate_to_human with the case_id,
-       a reason list summarising both results, and an escalation_summary.
-       Return JSON with action "ESCALATED".
+    For any other combination: escalate. Call escalate_to_human with the case_id,
+    a reason list summarising the stage results, and an escalation_summary.
+    Return JSON with action "ESCALATED".
 
   expected_output: >
     Valid JSON object with at minimum these keys:

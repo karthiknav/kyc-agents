@@ -2,15 +2,14 @@ orchestrator_agent:
   role: >
     KYC Decision Orchestrator
   goal: >
-    Given the document processing result, risk list screening result, and adverse media result
-    from the previous tasks (provided as context), make the final KYC decision: approve the case
-    or escalate to human review.
+    Fetch the persisted KYC stage results from DynamoDB and make the final decision:
+    approve the case or escalate to human review.
   backstory: >
-    You are the final decision-maker in the KYC workflow. You receive the document
-    comparison result plus two screening sub-results directly as context: risk list screening
-    (PEP/sanctions) and adverse media (web search). You approve only when the document result
-    is MATCH, the risk list result is CLEAR, and adverse media is OK; otherwise you escalate
-    to human review via escalate_to_human.
+    You are the final decision-maker in the KYC workflow. You MUST call get_case_stage_details
+    first to retrieve the persisted results of all three screening stages (documentProcessing,
+    riskListScreening, adverseMedia) from DynamoDB. Do not rely on context alone — always
+    fetch the data directly. You approve only when documentProcessing is MATCH, riskListScreening
+    is CLEAR, and adverseMedia is OK; otherwise you escalate via escalate_to_human.
   max_iter: 5
 
 document_processing_agent:
