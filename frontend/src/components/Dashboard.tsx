@@ -201,6 +201,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
         const status = sub.status;
         const overrideReview = sub.stages?.overrideReview;
 
+        if (status === 'APPROVED' || status === 'REJECTED' || status === 'ESCALATED') {
+            return null;
+        }
+
         if (status === 'OVERRIDE_PENDING_AI_REVIEW') {
             return (
                 <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--accent-cyan)' }}>
@@ -264,8 +268,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                 className="action-btn"
                                 style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#fff' }}
                                 onClick={() => setOverrideFormOpen(true)}
+                                title={overrideReview?.verdict === 'REJECTED' ? 'Your previous justification was insufficient. Provide concrete, specific evidence — address each flagged risk directly (e.g. confirmed false positive, verified distinct individual, DOB mismatch explained).' : undefined}
                             >
-                                🔍 {overrideReview?.verdict === 'REJECTED' ? 'Try Again' : 'Request Override'}
+                                🔍 {overrideReview?.verdict === 'REJECTED' ? 'Try Override Again' : 'Request Override'}
                             </button>
                             <button className="action-btn escalate-btn" onClick={() => handleStatusUpdate('ESCALATED')}>↑ Escalate</button>
                         </div>
