@@ -204,3 +204,51 @@ export LANGFUSE_ENABLED=1
 Notes:
 - Requires `aws` CLI configured with credentials/permissions to deploy CloudFormation and related resources.
 - If you prefer not to `chmod`, you can run: `bash deploy-base.sh` and `bash deploy.sh`.
+
+---
+
+## CI/CD Pipeline Setup (one-time, admin only)
+
+> **Run these steps once** when setting up a new environment. After this, every push to `main` automatically builds and deploys the agent — no manual steps needed.
+
+### Prerequisites
+
+- A GitHub CodeConnections connection in AWS must exist and be in `Available` status.
+  Create one in the AWS Console under **Developer Tools → Settings → Connections**.
+  Note the connection ARN once available.
+
+### Step 1 — Deploy the roles stack
+
+The pipeline requires two new IAM roles (`CodePipelineRole`, `CloudFormationDeployRole`).
+Pass `PipelineStackName` so the roles are scoped to the correct artifact bucket:
+
+```bash
+aws cloudformation deploy \
+  --stack-name kyc-roles \
+  --template-file templates/base/roles-stack.yaml \
+  --parameter-overrides \
+      StackName=kyc-roles \
+      BaseStackName=kyc-base \
+      PipelineStackName=kyc-pipeline \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+### Step 2 — Deploy the pipeline stack
+
+```bash
+aws cloudformation deploy \
+  --stack-name kyc-pipeline \
+  --template-file templates/pipeline-stack.yaml \
+  --parameter-overrides \
+      GitHubConnectionArn=arn:aws:codeconnections:us-east-1:ACCOUNT_ID:connection/YOUR-CONNECTION-ID \
+      GitHubRepo=myorg/kyc-agents \
+      GitHubBranch=main \
+      RolesStackName=kyc-roles \
+      AgentcoreStackName=kyc-agentcore \
+      KycCasesTableName=kyc-cases \
+      KycResultsBucketName=kyc-results \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+Once this completes, the pipeline triggers automatically and deploys `kyc-agentcore` for the first time.
+All subsequent deployments happen on every push to `main` — no further manual action required.
