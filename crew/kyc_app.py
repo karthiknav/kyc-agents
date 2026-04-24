@@ -269,7 +269,8 @@ def test_override_flow(case_id: str, analyst_comments: str) -> None:
 
 
 if __name__ == "__main__":
-    import sys
+    app.run()
+    """ import sys
 
     # Usage:
     #   python -m crew.kyc_app kyc <caseId>
@@ -287,4 +288,4 @@ if __name__ == "__main__":
         test_override_flow(case_id=args[1], analyst_comments=args[2])
     else:
         logger.error("Unknown mode %r. Use 'kyc' or 'override'.", mode)
-        sys.exit(1)
+        sys.exit(1) """
