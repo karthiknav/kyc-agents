@@ -209,6 +209,7 @@ class KYCCrew():
             config=self.tasks_config['document_processing_task'],  # type: ignore[index]
             callback=update_document_result,
             guardrail=_guardrail,
+            guardrail_max_retries=1,
         )
 
     @task

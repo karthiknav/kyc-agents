@@ -155,24 +155,31 @@ def _langfuse_span(name: str):
 
 
 def _run_kyc_crew_background(*, case_id: str, job_id: str) -> None:
-    try:
-        logger.info("[job=%s] Background KYC kickoff starting (caseId=%s)", job_id, case_id)
-        ensure_model_env_from_ssm(max_age_seconds=int(os.getenv("MODEL_SSM_REFRESH_SECONDS", "300")))
-        with _langfuse_span("crewai-index-trace"):
-            result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
-            logger.info("[job=%s] Background KYC kickoff finished (caseId=%s)", job_id, case_id)
-            try:
-                logger.info("[job=%s] Result: %s", job_id, result.raw)
-            except Exception:
-                logger.info("[job=%s] Result produced (raw unavailable)", job_id)
+    max_attempts = int(os.getenv("KYC_CREW_MAX_RETRIES", "3"))
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logger.info("[job=%s] KYC kickoff attempt %d/%d (caseId=%s)", job_id, attempt, max_attempts, case_id)
+            ensure_model_env_from_ssm(max_age_seconds=int(os.getenv("MODEL_SSM_REFRESH_SECONDS", "300")))
+            with _langfuse_span("crewai-index-trace"):
+                result = KYCCrew().crew().kickoff(inputs={"caseId": case_id})
+                logger.info("[job=%s] KYC kickoff finished on attempt %d (caseId=%s)", job_id, attempt, case_id)
+                try:
+                    logger.info("[job=%s] Result: %s", job_id, result.raw)
+                except Exception:
+                    logger.info("[job=%s] Result produced (raw unavailable)", job_id)
 
-        if langfuse:
-            try:
-                langfuse.flush()
-            except Exception:
-                logger.exception("[job=%s] Langfuse flush failed; continuing", job_id)
-    except Exception:
-        logger.exception("[job=%s] Background kickoff failed (caseId=%s)", job_id, case_id)
+            if langfuse:
+                try:
+                    langfuse.flush()
+                except Exception:
+                    logger.exception("[job=%s] Langfuse flush failed; continuing", job_id)
+            return
+        except Exception:
+            logger.exception("[job=%s] KYC kickoff attempt %d/%d failed (caseId=%s)", job_id, attempt, max_attempts, case_id)
+            if attempt < max_attempts:
+                logger.info("[job=%s] Retrying with a fresh crew instance...", job_id)
+
+    logger.error("[job=%s] All %d KYC kickoff attempts failed (caseId=%s)", job_id, max_attempts, case_id)
 
 
 def _run_override_validation_background(*, case_id: str, analyst_comments: str, job_id: str) -> None:
