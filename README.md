@@ -240,13 +240,13 @@ aws cloudformation deploy \
   --stack-name kyc-pipeline \
   --template-file templates/pipeline-stack.yaml \
   --parameter-overrides \
-      GitHubConnectionArn=arn:aws:codeconnections:us-east-1:ACCOUNT_ID:connection/YOUR-CONNECTION-ID \
-      GitHubRepo=myorg/kyc-agents \
+      GitHubConnectionArn=arn:aws:codeconnections:us-east-1:926529379586:connection/ce0bf520-65e4-4687-9f8c-9d25aa9e62ef \
+      GitHubRepo=kyc-agents \
       GitHubBranch=main \
-      RolesStackName=kyc-roles \
-      AgentcoreStackName=kyc-agentcore \
-      KycCasesTableName=kyc-cases \
-      KycResultsBucketName=kyc-results \
+      RolesStackName=kyc-agent-roles \
+      AgentcoreStackName=kyc-agent-agentcore-runtime \
+      KycCasesTableName=kyc-agent-storage-kyc-cases-926529379586-us-east-1 \
+      KycResultsBucketName=kyc-agent-storage-926529379586-us-east-1 \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
