@@ -1,25 +1,27 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Agent Core Runtime Main Stack'
+Description: 'Agent Core Runtime — deployed by the CI/CD pipeline'
+
+# This stack is managed by pipeline-stack.yaml. Do not deploy it manually after
+# the pipeline is set up; the pipeline passes ImageTag and ECRRepositoryUri from
+# the build stage.
 
 Parameters:
   ImageTag:
     Type: String
-    Default: 'latest'
-    Description: Docker image tag
-  
+    Description: Docker image tag to deploy (git commit SHA short, set by pipeline)
+
+  ECRRepositoryUri:
+    Type: String
+    Description: Full ECR repository URI (set by pipeline from pipeline-stack outputs)
+
   AgentName:
     Type: String
-    Default: 'runtime'
-    Description: Name of the agent
+    Default: runtime
+    Description: Logical name for the agent runtime
 
   RolesStackName:
     Type: String
     Description: Name of the roles stack to import IAM roles from
-
-  SourceZipKey:
-    Type: String
-    Default: 'agent-source.zip'
-    Description: S3 key for the agent source zip file
 
   KycCasesTableName:
     Type: String
@@ -32,187 +34,25 @@ Parameters:
   MockServiceUrl:
     Type: String
     Default: ''
-    Description: 'Base URL of the mock-service (e.g. http(s)://<beanstalk-domain>). Empty = tools fall back to localhost.'
+    Description: Base URL of the mock-service (empty = tools fall back to localhost)
 
 Resources:
-  ECRRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: !Sub "${AWS::StackName}-basic-agent"
-      EmptyOnDelete: true
-      ImageScanningConfiguration:
-        ScanOnPush: true
-      LifecyclePolicy:
-        LifecyclePolicyText: |
-          {
-            "rules": [{
-              "rulePriority": 1,
-              "description": "Keep only latest image",
-              "selection": {
-                "tagStatus": "any",
-                "countType": "imageCountMoreThan",
-                "countNumber": 1
-              },
-              "action": { "type": "expire" }
-            }]
-          }
-
-  CodeBuildTriggerFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-codebuild-trigger"
-      Runtime: python3.11
-      Handler: index.handler
-      Role: !ImportValue
-        Fn::Sub: "${RolesStackName}-LambdaExecutionRoleArn"
-      Timeout: 900
-      Code:
-        ZipFile: |
-          import boto3
-          import cfnresponse
-          import logging
-          import time
-
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-          codebuild = boto3.client('codebuild')
-
-          def handler(event, context):
-              logger.info('Event: %s', event)
-              request_type = event['RequestType']
-
-              try:
-                  if request_type == 'Delete':
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-                      return
-
-                  if request_type in ['Create', 'Update']:
-                      project_name = event['ResourceProperties']['ProjectName']
-                      wait_for_completion = event['ResourceProperties'].get('WaitForCompletion', 'false').lower() == 'true'
-
-                      logger.info(f'Starting build for project: {project_name}')
-                      response = codebuild.start_build(projectName=project_name)
-                      build_id = response['build']['id']
-                      logger.info(f'Build started: {build_id}')
-
-                      if not wait_for_completion:
-                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BuildId': build_id})
-                          return
-
-                      max_wait_time = 900
-                      start_time = time.time()
-
-                      while time.time() - start_time < max_wait_time:
-                          build_response = codebuild.batch_get_builds(ids=[build_id])
-                          build_status = build_response['builds'][0]['buildStatus']
-
-                          if build_status == 'SUCCEEDED':
-                              logger.info(f'Build {build_id} succeeded')
-                              cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BuildId': build_id})
-                              return
-                          elif build_status in ['FAILED', 'FAULT', 'STOPPED', 'TIMED_OUT']:
-                              error_message = f"Build {build_id} failed with status: {build_status}"
-                              logger.error(error_message)
-
-                              try:
-                                  logs_info = build_response['builds'][0].get('logs', {})
-                                  if logs_info.get('groupName') and logs_info.get('streamName'):
-                                      logger.info(f"Build logs available in CloudWatch")
-                              except Exception as log_error:
-                                  logger.warning(f"Could not get log information: {log_error}")
-
-                              cfnresponse.send(event, context, cfnresponse.FAILED, {
-                                  'Error': error_message,
-                                  'BuildId': build_id
-                              })
-                              return
-
-                          logger.info(f"Build {build_id} status: {build_status}")
-                          time.sleep(30)
-
-              except Exception as e:
-                  logger.error('Error: %s', str(e))
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
-
-  AgentImageBuildProject:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Name: !Sub "${AWS::StackName}-agent-build"
-      Description: !Sub "Build agent Docker image for ${AWS::StackName}"
-      ServiceRole: !ImportValue
-        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
-      Artifacts:
-        Type: NO_ARTIFACTS
-      Environment:
-        Type: ARM_CONTAINER
-        ComputeType: BUILD_GENERAL1_LARGE
-        Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0
-        PrivilegedMode: true
-        EnvironmentVariables:
-          - Name: AWS_DEFAULT_REGION
-            Value: !Ref AWS::Region
-          - Name: AWS_ACCOUNT_ID
-            Value: !Ref AWS::AccountId
-          - Name: IMAGE_REPO_NAME
-            Value: !Ref ECRRepository
-          - Name: IMAGE_TAG
-            Value: !Ref ImageTag
-          - Name: SOURCE_BUCKET
-            Value: !Ref KycResultsBucketName
-      Source:
-        Type: S3
-        Location: !Sub "${KycResultsBucketName}/${SourceZipKey}"
-        BuildSpec: |
-          version: 0.2
-          phases:
-            pre_build:
-              commands:
-                - echo Logging in to Amazon ECR...
-                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
-            build:
-              commands:
-                - echo Build started on `date`
-                - echo Building Docker image...
-                - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
-                - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-            post_build:
-              commands:
-                - echo Build completed on `date`
-                - echo Pushing the Docker image...
-                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-                - echo ARM64 Docker image pushed successfully
-
-  TriggerImageBuild:
-    Type: Custom::CodeBuildTrigger
-    DependsOn:
-      - ECRRepository
-      - AgentImageBuildProject
-      - CodeBuildTriggerFunction
-    Properties:
-      ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
-      ProjectName: !Ref AgentImageBuildProject
-      WaitForCompletion: "true"
-      # Changing SourceZipKey forces this resource to Update, so the build runs on every deploy
-      SourceZipKey: !Ref SourceZipKey
 
   AgentRuntime:
     Type: AWS::BedrockAgentCore::Runtime
-    DependsOn:
-      - TriggerImageBuild
     Properties:
       AgentRuntimeName: !Sub
         - "${StackNameUnderscore}_${AgentName}"
         - StackNameUnderscore: !Join ["_", !Split ["-", !Ref "AWS::StackName"]]
       AgentRuntimeArtifact:
         ContainerConfiguration:
-          ContainerUri: !Sub "${ECRRepository.RepositoryUri}:${ImageTag}"
+          ContainerUri: !Sub "${ECRRepositoryUri}:${ImageTag}"
       EnvironmentVariables:
         KYC_CASES_TABLE: !Ref KycCasesTableName
         KYC_RESULTS_BUCKET: !Ref KycResultsBucketName
-        # Base URL for mock-service; tools append BRP/PEP paths as needed
         MOCK_SERVICE_URL: !Ref MockServiceUrl
-        # Forces runtime to redeploy when agent code changes (new image digest for :latest)
-        DEPLOY_SOURCE_KEY: !Ref SourceZipKey
+        # Changing ImageTag forces AgentCore to redeploy with the new container
+        DEPLOYED_IMAGE_TAG: !Ref ImageTag
         CREWAI_DISABLE_TELEMETRY: "true"
         OTEL_PYTHON_EXCLUDED_URLS: "https://api.scarf.sh/"
         USE_TEXTRACT_MOCK: "1"
@@ -220,17 +60,11 @@ Resources:
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:
         NetworkMode: PUBLIC
-      Description: !Sub "Basic agent runtime for ${AWS::StackName}"
+      Description: !Sub "KYC agent runtime — image ${ImageTag}"
 
 Outputs:
   AgentRuntimeArn:
-    Description: ID of the created agent runtime
+    Description: ARN of the agent runtime
     Value: !GetAtt AgentRuntime.AgentRuntimeArn
     Export:
       Name: !Sub "${AWS::StackName}-AgentRuntimeArn"
-
-  ECRRepositoryUri:
-    Description: URI of the ECR repository
-    Value: !GetAtt ECRRepository.RepositoryUri
-    Export:
-      Name: !Sub "${AWS::StackName}-ECRRepositoryUri"

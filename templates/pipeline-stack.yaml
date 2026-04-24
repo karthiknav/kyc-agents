@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CI/CD Pipeline — GitHub → CodeBuild → AgentCore Runtime'
+
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: ARN of the AWS CodeConnections connection to GitHub
+
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository in owner/repo format (e.g. myorg/kyc-agents)
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Branch to track for deployments
+
+  RolesStackName:
+    Type: String
+    Description: Name of the roles stack to import IAM roles from
+
+  AgentcoreStackName:
+    Type: String
+    Description: Name to give the agentcore CloudFormation stack that the pipeline deploys
+
+  AgentName:
+    Type: String
+    Default: runtime
+    Description: Logical agent name passed through to agentcore-stack
+
+  KycCasesTableName:
+    Type: String
+    Description: DynamoDB table name for KYC cases
+
+  KycResultsBucketName:
+    Type: String
+    Description: S3 bucket name for KYC results/reports
+
+  MockServiceUrl:
+    Type: String
+    Default: ''
+    Description: Base URL of the mock-service (empty = tools fall back to localhost)
+
+Resources:
+
+  # ── ECR ──────────────────────────────────────────────────────────────────────
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-agent"
+      EmptyOnDelete: true
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Keep last 5 images",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 5
+              },
+              "action": { "type": "expire" }
+            }]
+          }
+
+  # ── S3 artifact bucket ───────────────────────────────────────────────────────
+  PipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # ── CodeBuild — builds the crew/ Docker image ─────────────────────────────
+  AgentImageBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-agent-build"
+      Description: Build KYC agent Docker image and push to ECR
+      ServiceRole: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_DOCKER_LAYER_CACHE
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: IMAGE_REPO_NAME
+            Value: !Ref ECRRepository
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          env:
+            exported-variables:
+              - IMAGE_TAG
+              - ECR_REPO_URI
+          phases:
+            pre_build:
+              commands:
+                - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
+                - ECR_REPO_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO_URI
+            build:
+              commands:
+                - docker build -t $ECR_REPO_URI:$IMAGE_TAG -t $ECR_REPO_URI:latest crew/
+            post_build:
+              commands:
+                - docker push $ECR_REPO_URI:$IMAGE_TAG
+                - docker push $ECR_REPO_URI:latest
+                - printf '{"Parameters":{"ImageTag":"%s","ECRRepositoryUri":"%s"}}' $IMAGE_TAG $ECR_REPO_URI > parameters.json
+          artifacts:
+            files:
+              - parameters.json
+              - templates/**
+            discard-paths: no
+
+  # ── CodePipeline ─────────────────────────────────────────────────────────────
+  AgentPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${AWS::StackName}-pipeline"
+      RoleArn: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodePipelineRoleArn"
+      PipelineType: V2
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactBucket
+      Stages:
+
+        # Stage 1: pull source from GitHub on every push to the tracked branch
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Ref GitHubRepo
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+                DetectChanges: true
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        # Stage 2: build Docker image, push to ECR, emit parameters.json
+        - Name: Build
+          Actions:
+            - Name: BuildDockerImage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref AgentImageBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+
+        # Stage 3: deploy (or update) the agentcore stack with the new image
+        - Name: Deploy
+          Actions:
+            - Name: DeployAgentcoreStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: "1"
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Ref AgentcoreStackName
+                # Template comes from the source artifact so IaC stays in sync with code
+                TemplatePath: "SourceArtifact::templates/agentcore-stack.yaml"
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                RoleArn: !ImportValue
+                  Fn::Sub: "${RolesStackName}-CloudFormationDeployRoleArn"
+                # Static params are substituted here; dynamic params read from parameters.json
+                ParameterOverrides: !Sub |
+                  {
+                    "RolesStackName":       "${RolesStackName}",
+                    "AgentName":            "${AgentName}",
+                    "KycCasesTableName":    "${KycCasesTableName}",
+                    "KycResultsBucketName": "${KycResultsBucketName}",
+                    "MockServiceUrl":       "${MockServiceUrl}",
+                    "ImageTag":             {"Fn::GetParam": ["BuildArtifact", "parameters.json", "Parameters.ImageTag"]},
+                    "ECRRepositoryUri":     {"Fn::GetParam": ["BuildArtifact", "parameters.json", "Parameters.ECRRepositoryUri"]}
+                  }
+              InputArtifacts:
+                - Name: SourceArtifact
+                - Name: BuildArtifact
+              RunOrder: 1
+
+Outputs:
+  ECRRepositoryUri:
+    Description: ECR repository URI for the agent image
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRRepositoryUri"
+
+  PipelineName:
+    Description: Name of the CodePipeline
+    Value: !Ref AgentPipeline
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineName"
+
+  BuildProjectName:
+    Description: CodeBuild project name
+    Value: !Ref AgentImageBuildProject
+    Export:
+      Name: !Sub "${AWS::StackName}-BuildProjectName"
