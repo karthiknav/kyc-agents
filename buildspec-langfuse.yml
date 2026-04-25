@@ -1,0 +1,29 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: "3.12"
+    commands:
+      - pip install -q boto3 bedrock-agentcore-starter-toolkit
+  build:
+    commands:
+      - |
+        if [ "$LANGFUSE_ENABLED" != "true" ]; then
+          echo "Langfuse disabled -- skipping runtime env update."
+          exit 0
+        fi
+      - |
+        KYC_AGENT_ARN=$(python3 -c "
+        import boto3, os, sys
+        cf = boto3.client('cloudformation')
+        stacks = cf.describe_stacks(StackName=os.environ['AGENTCORE_STACK_NAME'])['Stacks']
+        outputs = {o['OutputKey']: o['OutputValue'] for o in stacks[0].get('Outputs', [])}
+        arn = outputs.get('AgentRuntimeArn', '')
+        print(arn)
+        ")
+      - |
+        if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" = "None" ]; then
+          echo "Error: AgentRuntimeArn not found in stack $AGENTCORE_STACK_NAME"
+          exit 1
+        fi
+      - python scripts/relaunch_agent_runtime_langfuse.py --agent-runtime-arn "$KYC_AGENT_ARN" --region "$AWS_DEFAULT_REGION"

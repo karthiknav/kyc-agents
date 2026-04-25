@@ -169,20 +169,7 @@ Resources:
             Value: !Ref AWS::Region
       Source:
         Type: CODEPIPELINE
-        BuildSpec: |
-          version: 0.2
-          phases:
-            install:
-              runtime-versions:
-                python: "3.12"
-              commands:
-                - pip install -q boto3 bedrock-agentcore-starter-toolkit
-            build:
-              commands:
-                - if [ "$LANGFUSE_ENABLED" != "true" ]; then echo "Langfuse disabled — skipping runtime env update."; exit 0; fi
-                - KYC_AGENT_ARN=$(aws cloudformation describe-stacks --stack-name "$AGENTCORE_STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' --output text)
-                - if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" = "None" ]; then echo "Error: AgentRuntimeArn not found in stack $AGENTCORE_STACK_NAME"; exit 1; fi
-                - python scripts/relaunch_agent_runtime_langfuse.py --agent-runtime-arn "$KYC_AGENT_ARN" --region "$AWS_DEFAULT_REGION"
+        BuildSpec: buildspec-langfuse.yml
 
   # ── CodePipeline ─────────────────────────────────────────────────────────────
   AgentPipeline:
