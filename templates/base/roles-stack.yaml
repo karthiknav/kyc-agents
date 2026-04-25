@@ -182,6 +182,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+        - arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess
       Policies:
         - PolicyName: CodeBuildLogs
           PolicyDocument:
@@ -221,8 +222,7 @@ Resources:
               - Sid: AgentCoreRuntimeUpdate
                 Effect: Allow
                 Action:
-                  - bedrock-agentcore:GetAgentRuntime
-                  - bedrock-agentcore:UpdateAgentRuntime
+                  - bedrock-agentcore:*
                 Resource: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
               - Sid: CloudFormationDescribe
                 Effect: Allow
