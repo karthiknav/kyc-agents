@@ -228,6 +228,14 @@ Resources:
                 Effect: Allow
                 Action: cloudformation:DescribeStacks
                 Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*/*"
+        - PolicyName: PassRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: PassAgentExecutionRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-agent-execution-role"
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
