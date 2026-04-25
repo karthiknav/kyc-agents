@@ -137,7 +137,7 @@ Resources:
               commands:
                 - docker push $ECR_REPO_URI:$IMAGE_TAG
                 - docker push $ECR_REPO_URI:latest
-                - printf '{"Parameters":{"ImageTag":"%s","ECRRepositoryUri":"%s"}}' $IMAGE_TAG $ECR_REPO_URI > parameters.json
+                - printf '{"ImageTag":"%s","ECRRepositoryUri":"%s"}' $IMAGE_TAG $ECR_REPO_URI > parameters.json
           artifacts:
             files:
               - parameters.json
@@ -258,8 +258,8 @@ Resources:
                     "KycCasesTableName":    "${KycCasesTableName}",
                     "KycResultsBucketName": "${KycResultsBucketName}",
                     "MockServiceUrl":       "${MockServiceUrl}",
-                    "ImageTag":             {"Fn::GetParam": ["BuildArtifact", "parameters.json", "Parameters.ImageTag"]},
-                    "ECRRepositoryUri":     {"Fn::GetParam": ["BuildArtifact", "parameters.json", "Parameters.ECRRepositoryUri"]}
+                    "ImageTag":             {"Fn::GetParam": ["BuildArtifact", "parameters.json", "ImageTag"]},
+                    "ECRRepositoryUri":     {"Fn::GetParam": ["BuildArtifact", "parameters.json", "ECRRepositoryUri"]}
                   }
               InputArtifacts:
                 - Name: SourceArtifact
