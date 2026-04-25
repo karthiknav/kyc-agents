@@ -208,6 +208,26 @@ Resources:
                   - !Sub "arn:aws:s3:::${BaseStackName}-*/*"
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}"
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}/*"
+        - PolicyName: LangfuseRelaunchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SSMLangfuseRead
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/langfuse/*"
+              - Sid: AgentCoreRuntimeUpdate
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetAgentRuntime
+                  - bedrock-agentcore:UpdateAgentRuntime
+                Resource: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
+              - Sid: CloudFormationDescribe
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*/*"
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role

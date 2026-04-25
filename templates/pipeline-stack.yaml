@@ -41,6 +41,17 @@ Parameters:
     Default: ''
     Description: Base URL of the mock-service (empty = tools fall back to localhost)
 
+  LangfuseEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set to true to apply Langfuse/OTEL env to the agent runtime after deploy
+
+  LangfuseSsmPrefix:
+    Type: String
+    Default: '/langfuse'
+    Description: SSM parameter path prefix for Langfuse credentials
+
 Resources:
 
   # ── ECR ──────────────────────────────────────────────────────────────────────
@@ -133,6 +144,46 @@ Resources:
               - templates/**
             discard-paths: no
 
+  # ── CodeBuild — applies Langfuse/OTEL env to the agent runtime ───────────────
+  LangfuseRelaunchProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-langfuse-relaunch"
+      Description: Apply Langfuse/OTEL env vars to AgentCore runtime via UpdateAgentRuntime
+      ServiceRole: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: LANGFUSE_ENABLED
+            Value: !Ref LangfuseEnabled
+          - Name: AGENTCORE_STACK_NAME
+            Value: !Ref AgentcoreStackName
+          - Name: LANGFUSE_SSM_PREFIX
+            Value: !Ref LangfuseSsmPrefix
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: "3.12"
+              commands:
+                - pip install -q boto3 bedrock-agentcore-starter-toolkit
+            build:
+              commands:
+                - if [ "$LANGFUSE_ENABLED" != "true" ]; then echo "Langfuse disabled — skipping runtime env update."; exit 0; fi
+                - KYC_AGENT_ARN=$(aws cloudformation describe-stacks --stack-name "$AGENTCORE_STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' --output text)
+                - if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" = "None" ]; then echo "Error: AgentRuntimeArn not found in stack $AGENTCORE_STACK_NAME"; exit 1; fi
+                - python scripts/relaunch_agent_runtime_langfuse.py --agent-runtime-arn "$KYC_AGENT_ARN" --region "$AWS_DEFAULT_REGION"
+
   # ── CodePipeline ─────────────────────────────────────────────────────────────
   AgentPipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -213,6 +264,21 @@ Resources:
               InputArtifacts:
                 - Name: SourceArtifact
                 - Name: BuildArtifact
+              RunOrder: 1
+
+        # Stage 4: apply Langfuse/OTEL env to the running runtime (no-op when LangfuseEnabled=false)
+        - Name: RelaunchLangfuse
+          Actions:
+            - Name: ApplyLangfuseEnv
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref LangfuseRelaunchProject
+              InputArtifacts:
+                - Name: SourceArtifact
               RunOrder: 1
 
 Outputs:
