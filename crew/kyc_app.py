@@ -155,7 +155,7 @@ def _langfuse_span(name: str):
 
 
 def _run_kyc_crew_background(*, case_id: str, job_id: str) -> None:
-    max_attempts = int(os.getenv("KYC_CREW_MAX_RETRIES", "3"))
+    max_attempts = int(os.getenv("KYC_CREW_MAX_RETRIES", "7"))
     for attempt in range(1, max_attempts + 1):
         try:
             logger.info("[job=%s] KYC kickoff attempt %d/%d (caseId=%s)", job_id, attempt, max_attempts, case_id)
