@@ -91,7 +91,7 @@ class RiskListScreeningTool(BaseTool):
 
         payload = {"queries": {"q1": {"schema": "Person", "properties": properties}}}
 
-        logger.info("risk_list_screening: caseId=%s, name=%s, url=%s", case.get("caseId"), full_name, api_url)
+        logger.info("risk_list_screening_update: caseId=%s, name=%s, url=%s", case.get("caseId"), full_name, api_url)
         try:
             resp = requests.post(api_url, json=payload, timeout=30)
             resp.raise_for_status()
