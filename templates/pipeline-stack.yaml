@@ -132,7 +132,7 @@ Resources:
                 - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO_URI
             build:
               commands:
-                - docker build -t $ECR_REPO_URI:$IMAGE_TAG -t $ECR_REPO_URI:latest crew/
+                - docker build -t $ECR_REPO_URI:$IMAGE_TAG -t $ECR_REPO_URI:latest -f crew/Dockerfile .
             post_build:
               commands:
                 - docker push $ECR_REPO_URI:$IMAGE_TAG

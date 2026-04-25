@@ -12,14 +12,14 @@ ENV UV_SYSTEM_PYTHON=1 \
     AWS_DEFAULT_REGION=us-east-1
 
 # Install dependencies (separate layer for caching)
-COPY requirements.txt .
+COPY crew/requirements.txt .
 RUN uv pip install -r requirements.txt
 
 # Create non-root user
 RUN useradd -m -u 1000 bedrock_agentcore
 
-# Copy application code
-COPY . .
+# Copy application code as a proper package so `crew.*` imports resolve
+COPY crew/ ./crew/
 
 # Switch to non-root user
 USER bedrock_agentcore
