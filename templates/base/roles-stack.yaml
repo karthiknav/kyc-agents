@@ -317,20 +317,13 @@ Resources:
             Principal:
               Service: cloudformation.amazonaws.com
             Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess
       Policies:
         - PolicyName: AgentCoreDeployPolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Sid: BedrockAgentCore
-                Effect: Allow
-                Action:
-                  - bedrock-agentcore:CreateAgentRuntime
-                  - bedrock-agentcore:UpdateAgentRuntime
-                  - bedrock-agentcore:GetAgentRuntime
-                  - bedrock-agentcore:DeleteAgentRuntime
-                  - bedrock-agentcore:ListAgentRuntimes
-                Resource: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
               - Sid: PassAgentExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
