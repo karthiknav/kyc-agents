@@ -285,7 +285,7 @@ Resources:
                 Action:
                   - codebuild:StartBuild
                   - codebuild:BatchGetBuilds
-                Resource: !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${StackName}-*"
+                Resource: !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${PipelineStackName}-*"
               - Sid: CloudFormationDeploy
                 Effect: Allow
                 Action:
