@@ -12,6 +12,7 @@ VPC_STACK="${BASE_NAME}-vpc"
 STORAGE_STACK="${BASE_NAME}-storage"
 ROLES_STACK="${BASE_NAME}-roles"
 MAIN_STACK="${BASE_NAME}-main"
+PIPELINE_STACK="${BASE_NAME}-pipeline"
 
 
 echo "=========================================="
@@ -58,7 +59,7 @@ echo "[3/5] Deploying roles stack..."
 aws cloudformation deploy \
     --stack-name "$ROLES_STACK" \
     --template-file "$TEMPLATE_DIR/roles-stack.yaml" \
-    --parameter-overrides StackName="$ROLES_STACK" BaseStackName="$BASE_NAME" \
+    --parameter-overrides StackName="$ROLES_STACK" BaseStackName="$BASE_NAME" PipelineStackName="$PIPELINE_STACK" \
     --capabilities CAPABILITY_NAMED_IAM \
     --region "$REGION"
 echo "✓ Roles stack ready"

@@ -13,8 +13,11 @@ logger = logging.getLogger(__name__)
 
 class AdverseMediaAnalysisInput(BaseModel):
     person_name: str = Field(description="Full name of the person being screened")
-    search_payload: str = Field(
-        description="JSON string with keys: searchQueries (string[]), searchResults (array of {query, result})."
+    search_query: str = Field(
+        description="The exact query string you passed to search_internet."
+    )
+    search_results_json: str = Field(
+        description="The raw return value from search_internet (a JSON array string). Pass it unchanged."
     )
 
 
@@ -23,27 +26,39 @@ class AdverseMediaAnalysisTool(BaseTool):
 
     name: str = "produce_adverse_media_analysis"
     description: str = (
-        "Analyze aggregated web search results for adverse media, fraud, crime, sanctions/PEP mentions, "
-        "and determine whether the results refer to the specific person. Returns result (OK/NOK/PENDING_REVIEW) and summary."
+        "Analyze web search results for adverse media. Pass person_name, search_query (same string as search_internet), "
+        "and search_results_json (the raw JSON array string from search_internet, unchanged). "
+        "Returns result (OK/NOK/PENDING_REVIEW) and summary."
     )
     args_schema: Type[AdverseMediaAnalysisInput] = AdverseMediaAnalysisInput
 
-    def _run(self, person_name: str, search_payload: str) -> str:
+    def _run(self, person_name: str, search_query: str, search_results_json: str) -> str:
         if not person_name:
             return json.dumps({"error": "person_name is required"})
-        if not search_payload:
-            return json.dumps({"error": "search_payload is required"})
+        if not search_query:
+            return json.dumps({"error": "search_query is required"})
+        if not search_results_json:
+            return json.dumps({"error": "search_results_json is required"})
 
         try:
-            payload = json.loads(search_payload) if isinstance(search_payload, str) else search_payload
+            hits = json.loads(search_results_json)
         except json.JSONDecodeError:
-            return json.dumps({"error": "Invalid search_payload JSON"})
+            return json.dumps({"error": "search_results_json is not valid JSON"})
+        if not isinstance(hits, list):
+            return json.dumps({"error": "search_results_json must be a JSON array"})
 
-        queries = payload.get("searchQueries") or []
-        results = payload.get("searchResults") or []
+        payload = {
+            "searchQueries": [search_query],
+            "searchResults": [{"query": search_query, "result": hits}],
+        }
+
+        queries = payload["searchQueries"]
+        wrapped_results = payload["searchResults"]
 
         # Keep prompt input bounded
-        payload_text = json.dumps({"searchQueries": queries, "searchResults": results}, indent=2)
+        payload_text = json.dumps(
+            {"searchQueries": queries, "searchResults": wrapped_results}, indent=2
+        )
         payload_text_truncated = payload_text[:12000] if len(payload_text) > 12000 else payload_text
 
         prompt = f"""You are a KYC (Know Your Customer) compliance analyst specializing in adverse media screening.
@@ -67,9 +82,14 @@ Search payload:
 Your response (JSON only, no markdown):"""
 
         try:
-            client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION_NAME", "us-east-1"))
+            region = os.getenv("AWS_REGION_NAME") or os.getenv("AWS_REGION") or "us-east-1"
+            model_id = (os.getenv("MODEL") or "us.anthropic.claude-3-5-sonnet-20241022-v2:0").strip()
+            model_id = model_id.replace("bedrock/", "")
+            logger.info("Bedrock invoke: tool=%s modelId=%s region=%s", self.name, model_id, region)
+
+            client = boto3.client("bedrock-runtime", region_name=region)
             response = client.converse(
-                modelId=os.getenv("MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0").replace("bedrock/", ""),
+                modelId=model_id,
                 messages=[{"role": "user", "content": [{"text": prompt}]}],
                 inferenceConfig={"maxTokens": 1024, "temperature": 0.0},
             )

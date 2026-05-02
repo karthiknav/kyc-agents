@@ -1,0 +1,20 @@
+# Eval dependencies
+# Install from repo root: pip install -r eval/requirements.txt
+#
+# The crew package (../crew) must also be installed/on the Python path.
+# Easiest: run all eval commands from the repo root with the crew venv active.
+
+# AWS
+boto3
+
+# Env loading
+python-dotenv
+
+# Langfuse dataset + experiment API
+langfuse
+
+# LLM-as-judge
+deepeval
+
+# HTTP (mock service seeding in seed.py)
+requests

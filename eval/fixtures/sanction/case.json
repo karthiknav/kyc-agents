@@ -1,0 +1,14 @@
+{
+  "description": "Sanctions hit — Ahmed Al-Rashid. Document passes (BRP matches). PEP API returns a sanctions match on dataset 'sanctions' (OFAC-style).",
+  "identity": {
+    "fullName": "Ahmed Al-Rashid",
+    "firstName": "Ahmed",
+    "lastName": "Al-Rashid",
+    "dateOfBirth": "1978-11-03",
+    "nationality": "NL"
+  },
+   "documents": [
+    { "type": "passport", "file": "passport.pdf" },
+    { "type": "license", "file": "license.pdf" }
+  ]
+}

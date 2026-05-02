@@ -18,7 +18,7 @@
  *   MOCK_SERVICE_PORT - Used only when MOCK_SERVICE_URL is not set (default 9000).
  */
 
-import { defaultTestCases, BRP_MOCK_ID, pepTestCases, PEP_MOCK_ID } from '../src/data/default-test-cases';
+import { defaultTestCases, BRP_MOCK_ID, pepTestCases, PEP_MOCK_ID, textractTestCases, TEXTRACT_MOCK_ID } from '../src/data/default-test-cases';
 const MOCK_SERVICE_URL = 'http://mock-service-env.eba-zfipxyvv.us-east-1.elasticbeanstalk.com/';
 const BASE_URL =
    MOCK_SERVICE_URL?.replace(/\/$/, '') ||
@@ -54,7 +54,10 @@ async function seed() {
   console.log(`\nPEP (${PEP_MOCK_ID}):`);
   await seedMock(PEP_MOCK_ID, pepTestCases);
 
-  console.log('\nDone. Seeded', defaultTestCases.length, 'BRP +', pepTestCases.length, 'PEP test case(s).');
+  console.log(`\nTextract (${TEXTRACT_MOCK_ID}):`);
+  await seedMock(TEXTRACT_MOCK_ID, textractTestCases);
+
+  console.log('\nDone. Seeded', defaultTestCases.length, 'BRP +', pepTestCases.length, 'PEP +', textractTestCases.length, 'Textract test case(s).');
 }
 
 seed().catch(err => {

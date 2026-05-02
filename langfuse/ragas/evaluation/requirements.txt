@@ -1,0 +1,7 @@
+ragas
+datasets
+pandas
+langchain-aws
+streamlit
+altair
+boto3

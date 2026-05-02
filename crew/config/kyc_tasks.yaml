@@ -1,0 +1,132 @@
+orchestrator_task:
+  description: >
+    Given caseId {caseId}, make the final KYC decision.
+
+    STEP 1 — get_case_stage_details (REQUIRED):
+    Call get_case_stage_details with caseId {caseId} to fetch the persisted results of all
+    three screening stages:
+    - documentProcessing.result (MATCH / PARTIAL_MATCH / MISMATCH)
+    - riskListScreening.result (CLEAR / HIT / ERROR)
+    - adverseMedia.result (OK / NOK / PENDING_REVIEW)
+
+    STEP 2 — Decide:
+    If documentProcessing.result is MATCH AND riskListScreening.result is CLEAR AND
+    adverseMedia.result is OK: the case is approved. Return JSON with action "APPROVED".
+
+    For any other combination: escalate. Call escalate_to_human with the case_id,
+    a reason list summarising the stage results, and an escalation_summary.
+    Return JSON with action "ESCALATED".
+
+  expected_output: >
+    Valid JSON object with at minimum these keys:
+    - "case_id": the case ID (string)
+    - "action": one of "APPROVED" or "ESCALATED"
+    - "decision": "APPROVE" or "ESCALATE"
+    - "reason": list of strings describing the decision factors
+    - "recommendation_summary": explanation of the outcome
+  agent: orchestrator_agent
+  
+
+document_processing_task:
+  description: >
+    Given caseId {caseId}, you MUST complete all five steps in order. Do NOT produce
+    your final output until every tool call has returned results — no exceptions.
+    The DynamoDB identity record alone is NOT sufficient; you must OCR each document.
+
+    STEP 1 — get_case_details (REQUIRED):
+    Call get_case_details with the caseId to fetch identity info (fullName, DOB, etc.).
+
+    STEP 2 — get_case_files (REQUIRED):
+    Call get_case_files with the caseId to retrieve the list of uploaded document S3 references.
+
+    STEP 3 — extract_document_text (REQUIRED, once per document, NEVER skip):
+    For each s3_bucket/s3_key pair from get_case_files, call extract_document_text.
+    Always pass full_name from the identity.fullName field retrieved in Step 1.
+    You MUST call this tool — never assume or fabricate OCR text. Do not skip even
+    if you think you already know what the document contains.
+    - A successful result contains "full_text" or "pages" fields (even if mock=true). Proceed to Step 4.
+    - If ALL documents return only an "error" field, set comparison_result to "MISMATCH",
+      list the errors in discrepancies, and still proceed through Steps 4 and 5 using an
+      empty verified-documents list. You may NOT skip Steps 4 and 5 even on failure.
+    - Note: compare_identity_documents will REJECT the call if you pass it an empty array
+      or an array containing only error responses — pass the error objects instead so it
+      can record the failure.
+
+    STEP 4 — verify_identity_document (REQUIRED, once per document, do not skip):
+    For each document, extract the document type (paspoort, identiteitskaart, or rijbewijs)
+    and document number from the OCR text, then call verify_identity_document to verify
+    against the Dutch BRP government registry.
+
+    STEP 5 — compare_identity_documents (REQUIRED):
+    Call compare_identity_documents with the case_details JSON, a JSON array of all
+    Textract extraction results, and a JSON array of all BRP verification results.
+    Only call this after you have at least one successful extract_document_text result
+    (response contains "full_text" or "pages" fields).
+
+    Only after all five tool calls have completed, return valid JSON with case_id, name,
+    comparison_result, discrepancies, comparison_summary, documents_summary, and
+    government_verification_summary.
+  expected_output: >
+    Valid JSON object with exactly these keys:
+    - "run_id": the exact run_id string returned by compare_identity_documents (string, REQUIRED)
+    - "case_id": the case ID (string)
+    - "name": full name from identity.fullName (string)
+    - "comparison_result": one of "MATCH", "PARTIAL_MATCH", "MISMATCH" (string)
+    - "discrepancies": list of strings describing mismatches (array, empty if MATCH)
+    - "comparison_summary": explanation of the comparison outcome (string)
+    - "documents_summary": brief summary of each document processed (string)
+    - "government_verification_summary": summary of BRP government verification results (string)
+
+    IMPORTANT: The run_id field must be copied verbatim from the compare_identity_documents
+    tool result. Do not invent or omit it — the output will be rejected without it.
+  agent: document_processing_agent
+
+risk_list_screening_task:
+  description: >
+    Given caseId {caseId}:
+    1. Use get_case_details to fetch the case from DynamoDB.
+    2. Use risk_list_screening with the case details to call the PEP/sanctions API.
+    Return a JSON object with result (CLEAR/HIT/ERROR), pepStatus, sanctionsStatus, datasetsMatched, summary, and rawResponse.
+  expected_output: >
+    Valid JSON object with exactly these keys:
+    - "case_id": the case ID from the case (string)
+    - "name": the full name from identity.fullName (string)
+    - "result": one of "CLEAR", "HIT", "ERROR" (string)
+    - "pepStatus": one of "NOT_PEP", "PEP", "UNKNOWN" (string)
+    - "sanctionsStatus": one of "NOT_SANCTIONED", "SANCTIONED", "UNKNOWN" (string)
+    - "datasetsMatched": list of dataset ids (array)
+    - "summary": short summary (string)
+    - "rawResponse": raw API response JSON (object)
+  agent: risk_list_screening_agent
+
+adverse_media_task:
+  description: >
+    Given caseId {caseId}, you MUST complete all three steps in order. Do NOT produce your
+    final output until all three tool calls have returned results — no exceptions.
+
+    STEP 1 — get_case_details (REQUIRED):
+    Call get_case_details with the caseId to retrieve the case from DynamoDB. Extract identity.fullName.
+
+    STEP 2 — search_internet (REQUIRED, do not skip):
+    Call search_internet with this exact query (substitute the real fullName for <FULL_NAME>):
+      "<FULL_NAME> fraud crime money laundering arrest investigation adverse media"
+    You MUST call search_internet. Do not assume you already know the results. Do not skip this step
+    even if you believe the person is clean.
+
+    STEP 3 — produce_adverse_media_analysis (REQUIRED, do not skip):
+    Call produce_adverse_media_analysis with:
+      - person_name: identity.fullName
+      - search_query: the exact string you passed to search_internet
+      - search_results_json: the exact string returned by search_internet (valid JSON array; do not reformat or summarise)
+
+    Only after all three tool calls have completed, return JSON with result, summary, searchQueries,
+    and rawResponse (object with searchQueries and searchResults).
+  expected_output: >
+    Valid JSON object with exactly these keys:
+    - "case_id": the case ID from the case (string)
+    - "name": the full name from identity.fullName (string)
+    - "result": one of "OK", "NOK", "PENDING_REVIEW" (string)
+    - "summary": short summary (string)
+    - "searchQueries": array of search queries used (array)
+    - "rawResponse": object with searchQueries and searchResults (same structure as passed to analysis)
+  agent: adverse_media_agent

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy Resume Analyzer Agent to Bedrock AgentCore Runtime"""
+"""Deploy Agent to Bedrock AgentCore Runtime"""
 
 import os
 import boto3

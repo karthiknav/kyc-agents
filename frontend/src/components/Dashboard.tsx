@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { KycSubmission } from '../types.js';
 import { API_BASE_URL } from '../config.js';
 
@@ -21,6 +21,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
         escalations: 0
     });
 
+    // Override flow state
+    const [overrideFormOpen, setOverrideFormOpen] = useState(false);
+    const [overrideComments, setOverrideComments] = useState('');
+    const [overrideSubmitting, setOverrideSubmitting] = useState(false);
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
@@ -28,11 +34,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                 setOpenMenuId(null);
             }
         };
-
         if (openMenuId) {
             document.addEventListener('mousedown', handleClickOutside);
         }
-
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
@@ -41,7 +45,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // Fetch Submissions
                 const subResponse = await fetch(`${API_BASE_URL}/submissions`);
                 if (subResponse.ok) {
                     const data = await subResponse.json();
@@ -50,8 +53,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                         setSelectedSubmission(data[0]);
                     }
                 }
-
-                // Fetch Analytics
                 const analyticsResponse = await fetch(`${API_BASE_URL}/analytics/summary`);
                 if (analyticsResponse.ok) {
                     const data = await analyticsResponse.json();
@@ -66,12 +67,58 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
         fetchData();
     }, []);
 
+    // Reset override form when selected submission changes
+    useEffect(() => {
+        setOverrideFormOpen(false);
+        setOverrideComments('');
+    }, [selectedSubmission?.caseId]);
+
+    // Poll for override result when case is OVERRIDE_PENDING_AI_REVIEW
+    useEffect(() => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+        }
+        if (selectedSubmission?.status !== 'OVERRIDE_PENDING_AI_REVIEW') return;
+
+        const caseId = selectedSubmission.caseId || (selectedSubmission as any).CaseId;
+        pollingRef.current = setInterval(async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/submissions/${caseId}`);
+                if (!res.ok) return;
+                const updated = await res.json();
+                const newStatus = (updated.status || '');
+                if (newStatus === 'OVERRIDE_PENDING_AI_REVIEW') return;
+
+                const normalizedId = updated.caseId || updated.CaseId;
+                const merged = { ...updated, caseId: normalizedId };
+                setSubmissions(prev => prev.map(s => {
+                    const sId = s.caseId || (s as any).CaseId;
+                    return sId === normalizedId ? merged : s;
+                }));
+                setSelectedSubmission(merged);
+
+                if (newStatus === 'APPROVED') {
+                    showToast('Override approved by AI review', 'success');
+                } else if (newStatus === 'PENDING_HUMAN_REVIEW') {
+                    showToast('AI rejected the override justification. See reasoning below.', 'error');
+                }
+            } catch (e) {
+                console.error('Override polling error:', e);
+            }
+        }, 5000);
+
+        return () => {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+        };
+    }, [selectedSubmission?.status, selectedSubmission?.caseId]);
+
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
         const id = Math.random().toString(36).substring(2, 9);
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
-        }, 4000);
+        }, 5000);
     };
 
     const formatDate = (isoString: string) => {
@@ -86,27 +133,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
     const filteredSubmissions = submissions.filter(sub => {
         const s = sub.status.toUpperCase();
         if (filter === 'ALL') return true;
-        if (filter === 'PENDING') return s === 'INITIATED' || s === 'PROCESSING' || s === 'PENDING';
+        if (filter === 'PENDING') return ['INITIATED', 'PROCESSING', 'PENDING', 'PENDING_HUMAN_REVIEW', 'OVERRIDE_PENDING_AI_REVIEW'].includes(s);
         return s === filter;
     });
+
     const handleStatusUpdate = async (status: string) => {
         if (!selectedSubmission) return;
         const caseId = selectedSubmission.caseId || (selectedSubmission as any).CaseId;
-
         try {
             const response = await fetch(`${API_BASE_URL}/submissions/${caseId}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status })
             });
-
             if (response.ok) {
-                // Update local state
                 const updatedSubmissions = submissions.map((sub: any) => {
                     const subId = sub.caseId || (sub as any).CaseId;
-                    if (subId === caseId) {
-                        return { ...sub, status };
-                    }
+                    if (subId === caseId) return { ...sub, status };
                     return sub;
                 });
                 setSubmissions(updatedSubmissions);
@@ -120,6 +163,129 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
             console.error('Error updating status:', error);
             showToast('Failed to connect to the server', 'error');
         }
+    };
+
+    const handleOverrideSubmit = async () => {
+        if (!selectedSubmission || !overrideComments.trim()) return;
+        const caseId = selectedSubmission.caseId || (selectedSubmission as any).CaseId;
+        setOverrideSubmitting(true);
+        try {
+            const response = await fetch(`${API_BASE_URL}/submissions/${caseId}/override`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ analystComments: overrideComments.trim() })
+            });
+            if (response.ok) {
+                const updatedSubmissions = submissions.map((sub: any) => {
+                    const subId = sub.caseId || (sub as any).CaseId;
+                    return subId === caseId ? { ...sub, status: 'OVERRIDE_PENDING_AI_REVIEW' } : sub;
+                });
+                setSubmissions(updatedSubmissions);
+                setSelectedSubmission({ ...selectedSubmission, status: 'OVERRIDE_PENDING_AI_REVIEW' });
+                setOverrideFormOpen(false);
+                setOverrideComments('');
+                showToast('Override request submitted — AI is reviewing...', 'info');
+            } else {
+                const error = await response.json();
+                showToast(`Override failed: ${error.detail || 'Unknown error'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error submitting override:', error);
+            showToast('Failed to submit override request', 'error');
+        } finally {
+            setOverrideSubmitting(false);
+        }
+    };
+
+    const renderActionButtons = (sub: KycSubmission) => {
+        const status = sub.status;
+        const overrideReview = sub.stages?.overrideReview;
+
+        if (status === 'APPROVED' || status === 'REJECTED' || status === 'ESCALATED') {
+            return null;
+        }
+
+        if (status === 'OVERRIDE_PENDING_AI_REVIEW') {
+            return (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--accent-cyan)' }}>
+                    <div style={{ fontSize: '28px', marginBottom: '8px', animation: 'spin 2s linear infinite' }}>⟳</div>
+                    <div style={{ fontWeight: 600 }}>AI is reviewing your override request...</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>This usually takes 30–60 seconds</div>
+                </div>
+            );
+        }
+
+        if (status === 'PENDING_HUMAN_REVIEW') {
+            return (
+                <div>
+                    {overrideReview?.verdict === 'REJECTED' && (
+                        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-red)', fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>
+                                <span>✕</span> AI Override Review — Rejected
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                {overrideReview.reasoning}
+                            </div>
+                            {overrideReview.riskFlagsEvaluated?.length > 0 && (
+                                <div style={{ marginTop: '8px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                    {overrideReview.riskFlagsEvaluated.map((flag, i) => (
+                                        <span key={i} style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', color: 'var(--accent-red)', padding: '2px 6px', borderRadius: '4px' }}>{flag}</span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {overrideFormOpen ? (
+                        <div>
+                            <textarea
+                                value={overrideComments}
+                                onChange={e => setOverrideComments(e.target.value)}
+                                placeholder="Provide a specific justification for the override. Vague statements will be rejected — address each risk flag directly (e.g. confirmed false positive, DOB mismatch, distinct individual)."
+                                style={{ width: '100%', minHeight: '90px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-primary)', padding: '10px', fontSize: '12px', resize: 'vertical', boxSizing: 'border-box' }}
+                            />
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                <button
+                                    className="action-btn approve"
+                                    style={{ flex: 1 }}
+                                    onClick={handleOverrideSubmit}
+                                    disabled={overrideSubmitting || !overrideComments.trim()}
+                                >
+                                    {overrideSubmitting ? '⟳ Submitting...' : '↑ Submit for AI Review'}
+                                </button>
+                                <button
+                                    className="action-btn reject"
+                                    onClick={() => { setOverrideFormOpen(false); setOverrideComments(''); }}
+                                    style={{ flex: '0 0 auto', padding: '0 16px' }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="action-buttons">
+                            <button
+                                className="action-btn"
+                                style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#fff' }}
+                                onClick={() => setOverrideFormOpen(true)}
+                                title={overrideReview?.verdict === 'REJECTED' ? 'Your previous justification was insufficient. Provide concrete, specific evidence — address each flagged risk directly (e.g. confirmed false positive, verified distinct individual, DOB mismatch explained).' : undefined}
+                            >
+                                🔍 {overrideReview?.verdict === 'REJECTED' ? 'Try Override Again' : 'Request Override'}
+                            </button>
+                            <button className="action-btn escalate-btn" onClick={() => handleStatusUpdate('ESCALATED')}>↑ Escalate</button>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        return (
+            <div className="action-buttons">
+                <button className="action-btn approve" onClick={() => handleStatusUpdate('APPROVED')}>✓ Approve</button>
+                <button className="action-btn escalate-btn" onClick={() => handleStatusUpdate('ESCALATED')}>↑ Escalate</button>
+                <button className="action-btn reject" onClick={() => handleStatusUpdate('REJECTED')}>✕ Reject</button>
+            </div>
+        );
     };
 
     return (
@@ -146,6 +312,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                             <div className="table-filters">
                                 <button className={`filter-btn ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>All</button>
                                 <button className={`filter-btn ${filter === 'PENDING' ? 'active' : ''}`} onClick={() => setFilter('PENDING')}>Pending</button>
+                                <button className={`filter-btn ${filter === 'PENDING_HUMAN_REVIEW' ? 'active' : ''}`} onClick={() => setFilter('PENDING_HUMAN_REVIEW')}>Human Review</button>
                                 <button className={`filter-btn ${filter === 'ESCALATED' ? 'active' : ''}`} onClick={() => setFilter('ESCALATED')}>Escalated</button>
                                 <button className={`filter-btn ${filter === 'APPROVED' ? 'active' : ''}`} onClick={() => setFilter('APPROVED')}>Approved</button>
                                 <button className={`filter-btn ${filter === 'REJECTED' ? 'active' : ''}`} onClick={() => setFilter('REJECTED')}>Rejected</button>
@@ -255,9 +422,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         <div className="ar-text">
                                             {selectedSubmission.stages?.orchestrator?.recommendation_summary || 'No findings available'}
                                         </div>
-                                        {selectedSubmission.stages?.orchestrator?.reason && (
+                                        {Array.isArray(selectedSubmission.stages?.orchestrator?.reason) && (
                                             <ul style={{ fontSize: '12px', marginTop: '8px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
-                                                {selectedSubmission.stages.orchestrator.reason.map((r: string, i: number) => (
+                                                {selectedSubmission.stages!.orchestrator!.reason.map((r: string, i: number) => (
                                                     <li key={i}>{r}</li>
                                                 ))}
                                             </ul>
@@ -329,8 +496,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                         </div>
                                     )}
 
-
-                                    <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px' }}>
+                                    <div className="flow-section" style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
                                         <div className="section-title" style={{ marginBottom: '10px' }}>Extracted Details</div>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
                                             <div><span style={{ color: 'var(--text-muted)' }}>Passport:</span> {selectedSubmission.identity.passportNumber}</div>
@@ -338,10 +504,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                             <div style={{ gridColumn: 'span 2' }}><span style={{ color: 'var(--text-muted)' }}>Address:</span> {selectedSubmission.identity.address}</div>
                                         </div>
                                     </div>
-                                    <div className="action-buttons" style={{ marginTop: '20px' }}>
-                                        <button className="action-btn approve" onClick={() => handleStatusUpdate('APPROVED')}>✓ Approve</button>
-                                        <button className="action-btn escalate-btn" onClick={() => handleStatusUpdate('ESCALATED')}>↑ Escalate</button>
-                                        <button className="action-btn reject" onClick={() => handleStatusUpdate('REJECTED')}>✕ Reject</button>
+
+                                    <div style={{ marginTop: '20px' }}>
+                                        {renderActionButtons(selectedSubmission)}
                                     </div>
                                 </>
                             ) : (

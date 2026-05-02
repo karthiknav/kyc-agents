@@ -3,7 +3,7 @@ import os
 import json
 import uuid
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 
 import boto3
@@ -154,10 +154,17 @@ class UserResponse(BaseModel):
 class StatusUpdateRequest(BaseModel):
     status: str
 
+class OverrideRequest(BaseModel):
+    analystComments: str
+
 # Mock database for login
 USERS = [
     {"user_id": "USR001", "email": "analyst@bank.nl", "password": "password123", "role": "analyst"},
-    {"user_id": "USR002", "email": "uploader@bank.nl", "password": "password123", "role": "uploader"}
+    {"user_id": "USR002", "email": "uploader@bank.nl", "password": "password123", "role": "uploader"},
+    {"user_id": "USR003", "email": "uploader2@bank.nl", "password": "password123", "role": "uploader"},
+    {"user_id": "USR004", "email": "analyst2@bank.nl", "password": "password123", "role": "analyst"},
+    {"user_id": "USR005", "email": "analyst3@bank.nl", "password": "password123", "role": "analyst"},
+    {"user_id": "USR006", "email": "uploader3@bank.nl", "password": "password123", "role": "uploader"},
 ]
 
 def generate_presigned_urls(s3_paths: dict) -> dict:
@@ -358,16 +365,17 @@ async def submit_kyc(
     nationality: str = Form("NL"),
     id_file: UploadFile = File(...),
     address_file: UploadFile = File(...),
-    income_file: UploadFile = File(...)
+    income_file: Optional[UploadFile] = File(None)
 ):
     case_id = f"CASE-{uuid.uuid4().hex[:8].upper()}"
-    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     files_to_upload = {
         "passport": id_file,
         "address": address_file,
-        "income": income_file
     }
+    if income_file is not None:
+        files_to_upload["income"] = income_file
     
     uploaded_files = []
     
@@ -409,7 +417,7 @@ async def submit_kyc(
             "Form data: fullName=%s, address=%s, passport=%s, expiry=%s, dob=%s, nationality=%s",
             fullName, address, passportNumber, passportExpiry, dateOfBirth, nationality,
         )
-        logger.debug("Files: id=%s, addr=%s, inc=%s", id_file.filename, address_file.filename, income_file.filename)
+        logger.debug("Files: id=%s, addr=%s, inc=%s", id_file.filename, address_file.filename, income_file.filename if income_file else None)
         
         table = get_submissions_table()
         table.put_item(Item=submission_data)
@@ -521,7 +529,7 @@ async def get_analytics_summary():
 @app.patch("/submissions/{caseId}/status")
 async def update_submission_status(caseId: str, request: StatusUpdateRequest):
     try:
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat()
         table = get_submissions_table()
         
         # 1. Update status in DynamoDB
@@ -538,6 +546,81 @@ async def update_submission_status(caseId: str, request: StatusUpdateRequest):
     except Exception as e:
         logger.exception("Error updating status")
         raise HTTPException(status_code=500, detail=f"Failed to update status: {str(e)}")
+
+@app.get("/submissions/{caseId}")
+async def get_submission_by_case_id(caseId: str):
+    try:
+        table = get_submissions_table()
+        response = table.get_item(Key={"CaseId": caseId})
+        item = response.get("Item")
+        if not item:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if "CaseId" in item and "caseId" not in item:
+            item["caseId"] = item["CaseId"]
+        item["document_urls"] = {}
+        for f in item.get("files", []):
+            s3_key = f.get("key")
+            if s3_key:
+                try:
+                    url = s3_client.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": f.get("bucket", S3_BUCKET), "Key": s3_key},
+                        ExpiresIn=3600,
+                    )
+                    if "localstack:4566" in url:
+                        url = url.replace("localstack:4566", "localhost:4566")
+                    item["document_urls"][f.get("type")] = url
+                except Exception:
+                    pass
+        return item
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error fetching case %s", caseId)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/submissions/{caseId}/override")
+async def request_override(caseId: str, request: OverrideRequest):
+    if not request.analystComments or not request.analystComments.strip():
+        raise HTTPException(status_code=400, detail="analystComments is required")
+    try:
+        table = get_submissions_table()
+        response = table.get_item(Key={"CaseId": caseId})
+        item = response.get("Item")
+        if not item:
+            raise HTTPException(status_code=404, detail="Case not found")
+        current_status = item.get("status", "")
+        if current_status != "PENDING_HUMAN_REVIEW":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Override can only be requested for cases in PENDING_HUMAN_REVIEW. Current: {current_status}",
+            )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        table.update_item(
+            Key={"CaseId": caseId},
+            UpdateExpression="SET #s = :s, statusUpdatedAt = :t",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":s": "OVERRIDE_PENDING_AI_REVIEW", ":t": timestamp},
+        )
+        queue_url = _get_sqs_queue_url()
+        sqs_client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({
+                "caseId": caseId,
+                "analystComments": request.analystComments.strip(),
+                "status": "OVERRIDE_INITIATED",
+                "timestamp": timestamp,
+            }),
+        )
+        logger.info("SQS override message sent for caseId=%s", caseId)
+        return {"status": "override_review_started", "caseId": caseId}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error requesting override for case %s", caseId)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/health")
 async def health_check():

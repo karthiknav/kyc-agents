@@ -1,0 +1,30 @@
+[
+  {
+    "fixture": "all_clear",
+    "expected_action": "APPROVED",
+    "expected_doc_result": "MATCH",
+    "expected_risk_result": "CLEAR",
+    "description": "Jan de Vries — all checks pass. Note: adverse media uses real DuckDuckGo on a common Dutch name; may occasionally produce PENDING_REVIEW which correctly triggers ESCALATED."
+  },
+  {
+    "fixture": "document_mismatch",
+    "expected_action": "ESCALATED",
+    "expected_doc_result": "MISMATCH",
+    "expected_risk_result": "CLEAR",
+    "description": "Maria Jansen presenting passport NL987654321 — BRP shows it belongs to Maria Bakker. Document comparison must produce MISMATCH."
+  },
+  {
+    "fixture": "sanction",
+    "expected_action": "ESCALATED",
+    "expected_doc_result": "MATCH",
+    "expected_risk_result": "HIT",
+    "description": "Ahmed Al-Rashid — document is valid but PEP API returns a sanctions hit (dataset: sanctions)."
+  },
+  {
+    "fixture": "pep",
+    "expected_action": "ESCALATED",
+    "expected_doc_result": "MATCH",
+    "expected_risk_result": "HIT",
+    "description": "Willem van den Berg — document is valid but PEP API returns a PEP hit (dataset: pep_world)."
+  }
+]

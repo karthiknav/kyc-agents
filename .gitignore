@@ -1,13 +1,33 @@
+# Terraform (local state — use a remote backend for teams/CI)
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+
 .venv/
 __pycache__/
 *.pyc
-
+.terraform/
 # Claude Code
 .claude/
-/.idea/misc.xml
+/idea/misc.xml
 /.idea/modules.xml
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
 /crew/venv/lib/python3.12/*
 /crew/venv/bin
 /crew/venv/pyvenv.cfg
+
+# Langfuse vendored Helm chart: subchart packages are fetched by `helm dependency build` or Terraform (see charts/README.txt)
+langfuse/charts/langfuse/charts/*.tgz
+langfuse/terraform.tfstate
+langfuse/terraform.tfstate.backup
+
+# mock-service build artifacts
+mock-service/deploy.zip
+
+# macOS Finder
+.DS_Store
+.DS_Store?
+**/.DS_Store
+**/.DS_Store?

@@ -2,6 +2,8 @@
 import json
 import logging
 import os
+import threading
+import uuid
 from typing import Type
 
 import boto3
@@ -11,6 +13,31 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 _MAX_EXTRACTED_DOCS_CHARS = 12000
+
+# Thread-local nonce: set when compare_identity_documents succeeds with real OCR data.
+# The guardrail in crew.py checks that the agent's final answer contains the exact run_id
+# produced here — the agent can only obtain it by actually calling this tool with valid OCR.
+_run_state = threading.local()
+
+
+def get_last_run_id() -> str | None:
+    """Return the run_id from the last successful compare_identity_documents call."""
+    return getattr(_run_state, "run_id", None)
+
+
+def get_last_result() -> dict | None:
+    """Return the full result dict from the last successful compare_identity_documents call.
+
+    Used as a fallback in the document-processing callback when the LLM's final answer
+    is empty or unparseable (e.g. Bedrock empty-response bug exhausts guardrail retries).
+    """
+    return getattr(_run_state, "last_result", None)
+
+
+def reset_run_id() -> None:
+    """Clear the run_id and cached result (call at the start of each document processing task)."""
+    _run_state.run_id = None
+    _run_state.last_result = None
 
 
 class CompareIdentityInput(BaseModel):
@@ -60,6 +87,30 @@ class CompareIdentityDocumentsTool(BaseTool):
         except json.JSONDecodeError:
             return json.dumps({"error": "Invalid extracted_documents JSON"})
 
+        # Guard: reject empty document list — agent must call extract_document_text first
+        if not isinstance(docs, list) or len(docs) == 0:
+            return json.dumps({
+                "error": (
+                    "extracted_documents is empty — you MUST call extract_document_text for each "
+                    "document before calling compare_identity_documents. Do not skip Step 3."
+                )
+            })
+
+        # Guard: reject if all entries are Textract errors (no OCR content produced)
+        has_ocr_content = any(
+            isinstance(doc, dict) and (doc.get("full_text") or doc.get("pages"))
+            for doc in docs
+        )
+        if not has_ocr_content:
+            return json.dumps({
+                "error": (
+                    "All extract_document_text calls returned errors — no OCR content available. "
+                    "You MUST successfully extract at least one document before comparing. "
+                    "Check that extract_document_text returned 'full_text' or 'pages' fields. "
+                    "Do NOT call compare_identity_documents with only error responses."
+                )
+            })
+
         try:
             govt_results = json.loads(government_verification_results) if isinstance(government_verification_results, str) else government_verification_results
         except json.JSONDecodeError:
@@ -79,7 +130,11 @@ class CompareIdentityDocumentsTool(BaseTool):
             identity_from_db, docs, govt_results
         )
 
-        result = {
+        run_id = str(uuid.uuid4())
+        _run_state.run_id = run_id
+
+        result: dict = {
+            "run_id": run_id,
             "case_id": case_id,
             "name": name,
             "comparison_result": comparison_result,
@@ -88,7 +143,8 @@ class CompareIdentityDocumentsTool(BaseTool):
             "documents_summary": documents_summary,
             "government_verification_summary": government_verification_summary,
         }
-        logger.info("compare_identity_documents output: comparison_result=%s", comparison_result)
+        _run_state.last_result = result
+        logger.info("compare_identity_documents output: comparison_result=%s run_id=%s", comparison_result, run_id)
         return json.dumps(result, indent=2)
 
     def _compare_with_llm(self, identity_from_db: dict, extracted_docs: list, govt_results: list = None):
@@ -111,7 +167,9 @@ class CompareIdentityDocumentsTool(BaseTool):
             len(govt_text) if govt_text else 0,
         )
         # Bedrock model: use inference profile ID (no "bedrock/" prefix for boto3)
-        model_id = os.getenv("MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+        region = os.getenv("AWS_REGION_NAME") or os.getenv("AWS_REGION") or "us-east-1"
+        model_id = (os.getenv("MODEL") or "us.anthropic.claude-3-5-sonnet-20241022-v2:0").strip()
+        model_id = model_id.replace("bedrock/", "")
         prompt = f"""You are a KYC (Know Your Customer) document verification specialist.
 Compare identity fields across THREE sources:
 1. The database record (what the applicant submitted)
@@ -151,7 +209,8 @@ Example:
 Your response (JSON only, no markdown):"""
 
         try:
-            client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION_NAME", "us-east-1"))
+            logger.info("Bedrock invoke: tool=%s modelId=%s region=%s", self.name, model_id, region)
+            client = boto3.client("bedrock-runtime", region_name=region)
             response = client.converse(
                 modelId=model_id,
                 messages=[{"role": "user", "content": [{"text": prompt}]}],

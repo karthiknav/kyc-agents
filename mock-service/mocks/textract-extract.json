@@ -1,0 +1,42 @@
+{
+  "id": "textract-extract",
+  "name": "Textract Document Text Extraction (Mock Fallback)",
+  "description": "Fallback mock for AWS Textract when real extraction times out or fails. Looks up pre-seeded OCR data by the person's full name. Returns the same static OCR content for all documents belonging to the same person. Activated by the crew when USE_TEXTRACT_MOCK=1 and Textract does not succeed within the poll limit.",
+  "method": "POST",
+  "path": "/api/v1/textract/extract",
+  "request": {
+    "body": {
+      "s3_bucket": { "type": "string", "required": true },
+      "s3_key": { "type": "string", "required": true },
+      "full_name": { "type": "string", "required": true }
+    }
+  },
+  "response": {
+    "status": 200,
+    "persistenceKey": "{{full_name}}",
+    "schema": {
+      "document_type": "{{request.document_type}}",
+      "s3_key": "{{request.s3_key}}",
+      "mock": true,
+      "pages": [
+        {
+          "page": 1,
+          "lines": [
+            "NEDERLAND",
+            "PASPOORT / PASSPORT",
+            "Naam / Surname: {{faker.person.lastName}}",
+            "Voornamen / Given names: {{faker.person.firstName}}",
+            "Nationaliteit / Nationality: NEDERLANDSE",
+            "Geboortedatum / Date of birth: {{faker.date.birthdate}}",
+            "Documentnummer / Document number: NL{{faker.string.numeric(9)}}",
+            "Geslacht / Sex: {{faker.helpers.arrayElement(['M', 'V'])}}",
+            "Geldig tot / Date of expiry: {{faker.date.future}}",
+            "Afgegeven te / Place of issue: {{faker.location.city}}"
+          ]
+        }
+      ],
+      "full_text": "NEDERLAND\nPASPOORT / PASSPORT\nNaam / Surname: {{faker.person.lastName}}\nVoornamen / Given names: {{faker.person.firstName}}\nNationaliteit / Nationality: NEDERLANDSE\nGeboortedatum / Date of birth: {{faker.date.birthdate}}\nDocumentnummer / Document number: NL{{faker.string.numeric(9)}}\nGeslacht / Sex: M\nGeldig tot / Date of expiry: {{faker.date.future}}\nAfgegeven te / Place of issue: {{faker.location.city}}",
+      "block_count": 10
+    }
+  }
+}

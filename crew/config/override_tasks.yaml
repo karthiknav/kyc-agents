@@ -1,0 +1,41 @@
+override_validation_task:
+  description: >
+    A KYC analyst has requested to override the escalation decision for case {caseId}.
+    Their justification is:
+
+    "{analystComments}"
+
+    Their requested outcome is: APPROVED
+
+    You MUST complete all three steps in order before producing your final answer.
+
+    STEP 1 — get_case_stage_details (REQUIRED):
+    Call get_case_stage_details with caseId {caseId}.
+    This returns a structured JSON with result and summary for each stage:
+    - documentProcessing.result and summary (MATCH / PARTIAL_MATCH / MISMATCH)
+    - riskListScreening.result, pepStatus, sanctionsStatus, datasetsMatched, summary (CLEAR / HIT)
+    - adverseMedia.result, summary, searchQueries (OK / NOK / PENDING_REVIEW)
+
+    STEP 2 — get_case_details (REQUIRED):
+    Call get_case_details with caseId {caseId} to retrieve the subject's identity
+    (fullName, dateOfBirth, nationality). This provides context for the analysis.
+
+    STEP 3 — analyze_override (REQUIRED):
+    Call analyze_override with:
+    - stage_details_json: the exact JSON string returned by get_case_stage_details
+    - identity_json: the exact JSON string returned by get_case_details
+    - analyst_comments: "{analystComments}"
+    - analyst_decision: "APPROVED"
+    This tool performs the structured LLM analysis and returns the final verdict.
+    Do NOT skip this step or reason about the justification yourself.
+
+  expected_output: >
+    Valid JSON object with exactly these keys, copied verbatim from the analyze_override result:
+    - "case_id": the case ID (string)
+    - "override_verdict": one of "APPROVED" or "REJECTED" (string)
+    - "reasoning": detailed explanation referencing each risk flag and whether the justification
+      addressed it (string)
+    - "risk_flags_evaluated": list of risk flags that were present and evaluated (array of strings)
+    - "analyst_comments": the original analyst justification echoed back (string)
+    - "analyst_decision": the decision the analyst requested (string)
+  agent: override_validation_agent

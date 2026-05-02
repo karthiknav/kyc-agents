@@ -10,6 +10,9 @@ set -e
 
 INFRA_STACK_NAME="kyc-agent"
 REGION="${2:-us-east-1}"
+
+# Feature switch: Langfuse/OTEL integration (default off; override by exporting LANGFUSE_ENABLED=1)
+export LANGFUSE_ENABLED="${LANGFUSE_ENABLED:-0}"
 VPC_STACK="${INFRA_STACK_NAME}-vpc"
 STORAGE_STACK="${INFRA_STACK_NAME}-storage"
 ROLES_STACK="${INFRA_STACK_NAME}-roles"
@@ -58,51 +61,17 @@ KYC_CASES_TABLE=$(aws cloudformation describe-stacks \
     --region "$REGION")
 echo "Kyc Cases Table: $KYC_CASES_TABLE"
 
-echo "=========================================="
-echo "Deploying Agent Runtime Stacks"
-echo "=========================================="
-echo "VPC Stack: $VPC_STACK"
-echo "S3 Stack: $STORAGE_STACK"
-echo "Roles Stack: $ROLES_STACK"
-echo "Main Stack: $MAIN_STACK"
-echo "Region: $REGION"
-echo "=========================================="
-
-
-#Package and upload agent source
 echo ""
-echo "[3/5] Packaging and uploading agent source..."
-echo "Script directory: $SCRIPT_DIR"
-ZIP_KEY="$("$SCRIPT_DIR/package_agent.sh" | tail -n 1)"
-echo "Generated zip key: $ZIP_KEY"
-echo "Uploading agent source to s3://$KYC_RESULTS_BUCKET/$ZIP_KEY..."
-aws s3 cp "$SCRIPT_DIR/$ZIP_KEY" "s3://$KYC_RESULTS_BUCKET/$ZIP_KEY" --region "$REGION"
-rm -f "$SCRIPT_DIR/$ZIP_KEY"
-echo "✓ Agent source uploaded: s3://$KYC_RESULTS_BUCKET/$ZIP_KEY"
-
-
-
-#Deploy agent stack
-echo ""
-echo "[4/6] Deploying agent stack..."
-aws cloudformation deploy \
-    --stack-name "$AGENT_STACK" \
-    --template-file "$REPO_ROOT/templates/agentcore-stack.yaml" \
-    --parameter-overrides \
-        AgentName="kyc_agent" \
-        RolesStackName="$ROLES_STACK" \
-        SourceZipKey="$ZIP_KEY" \
-        ImageTag="latest" \
-        KycCasesTableName="$KYC_CASES_TABLE" \
-        KycResultsBucketName="$KYC_RESULTS_BUCKET" \
-    MockServiceUrl="$MOCK_SERVICE_URL_VALUE" \
-    --disable-rollback \
-    --region "$REGION"
-echo "✓ Agent stack ready"
+echo "=========================================="
+echo "Deploying AgentCore runtime + relaunch"
+echo "=========================================="
+# Run AgentCore deployment + Langfuse/OTEL runtime update in a standalone script.
+# It prints eval-safe export lines (and sends logs to stderr).
+eval "$("$SCRIPT_DIR/deploy_agentcore_runtime.sh" --infra-stack-name "$INFRA_STACK_NAME" --region "$REGION" --print-env)"
 
 # Resolve ARNs needed by the Lambda stack
 echo ""
-echo "[5/6] Resolving queue and agent ARNs..."
+echo "[5/6] Resolving queue ARN..."
 KYC_INITIATED_QUEUE_ARN=$(aws cloudformation describe-stacks \
     --stack-name "$MAIN_STACK" \
     --query 'Stacks[0].Outputs[?OutputKey==`KycInitiatedQueueArn`].OutputValue' \
@@ -116,15 +85,10 @@ KYC_INITIATED_QUEUE_NAME=$(aws cloudformation describe-stacks --stack-name "$MAI
 if [ -z "$KYC_INITIATED_QUEUE_NAME" ] || [ "$KYC_INITIATED_QUEUE_NAME" == "None" ]; then
   KYC_INITIATED_QUEUE_NAME="${KYC_INITIATED_QUEUE_ARN##*:}"
 fi
-KYC_AGENT_ARN=$(aws cloudformation describe-stacks \
-    --stack-name "$AGENT_STACK" \
-    --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' \
-    --output text \
-    --region "$REGION" 2>/dev/null || true)
-if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" == "None" ]; then
-  echo "Warning: AgentRuntimeArn not found in $AGENT_STACK."
-fi
-echo "KYC Agent ARN: $KYC_AGENT_ARN"
+
+EVAL_AGENT_RUNTIME_ARN="$KYC_AGENT_ARN"
+EVAL_REGION="$REGION"
+
 KYC_LAMBDA_EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks \
     --stack-name "$ROLES_STACK" \
     --query 'Stacks[0].Outputs[?OutputKey==`KycLambdaExecutionRoleArn`].OutputValue' \
@@ -214,9 +178,19 @@ if [ -n "$API_ENDPOINT" ] && [ "$API_ENDPOINT" != "None" ]; then
   echo "  Backend API: $API_ENDPOINT"
 fi
 
+# Deploy X-Ray Transaction Search config (CloudFormation)
+# echo ""
+# echo "[8/9] Deploying X-Ray Transaction Search config..."
+# XRAY_STACK="${INFRA_STACK_NAME}-xray-transaction-search"
+# aws cloudformation deploy \
+#   --stack-name "$XRAY_STACK" \
+#   --template-file "$REPO_ROOT/templates/xray-transaction-search-stack.yaml" \
+#   --region "$REGION"
+# echo "✓ X-Ray Transaction Search stack ready"
+
 # Deploy UI stack (CloudFormation), then package frontend and sync via deploy_ui.py
 echo ""
-echo "[8/8] Deploying UI stack and syncing frontend..."
+echo "[9/9] Deploying UI stack and syncing frontend..."
 aws cloudformation deploy \
     --stack-name "$UI_STACK" \
     --template-file "$REPO_ROOT/templates/ui-stack.yaml" \
@@ -225,16 +199,16 @@ aws cloudformation deploy \
     --region "$REGION"
 echo "✓ UI stack ready"
 
-export INFRA_STACK_NAME AWS_DEFAULT_REGION="$REGION"
-# Prefer 'python' on Windows (Git Bash, conda, etc.); use python3 on Unix
-case "$(uname -s 2>/dev/null)" in
-  MINGW*|MSYS*|CYGWIN*) PYTHON=python ;;
-  *) PYTHON=python3 ;;
-esac
-if ! command -v $PYTHON >/dev/null 2>&1; then
-  PYTHON=python
-fi
-"$PYTHON" "$SCRIPT_DIR/deploy_ui.py" "$INFRA_STACK_NAME" "$REGION"
+# Run evaluation config setup (PYTHON + venv were prepared after agent deploy)
+# if [ -n "$EVAL_AGENT_RUNTIME_ARN" ] && [ "$EVAL_AGENT_RUNTIME_ARN" != "None" ]; then
+#   "$PYTHON" "$SCRIPT_DIR/setup_agent_evaluation.py" \
+#     --agent-runtime-arn "$EVAL_AGENT_RUNTIME_ARN" \
+#     --region "$EVAL_REGION"
+# else
+#   echo "Warning: skipping evaluation setup (missing agent runtime ARN)."
+# fi
+
+python3 "$SCRIPT_DIR/deploy_ui.py" "$INFRA_STACK_NAME" "$REGION"
 
 echo ""
 echo "=========================================="

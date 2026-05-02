@@ -1,9 +1,11 @@
-import json
 import logging
 import os
 from datetime import datetime, timezone
 
 import boto3
+
+from crew.tools.compare_identity_tool import get_last_result
+from crew.utils import parse_task_output
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +67,27 @@ def _format_document_report(
 
 def update_document_result(task_output):
     """Update the documentProcessing stage in the case document and notify the orchestrator."""
-    logger.info("update_document_result input: task_output=%s", task_output)
-    if hasattr(task_output, "raw"):
-        task_output = task_output.raw
-    if isinstance(task_output, str):
-        try:
-            task_output = json.loads(task_output)
-        except json.JSONDecodeError:
-            logger.error("update_document_result: task_output is not valid JSON")
+    logger.info(
+        "update_document_result input: type=%s raw=%r json_dict=%s",
+        type(task_output).__name__,
+        getattr(task_output, "raw", task_output) if not isinstance(task_output, dict) else "(dict)",
+        getattr(task_output, "json_dict", None),
+    )
+    task_output = parse_task_output(task_output)
+    if task_output is None:
+        # Fallback: the LLM produced an empty/unparseable final answer (e.g. Bedrock empty-response
+        # bug exhausted guardrail retries). If compare_identity_documents ran successfully on this
+        # thread, its cached result has everything we need to persist.
+        cached = get_last_result()
+        if cached:
+            logger.warning(
+                "update_document_result: LLM final answer was unparseable — "
+                "falling back to cached compare_identity_documents result (run_id=%s)",
+                cached.get("run_id"),
+            )
+            task_output = cached
+        else:
+            logger.error("update_document_result: task_output is not valid JSON and no cached tool result available, skipping DB update")
             return
     case_id = task_output.get("case_id")
     comparison_result = task_output.get("comparison_result")

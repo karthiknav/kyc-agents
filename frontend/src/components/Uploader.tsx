@@ -130,12 +130,15 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     }, [currentStep, caseStatus]);
 
     const handleFile = (id: string, file: File) => {
-        // Validation: Types
-        const allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+        // Validation: Types — check extension OR MIME type (handles files with no extension, pasted images, phone photos)
+        const allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif'];
+        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/bmp', 'image/tiff', 'application/pdf'];
         const fileExtension = file.name.split('.').pop()?.toLowerCase();
+        const isValidExtension = !!fileExtension && allowedExtensions.includes(fileExtension);
+        const isValidMime = allowedMimeTypes.includes(file.type) || file.type.startsWith('image/');
 
-        if (!fileExtension || !allowedExtensions.includes(fileExtension)) {
-            showToast(`Invalid file type: .${fileExtension}. Please upload JPG, PNG or PDF.`, 'error');
+        if (!isValidExtension && !isValidMime) {
+            showToast(`Invalid file type${fileExtension ? ` (.${fileExtension})` : ''}. Please upload JPG, PNG, PDF, WEBP, or HEIC.`, 'error');
             return;
         }
 
@@ -184,6 +187,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
     const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
         if (e.target.files && e.target.files[0]) {
             handleFile(id, e.target.files[0]);
+            e.target.value = ''; // reset so same file can be re-selected after Replace
         }
     };
 
@@ -205,7 +209,9 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
         formData.append('id_file', uploadedFiles.current['id'] as Blob);
         formData.append('address_file', uploadedFiles.current['address'] as Blob);
-        formData.append('income_file', uploadedFiles.current['income'] as Blob);
+        if (uploadedFiles.current['income']) {
+            formData.append('income_file', uploadedFiles.current['income'] as Blob);
+        }
 
         // Simulate processing states visually while waiting for server
         setDocs(prev => prev.map(doc => ({ ...doc, status: 'processing' })));
@@ -240,7 +246,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
         uploaded: docs.filter(d => d.status !== 'idle').length
     };
 
-    const allUploaded = statusCounts.uploaded === statusCounts.total;
+    const requiredDocs = ['id', 'address'];
+    const allUploaded = requiredDocs.every(id => docs.find(d => d.id === id)?.status !== 'idle');
     const detailsFilled = userDetails.fullName && userDetails.address && userDetails.passportNumber && userDetails.passportExpiry;
 
     useEffect(() => {
@@ -389,7 +396,12 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                         <div className="left">
                                             <div className={`doc-icon ${doc.iconClass}`}>{doc.icon}</div>
                                             <div>
-                                                <div className="doc-name">{doc.name}</div>
+                                                <div className="doc-name">
+                                                    {doc.name}
+                                                    {!requiredDocs.includes(doc.id) && (
+                                                        <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: 500, padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', color: 'var(--text-muted)', verticalAlign: 'middle' }}>Optional</span>
+                                                    )}
+                                                </div>
                                                 <div className="doc-req">{doc.requirement}</div>
                                             </div>
                                         </div>
@@ -397,7 +409,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                         {doc.status === 'processing' && <span className="status-chip processing">⟳ Processing</span>}
                                         {doc.status === 'failed' && <span className="status-chip failed">✕ Re-upload</span>}
                                         {doc.status === 'uploaded' && <span className="status-chip" style={{ background: 'var(--accent-blue-dim)', color: 'var(--accent-blue)' }}>Ready</span>}
-                                        {doc.status === 'idle' && <span className="status-chip pending">○ Pending</span>}
+                                        {doc.status === 'idle' && !requiredDocs.includes(doc.id) && <span className="status-chip" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>○ Skip</span>}
+                                        {doc.status === 'idle' && requiredDocs.includes(doc.id) && <span className="status-chip pending">○ Pending</span>}
                                     </div>
 
                                     {doc.status === 'idle' ? (
@@ -414,11 +427,12 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                                 ref={el => { fileInputRefs.current[doc.id] = el; }}
                                                 style={{ display: 'none' }}
                                                 onChange={(e) => handleFileInputChange(e, doc.id)}
-                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.bmp,.tiff,.tif,image/*"
                                             />
                                             <div style={{ flex: 1, textAlign: 'center' }}>
                                                 <div className="icon">⬆️</div>
                                                 <div className="text">Drag & drop or click</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>JPG, PNG, PDF, WEBP, HEIC · Max 10 MB</div>
                                             </div>
                                         </div>
                                     ) : (
@@ -451,7 +465,7 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                 onClick={handleSubmit}
                                 disabled={!allUploaded}
                             >
-                                {allUploaded ? 'Submit for Verification' : `Upload All Documents (${statusCounts.uploaded}/${statusCounts.total})`}
+                                {allUploaded ? 'Submit for Verification' : `Upload Required Documents (${docs.filter(d => requiredDocs.includes(d.id) && d.status !== 'idle').length}/${requiredDocs.length})`}
                             </button>
                         </div>
                     </div>

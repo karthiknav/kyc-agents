@@ -1,0 +1,14 @@
+{
+  "description": "Document mismatch — applicant claims to be Maria Jansen but passport NL987654321 is registered to Maria Bakker in the BRP registry. OCR reads Maria Jansen from the image; BRP returns Maria Bakker.",
+  "identity": {
+    "fullName": "Maria Bakker",
+    "firstName": "Maria",
+    "lastName": "Bakker",
+    "dateOfBirth": "1990-07-22",
+    "nationality": "NL"
+  },
+   "documents": [
+    { "type": "passport", "file": "passport.pdf" },
+    { "type": "license", "file": "license.pdf" }
+  ]
+}
