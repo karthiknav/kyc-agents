@@ -82,7 +82,8 @@ class KYCCrew():
             )
         self._llm_model = resolved_model
         self._llm_instance = LLM(
-                model=resolved_model
+                model=resolved_model,
+                temperature=0,
             )
             
 
@@ -279,7 +280,7 @@ class OverrideValidationCrew():
             resolved_model,
             (os.getenv("MODEL") or "").strip(),
         )
-        return LLM(model=resolved_model)
+        return LLM(model=resolved_model, temperature=0)
 
     @agent
     def override_validation_agent(self) -> Agent:
