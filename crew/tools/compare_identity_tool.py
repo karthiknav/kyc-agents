@@ -87,7 +87,8 @@ class CompareIdentityDocumentsTool(BaseTool):
         except json.JSONDecodeError:
             return json.dumps({"error": "Invalid extracted_documents JSON"})
 
-        # Guard: reject empty document list — agent must call extract_document_text first
+        # Guard: reject empty document list — agent must call extract_document_text first.
+        # No run_id is issued so the guardrail fires and forces the agent to run OCR.
         if not isinstance(docs, list) or len(docs) == 0:
             return json.dumps({
                 "error": (
@@ -96,20 +97,30 @@ class CompareIdentityDocumentsTool(BaseTool):
                 )
             })
 
-        # Guard: reject if all entries are Textract errors (no OCR content produced)
+        # Issue run_id now: the agent passed at least one document entry (even if all are errors).
+        # This lets the guardrail confirm the tool was actually invoked with real OCR results.
+        run_id = str(uuid.uuid4())
+        _run_state.run_id = run_id
+
+        # If all Textract calls returned errors, return MISMATCH immediately with the run_id
+        # so the guardrail can pass and the callback records the failure correctly.
         has_ocr_content = any(
             isinstance(doc, dict) and (doc.get("full_text") or doc.get("pages"))
             for doc in docs
         )
         if not has_ocr_content:
-            return json.dumps({
-                "error": (
-                    "All extract_document_text calls returned errors — no OCR content available. "
-                    "You MUST successfully extract at least one document before comparing. "
-                    "Check that extract_document_text returned 'full_text' or 'pages' fields. "
-                    "Do NOT call compare_identity_documents with only error responses."
-                )
-            })
+            result = {
+                "run_id": run_id,
+                "case_id": "Unknown",
+                "name": "Unknown",
+                "comparison_result": "MISMATCH",
+                "discrepancies": ["All document extractions failed — no OCR content available for comparison."],
+                "comparison_summary": "Comparison could not be completed: all document text extractions returned errors. Manual review required.",
+                "documents_summary": "No documents were successfully processed.",
+                "government_verification_summary": "No government verification data available.",
+            }
+            _run_state.last_result = result
+            return json.dumps(result)
 
         try:
             govt_results = json.loads(government_verification_results) if isinstance(government_verification_results, str) else government_verification_results
@@ -129,9 +140,6 @@ class CompareIdentityDocumentsTool(BaseTool):
         comparison_result, discrepancies, comparison_summary, documents_summary, government_verification_summary = self._compare_with_llm(
             identity_from_db, docs, govt_results
         )
-
-        run_id = str(uuid.uuid4())
-        _run_state.run_id = run_id
 
         result: dict = {
             "run_id": run_id,

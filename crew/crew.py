@@ -30,15 +30,15 @@ apply_bedrock_stop_sequences_patch()
 apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
 
+from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool, get_last_adverse_id, reset_adverse_state
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool, get_last_run_id, reset_run_id
+from crew.tools.risk_list_screening_tool import RiskListScreeningTool, get_last_screening_id, reset_screening_state
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
 
 from crew.tools.get_case_stage_details_tool import GetCaseStageDetailsTool
 from crew.tools.analyze_override_tool import AnalyzeOverrideTool
-from crew.tools.risk_list_screening_tool import RiskListScreeningTool
-from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool
 from crew.tools.search_tools import SearchTool
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
@@ -210,21 +210,82 @@ class KYCCrew():
             config=self.tasks_config['document_processing_task'],  # type: ignore[index]
             callback=update_document_result,
             guardrail=_guardrail,
-            guardrail_max_retries=1,
+            guardrail_max_retries=3,
         )
 
     @task
     def risk_list_screening_task(self) -> Task:
+        reset_screening_state()
+
+        def _guardrail(output) -> tuple[bool, str]:
+            import json as _json
+            raw = output.raw if hasattr(output, "raw") else str(output)
+            try:
+                parsed = _json.loads(raw)
+            except Exception:
+                parsed = {}
+
+            expected = get_last_screening_id()
+            if not expected:
+                return (
+                    False,
+                    "REJECTED: risk_list_screening was never called (no screening_id issued). "
+                    "You MUST call get_case_details then risk_list_screening before giving your "
+                    "final answer. Copy the exact screening_id from the tool result into your JSON.",
+                )
+            actual = parsed.get("screening_id")
+            if actual != expected:
+                return (
+                    False,
+                    f"REJECTED: screening_id in your output ('{actual}') does not match the one "
+                    f"returned by risk_list_screening. Copy the exact screening_id from the "
+                    f"risk_list_screening tool result into your final JSON.",
+                )
+            return (True, "")
+
         return Task(
             config=self.tasks_config["risk_list_screening_task"],  # type: ignore[index]
-            callback=update_risk_list_screening_result
+            callback=update_risk_list_screening_result,
+            guardrail=_guardrail,
+            guardrail_max_retries=3,
         )
 
     @task
     def adverse_media_task(self) -> Task:
+        reset_adverse_state()
+
+        def _guardrail(output) -> tuple[bool, str]:
+            import json as _json
+            raw = output.raw if hasattr(output, "raw") else str(output)
+            try:
+                parsed = _json.loads(raw)
+            except Exception:
+                parsed = {}
+
+            expected = get_last_adverse_id()
+            if not expected:
+                return (
+                    False,
+                    "REJECTED: produce_adverse_media_analysis was never called (no analysis_id issued). "
+                    "You MUST call get_case_details, search_internet, then produce_adverse_media_analysis "
+                    "before giving your final answer. Copy the exact analysis_id from the tool result "
+                    "into your final JSON.",
+                )
+            actual = parsed.get("analysis_id")
+            if actual != expected:
+                return (
+                    False,
+                    f"REJECTED: analysis_id in your output ('{actual}') does not match the one "
+                    f"returned by produce_adverse_media_analysis. Copy the exact analysis_id from "
+                    f"the produce_adverse_media_analysis tool result into your final JSON.",
+                )
+            return (True, "")
+
         return Task(
             config=self.tasks_config["adverse_media_task"],  # type: ignore[index]
             callback=update_adverse_media_result,
+            guardrail=_guardrail,
+            guardrail_max_retries=3,
         )
 
     @task

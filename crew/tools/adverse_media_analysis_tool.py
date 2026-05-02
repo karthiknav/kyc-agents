@@ -2,6 +2,8 @@
 import json
 import logging
 import os
+import threading
+import uuid
 from typing import Type
 
 import boto3
@@ -9,6 +11,21 @@ from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+_adverse_state = threading.local()
+
+
+def get_last_adverse_id() -> str | None:
+    return getattr(_adverse_state, "analysis_id", None)
+
+
+def get_last_adverse_result() -> dict | None:
+    return getattr(_adverse_state, "last_result", None)
+
+
+def reset_adverse_state() -> None:
+    _adverse_state.analysis_id = None
+    _adverse_state.last_result = None
 
 
 class AdverseMediaAnalysisInput(BaseModel):
@@ -81,6 +98,10 @@ Search payload:
 
 Your response (JSON only, no markdown):"""
 
+        # Issue nonce before the LLM call so the guardrail can verify this tool ran.
+        analysis_id = str(uuid.uuid4())
+        _adverse_state.analysis_id = analysis_id
+
         try:
             region = os.getenv("AWS_REGION_NAME") or os.getenv("AWS_REGION") or "us-east-1"
             model_id = (os.getenv("MODEL") or "us.anthropic.claude-3-5-sonnet-20241022-v2:0").strip()
@@ -111,5 +132,7 @@ Your response (JSON only, no markdown):"""
             result = "PENDING_REVIEW"
             summary = f"Adverse media analysis failed: {str(e)}. Manual review required."
 
-        return json.dumps({"result": result, "summary": summary}, indent=2)
+        out = {"analysis_id": analysis_id, "result": result, "summary": summary}
+        _adverse_state.last_result = out
+        return json.dumps(out, indent=2)
 

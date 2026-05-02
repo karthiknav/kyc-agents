@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import re
+import threading
+import uuid
 from typing import List, Optional, Type, Tuple
 
 import requests
@@ -13,6 +15,21 @@ logger = logging.getLogger(__name__)
 
 MOCK_SERVICE_URL_DEFAULT = "http://localhost:9000"
 PEP_PATH = "/api/v1/pep/match"
+
+_screening_state = threading.local()
+
+
+def get_last_screening_id() -> str | None:
+    return getattr(_screening_state, "screening_id", None)
+
+
+def get_last_screening_result() -> dict | None:
+    return getattr(_screening_state, "last_result", None)
+
+
+def reset_screening_state() -> None:
+    _screening_state.screening_id = None
+    _screening_state.last_result = None
 
 
 def _join_url(base: str, path: str) -> str:
@@ -79,6 +96,10 @@ class RiskListScreeningTool(BaseTool):
         birth_year = _extract_birth_year(identity.get("dateOfBirth"))
         nationality = (identity.get("nationality") or "").strip()
 
+        # Issue nonce before the API call so the guardrail can verify this tool ran.
+        screening_id = str(uuid.uuid4())
+        _screening_state.screening_id = screening_id
+
         # OpenSanctions-style query: schema + multi-valued properties (arrays)
         properties = {
             "firstName": [first_name],
@@ -98,20 +119,19 @@ class RiskListScreeningTool(BaseTool):
             raw = resp.json()
         except requests.RequestException as e:
             logger.exception("risk_list_screening API request failed: %s", e)
-            return json.dumps(
-                {
-                    "case_id": case.get("caseId") or case.get("case_id"),
-                    "name": full_name,
-                    "result": "ERROR",
-                    "pepStatus": "UNKNOWN",
-                    "sanctionsStatus": "UNKNOWN",
-                    "datasetsMatched": [],
-                    "summary": "Risk list screening failed (PEP API call error).",
-                    "rawResponse": {"error": str(e)},
-                },
-                indent=2,
-                default=str,
-            )
+            err_result = {
+                "screening_id": screening_id,
+                "case_id": case.get("caseId") or case.get("case_id"),
+                "name": full_name,
+                "result": "ERROR",
+                "pepStatus": "UNKNOWN",
+                "sanctionsStatus": "UNKNOWN",
+                "datasetsMatched": [],
+                "summary": "Risk list screening failed (PEP API call error).",
+                "rawResponse": {"error": str(e)},
+            }
+            _screening_state.last_result = err_result
+            return json.dumps(err_result, indent=2, default=str)
 
         results = []
         try:
@@ -147,6 +167,7 @@ class RiskListScreeningTool(BaseTool):
             summary = "No matches found across sanctions, PEP, or high-risk watchlists."
 
         out = {
+            "screening_id": screening_id,
             "case_id": case.get("caseId") or case.get("case_id"),
             "name": full_name,
             "result": result,
@@ -156,5 +177,6 @@ class RiskListScreeningTool(BaseTool):
             "summary": summary,
             "rawResponse": raw,
         }
+        _screening_state.last_result = out
         return json.dumps(out, indent=2, default=str)
 
