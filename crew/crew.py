@@ -118,7 +118,6 @@ class KYCCrew():
             config=self.agents_config['risk_list_screening_agent'],  # type: ignore[index]
             verbose=True,
             tools=[
-                GetCaseDetailsTool(),
                 RiskListScreeningTool(),
             ],
             llm=self.get_llm(),
@@ -151,7 +150,6 @@ class KYCCrew():
             config=self.agents_config['orchestrator_agent'],  # type: ignore[index]
             verbose=True,
             tools=[
-                GetCaseStageDetailsTool(),
                 EscalateToHumanTool(),
             ],
             llm=self.get_llm(),

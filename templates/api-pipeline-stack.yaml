@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CI/CD Pipeline — GitHub → CodeBuild → Lambda API (backend/)'
+
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: ARN of the AWS CodeConnections connection to GitHub
+
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository in owner/repo format (e.g. myorg/kyc-agents)
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Branch to track for deployments
+
+  RolesStackName:
+    Type: String
+    Description: Name of the roles stack to import IAM roles from
+
+  ApiStackName:
+    Type: String
+    Description: Name to give the API CloudFormation stack that the pipeline deploys
+
+  KycResultsBucketName:
+    Type: String
+    Description: S3 bucket for storing Lambda deployment package (same bucket used by the agent)
+
+  KycCasesTableName:
+    Type: String
+    Description: DynamoDB table name for KYC cases
+
+  KycInitiatedQueueName:
+    Type: String
+    Description: Name of the SQS queue for KYC-initiated events
+
+Resources:
+
+  # ── S3 artifact bucket ───────────────────────────────────────────────────────
+  PipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # ── CodeBuild — packages backend/ as Lambda zip and uploads to S3 ─────────────
+  # NOTE: The CodeBuild role (from RolesStackName) must have:
+  #   - s3:PutObject on KycResultsBucketName (to upload the Lambda zip)
+  #   - cloudformation:DescribeStacks (to read KycLambdaExecutionRoleArn from roles stack)
+  BackendBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-backend-build"
+      Description: Package KYC backend API as Lambda zip and upload to S3
+      ServiceRole: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: BACKEND_BUCKET
+            Value: !Ref KycResultsBucketName
+          - Name: ROLES_STACK_NAME
+            Value: !Ref RolesStackName
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - BACKEND_ZIP="backend-api-$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8).zip"
+                - BACKEND_LAMBDA_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $ROLES_STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`KycLambdaExecutionRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+            build:
+              commands:
+                - mkdir -p /tmp/backend_pkg
+                - pip install -q -r backend/requirements.txt -t /tmp/backend_pkg --platform manylinux_2_17_x86_64 --python-version 3.11 --only-binary=:all: --upgrade
+                - cp backend/main.py /tmp/backend_pkg/
+                - cd /tmp/backend_pkg && zip -r $OLDPWD/$BACKEND_ZIP . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*"
+                - cd $OLDPWD
+                - aws s3 cp $BACKEND_ZIP s3://$BACKEND_BUCKET/$BACKEND_ZIP --region $AWS_DEFAULT_REGION
+            post_build:
+              commands:
+                - printf '{"BackendZipKey":"%s","BackendLambdaRoleArn":"%s"}' $BACKEND_ZIP $BACKEND_LAMBDA_ROLE_ARN > parameters.json
+          artifacts:
+            files:
+              - parameters.json
+              - templates/**
+            discard-paths: no
+
+  # ── CodePipeline ─────────────────────────────────────────────────────────────
+  ApiPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${AWS::StackName}-pipeline"
+      RoleArn: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodePipelineRoleArn"
+      PipelineType: V2
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactBucket
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHubSource
+            Push:
+              - Branches:
+                  Includes:
+                    - !Ref GitHubBranch
+                FilePaths:
+                  Includes:
+                    - backend/**
+                    - templates/api-stack.yaml
+      Stages:
+
+        # Stage 1: pull source — fires only when backend/** or api-stack.yaml changes
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Ref GitHubRepo
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+                DetectChanges: false
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        # Stage 2: package backend/ as Lambda zip, upload to S3, emit parameters.json
+        - Name: Build
+          Actions:
+            - Name: BuildBackendZip
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref BackendBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+
+        # Stage 3: deploy (or update) api-stack with the new Lambda package
+        - Name: Deploy
+          Actions:
+            - Name: DeployApiStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: "1"
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Ref ApiStackName
+                TemplatePath: "SourceArtifact::templates/api-stack.yaml"
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                RoleArn: !ImportValue
+                  Fn::Sub: "${RolesStackName}-CloudFormationDeployRoleArn"
+                ParameterOverrides: !Sub |
+                  {
+                    "BackendLambdaRoleArn":  {"Fn::GetParam": ["BuildArtifact", "parameters.json", "BackendLambdaRoleArn"]},
+                    "BackendSourceBucket":   "${KycResultsBucketName}",
+                    "BackendSourceKey":      {"Fn::GetParam": ["BuildArtifact", "parameters.json", "BackendZipKey"]},
+                    "KycCasesTableName":     "${KycCasesTableName}",
+                    "KycInitiatedQueueName": "${KycInitiatedQueueName}"
+                  }
+              InputArtifacts:
+                - Name: SourceArtifact
+                - Name: BuildArtifact
+              RunOrder: 1
+
+Outputs:
+  PipelineName:
+    Description: Name of the CodePipeline
+    Value: !Ref ApiPipeline
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineName"
+
+  BuildProjectName:
+    Description: CodeBuild project name
+    Value: !Ref BackendBuildProject
+    Export:
+      Name: !Sub "${AWS::StackName}-BuildProjectName"

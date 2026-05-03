@@ -1,0 +1,228 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CI/CD Pipeline — GitHub → CodeBuild → S3/CloudFront UI (frontend/)'
+# Pre-requisite: ui-stack.yaml must already be deployed (S3 bucket + CloudFront distribution
+# are one-time infrastructure, deployed alongside roles/storage/vpc base stacks).
+# This pipeline only handles the dynamic part: build → sync → invalidate on each code push.
+
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: ARN of the AWS CodeConnections connection to GitHub
+
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository in owner/repo format (e.g. myorg/kyc-agents)
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Branch to track for deployments
+
+  RolesStackName:
+    Type: String
+    Description: Name of the roles stack to import IAM roles from
+
+  UiStackName:
+    Type: String
+    Description: Name of the already-deployed UI stack — queried for StaticBucketName and DistributionId
+
+  ApiStackName:
+    Type: String
+    Description: Name of the deployed API stack — queried at build time for ApiEndpoint (VITE_API_BASE_URL)
+
+Resources:
+
+  # ── S3 artifact bucket ───────────────────────────────────────────────────────
+  PipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # ── CodeBuild — npm ci + npm run build with VITE_API_BASE_URL ────────────────
+  # NOTE: The CodeBuild role (from RolesStackName) must have:
+  #   - cloudformation:DescribeStacks (to read ApiEndpoint from ApiStackName)
+  FrontendBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-frontend-build"
+      Description: Build React frontend with VITE_API_BASE_URL from deployed API stack
+      ServiceRole: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_CUSTOM_CACHE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: API_STACK_NAME
+            Value: !Ref ApiStackName
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - export VITE_API_BASE_URL=$(aws cloudformation describe-stacks --stack-name $API_STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+                - echo "Building frontend against $VITE_API_BASE_URL"
+            build:
+              commands:
+                - cd frontend
+                - npm ci
+                - npm run build
+          cache:
+            paths:
+              - frontend/node_modules/**/*
+          artifacts:
+            base-directory: frontend/dist
+            files:
+              - '**/*'
+
+  # ── CodeBuild — s3 sync + CloudFront invalidation ────────────────────────────
+  # NOTE: The CodeBuild role (from RolesStackName) must have:
+  #   - cloudformation:DescribeStacks (to read StaticBucketName + DistributionId from UiStackName)
+  #   - s3:PutObject, s3:DeleteObject, s3:GetObject, s3:ListBucket on the static bucket
+  #   - cloudfront:CreateInvalidation on the distribution
+  ContentSyncProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-content-sync"
+      Description: Sync frontend dist to S3 and invalidate CloudFront
+      ServiceRole: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: UI_STACK_NAME
+            Value: !Ref UiStackName
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - BUCKET=$(aws cloudformation describe-stacks --stack-name $UI_STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`StaticBucketName`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+                - DIST_ID=$(aws cloudformation describe-stacks --stack-name $UI_STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+            build:
+              commands:
+                - aws s3 sync . s3://$BUCKET/ --delete --region $AWS_DEFAULT_REGION
+            post_build:
+              commands:
+                - aws cloudfront create-invalidation --distribution-id $DIST_ID --paths '/*'
+
+  # ── CodePipeline ─────────────────────────────────────────────────────────────
+  UiPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${AWS::StackName}-pipeline"
+      RoleArn: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodePipelineRoleArn"
+      PipelineType: V2
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactBucket
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHubSource
+            Push:
+              - Branches:
+                  Includes:
+                    - !Ref GitHubBranch
+                FilePaths:
+                  Includes:
+                    - frontend/**
+      Stages:
+
+        # Stage 1: pull source — fires only when frontend/** changes
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Ref GitHubRepo
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+                DetectChanges: false
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        # Stage 2: npm ci + build, output dist/ files as BuildArtifact
+        - Name: Build
+          Actions:
+            - Name: BuildFrontend
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref FrontendBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+
+        # Stage 3: sync dist files to S3 and invalidate CloudFront cache
+        # BuildArtifact is the zipped frontend/dist — CodeBuild unpacks it into the
+        # working directory, so '.' is the dist root for s3 sync
+        - Name: SyncContent
+          Actions:
+            - Name: SyncToS3
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref ContentSyncProject
+              InputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+
+Outputs:
+  PipelineName:
+    Description: Name of the CodePipeline
+    Value: !Ref UiPipeline
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineName"
+
+  FrontendBuildProjectName:
+    Description: Frontend CodeBuild project name
+    Value: !Ref FrontendBuildProject
+    Export:
+      Name: !Sub "${AWS::StackName}-FrontendBuildProjectName"
+
+  ContentSyncProjectName:
+    Description: Content sync CodeBuild project name
+    Value: !Ref ContentSyncProject
+    Export:
+      Name: !Sub "${AWS::StackName}-ContentSyncProjectName"

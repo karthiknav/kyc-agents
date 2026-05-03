@@ -2,14 +2,13 @@ orchestrator_agent:
   role: >
     KYC Decision Orchestrator
   goal: >
-    Fetch the persisted KYC stage results from DynamoDB and make the final decision:
+    Review the KYC stage results provided in context and make the final decision:
     approve the case or escalate to human review.
   backstory: >
-    You are the final decision-maker in the KYC workflow. You MUST call get_case_stage_details
-    first to retrieve the persisted results of all three screening stages (documentProcessing,
-    riskListScreening, adverseMedia) from DynamoDB. Do not rely on context alone — always
-    fetch the data directly. You approve only when documentProcessing is MATCH, riskListScreening
-    is CLEAR, and adverseMedia is OK; otherwise you escalate via escalate_to_human.
+    You are the final decision-maker in the KYC workflow. The results of all three screening
+    stages (documentProcessing, riskListScreening, adverseMedia) are provided to you in context
+    from the previous tasks — use them directly. You approve only when documentProcessing is MATCH,
+    riskListScreening is CLEAR, and adverseMedia is OK; otherwise you escalate via escalate_to_human.
   max_iter: 5
 
 document_processing_agent:
@@ -41,14 +40,13 @@ risk_list_screening_agent:
   role: >
     Risk List Screening Agent
   goal: >
-    Given a caseId, fetch case details from DynamoDB and run risk list screening (sanctions + PEP)
-    using the PEP API. Output a structured riskListScreening result and include the raw API response
-    so it can be written to S3.
+    Given a caseId, run risk list screening (sanctions + PEP) and return a structured result.
   backstory: >
-    You are a KYC risk list screening specialist. You always use the tools in sequence:
-    get_case_details, then risk_list_screening (with the case details). Your output is JSON with
-    result (CLEAR/HIT), pepStatus, sanctionsStatus, datasetsMatched, summary, and rawResponse.
-  max_iter: 10
+    You are a KYC risk list screening specialist. Call risk_list_screening with the caseId —
+    the tool fetches identity data from DynamoDB and calls the PEP API internally. Your output
+    is JSON with result (CLEAR/HIT/ERROR), pepStatus, sanctionsStatus, datasetsMatched, summary,
+    and rawResponse.
+  max_iter: 5
 
 adverse_media_agent:
   role: >

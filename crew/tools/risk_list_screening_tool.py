@@ -37,9 +37,28 @@ def _join_url(base: str, path: str) -> str:
 
 
 class RiskListScreeningInput(BaseModel):
-    case_details: str = Field(
-        description="JSON string from get_case_details (must include identity.fullName; identity.dateOfBirth and identity.nationality optional)."
-    )
+    case_id: str = Field(description="The KYC case ID to screen.")
+
+
+def _fetch_identity(case_id: str) -> dict:
+    """Fetch identity fields from DynamoDB. Returns dict with fullName, dateOfBirth, nationality."""
+    import boto3
+    table_name = os.environ.get("KYC_CASES_TABLE", "kyc-agent-storage-kyc-cases")
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table(table_name)
+    response = table.get_item(Key={"CaseId": case_id})
+    item = response.get("Item")
+    if not item:
+        raise ValueError(f"No case found for caseId {case_id}")
+    identity = item.get("identity") or {}
+    if not isinstance(identity, dict):
+        identity = {}
+    return {
+        "caseId": item.get("CaseId", case_id),
+        "fullName": (identity.get("fullName") or "").strip(),
+        "dateOfBirth": identity.get("dateOfBirth"),
+        "nationality": (identity.get("nationality") or "").strip(),
+    }
 
 
 def _split_name(full_name: str) -> Tuple[str, str]:
@@ -68,7 +87,7 @@ class RiskListScreeningTool(BaseTool):
     )
     args_schema: Type[RiskListScreeningInput] = RiskListScreeningInput
 
-    def _run(self, case_details: str) -> str:
+    def _run(self, case_id: str) -> str:
         # Backward compatible override: allow setting a full PEP endpoint URL
         explicit = (os.environ.get("PEP_API_URL") or "").strip()
         if explicit:
@@ -77,24 +96,22 @@ class RiskListScreeningTool(BaseTool):
             base_url = (os.environ.get("MOCK_SERVICE_URL") or "").strip() or MOCK_SERVICE_URL_DEFAULT
             api_url = _join_url(base_url, PEP_PATH)
 
-        if not case_details or not case_details.strip():
-            return json.dumps({"error": "case_details is required"})
+        if not case_id or not case_id.strip():
+            return json.dumps({"error": "case_id is required"})
 
         try:
-            case = json.loads(case_details) if isinstance(case_details, str) else case_details
-        except json.JSONDecodeError:
-            return json.dumps({"error": "Invalid case_details JSON"})
+            identity = _fetch_identity(case_id)
+        except Exception as e:
+            logger.exception("risk_list_screening: failed to fetch case from DynamoDB")
+            return json.dumps({"error": f"Failed to fetch case: {str(e)}"})
 
-        identity = case.get("identity") or {}
-        if not isinstance(identity, dict):
-            identity = {}
-        full_name = (identity.get("fullName") or "").strip()
+        full_name = identity["fullName"]
         if not full_name:
-            return json.dumps({"error": "identity.fullName is required"})
+            return json.dumps({"error": "identity.fullName is missing for this case"})
 
         first_name, last_name = _split_name(full_name)
         birth_year = _extract_birth_year(identity.get("dateOfBirth"))
-        nationality = (identity.get("nationality") or "").strip()
+        nationality = identity.get("nationality", "")
 
         # Issue nonce before the API call so the guardrail can verify this tool ran.
         screening_id = str(uuid.uuid4())
@@ -112,7 +129,7 @@ class RiskListScreeningTool(BaseTool):
 
         payload = {"queries": {"q1": {"schema": "Person", "properties": properties}}}
 
-        logger.info("risk_list_screening_update: caseId=%s, name=%s, url=%s", case.get("caseId"), full_name, api_url)
+        logger.info("risk_list_screening_update: caseId=%s, name=%s, url=%s", case_id, full_name, api_url)
         try:
             resp = requests.post(api_url, json=payload, timeout=30)
             resp.raise_for_status()
@@ -121,7 +138,7 @@ class RiskListScreeningTool(BaseTool):
             logger.exception("risk_list_screening API request failed: %s", e)
             err_result = {
                 "screening_id": screening_id,
-                "case_id": case.get("caseId") or case.get("case_id"),
+                "case_id": identity.get("caseId", case_id),
                 "name": full_name,
                 "result": "ERROR",
                 "pepStatus": "UNKNOWN",
@@ -168,7 +185,7 @@ class RiskListScreeningTool(BaseTool):
 
         out = {
             "screening_id": screening_id,
-            "case_id": case.get("caseId") or case.get("case_id"),
+            "case_id": identity.get("caseId", case_id),
             "name": full_name,
             "result": result,
             "pepStatus": pep_status,

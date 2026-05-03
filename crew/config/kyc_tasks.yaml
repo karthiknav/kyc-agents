@@ -1,15 +1,12 @@
 orchestrator_task:
   description: >
-    Given caseId {caseId}, make the final KYC decision.
-
-    STEP 1 — get_case_stage_details (REQUIRED):
-    Call get_case_stage_details with caseId {caseId} to fetch the persisted results of all
-    three screening stages:
+    Given caseId {caseId}, make the final KYC decision using the stage results already
+    provided in context from the previous tasks:
     - documentProcessing.result (MATCH / PARTIAL_MATCH / MISMATCH)
     - riskListScreening.result (CLEAR / HIT / ERROR)
     - adverseMedia.result (OK / NOK / PENDING_REVIEW)
 
-    STEP 2 — Decide:
+    DECIDE:
     If documentProcessing.result is MATCH AND riskListScreening.result is CLEAR AND
     adverseMedia.result is OK: the case is approved. Return JSON with action "APPROVED".
 
@@ -83,8 +80,8 @@ document_processing_task:
 risk_list_screening_task:
   description: >
     Given caseId {caseId}:
-    1. Use get_case_details to fetch the case from DynamoDB.
-    2. Use risk_list_screening with the case details to call the PEP/sanctions API.
+    Call risk_list_screening with case_id {caseId}. The tool fetches identity data from
+    DynamoDB and calls the PEP/sanctions API internally — do not call get_case_details separately.
     Return a JSON object with result (CLEAR/HIT/ERROR), pepStatus, sanctionsStatus, datasetsMatched, summary, and rawResponse.
   expected_output: >
     Valid JSON object with exactly these keys:
