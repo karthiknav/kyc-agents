@@ -204,7 +204,7 @@ class KYCCrew():
                     f"compare_identity_documents tool result into your final JSON.",
                 )
 
-            return (True, "")
+            return (True, output.raw)
 
         return Task(
             config=self.tasks_config['document_processing_task'],  # type: ignore[index]
@@ -241,7 +241,7 @@ class KYCCrew():
                     f"returned by risk_list_screening. Copy the exact screening_id from the "
                     f"risk_list_screening tool result into your final JSON.",
                 )
-            return (True, "")
+            return (True, output.raw)
 
         return Task(
             config=self.tasks_config["risk_list_screening_task"],  # type: ignore[index]
@@ -279,7 +279,7 @@ class KYCCrew():
                     f"returned by produce_adverse_media_analysis. Copy the exact analysis_id from "
                     f"the produce_adverse_media_analysis tool result into your final JSON.",
                 )
-            return (True, "")
+            return (True, output.raw)
 
         return Task(
             config=self.tasks_config["adverse_media_task"],  # type: ignore[index]
