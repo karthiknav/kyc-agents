@@ -101,35 +101,18 @@ risk_list_screening_task:
 
 adverse_media_task:
   description: >
-    Given caseId {caseId}, you MUST complete all three steps in order. Do NOT produce your
-    final output until all three tool calls have returned results — no exceptions.
-
-    STEP 1 — get_case_details (REQUIRED):
-    Call get_case_details with the caseId to retrieve the case from DynamoDB. Extract identity.fullName.
-
-    STEP 2 — search_internet (REQUIRED, do not skip):
-    Call search_internet with this exact query (substitute the real fullName for <FULL_NAME>):
-      "<FULL_NAME> fraud crime money laundering arrest investigation adverse media"
-    You MUST call search_internet. Do not assume you already know the results. Do not skip this step
-    even if you believe the person is clean.
-
-    STEP 3 — produce_adverse_media_analysis (REQUIRED, do not skip):
-    Call produce_adverse_media_analysis with:
-      - person_name: identity.fullName
-      - search_query: the exact string you passed to search_internet
-      - search_results_json: the exact string returned by search_internet (valid JSON array; do not reformat or summarise)
-
-    Only after all three tool calls have completed, return JSON with result, summary, searchQueries,
-    and rawResponse (object with searchQueries and searchResults).
+    Given caseId {caseId}, call produce_adverse_media_analysis with case_id {caseId}.
+    The tool fetches identity from DynamoDB, runs the web search, and analyses results internally.
+    Return the tool result as your JSON output.
   expected_output: >
     Valid JSON object with exactly these keys:
     - "analysis_id": the exact analysis_id string returned by produce_adverse_media_analysis (string, REQUIRED)
-    - "case_id": the case ID from the case (string)
-    - "name": the full name from identity.fullName (string)
+    - "case_id": the case ID (string)
+    - "name": the full name (string)
     - "result": one of "OK", "NOK", "PENDING_REVIEW" (string)
     - "summary": short summary (string)
     - "searchQueries": array of search queries used (array)
-    - "rawResponse": object with searchQueries and searchResults (same structure as passed to analysis)
+    - "rawResponse": object with searchQueries and searchResults (object)
 
     IMPORTANT: The analysis_id field must be copied verbatim from the produce_adverse_media_analysis
     tool result. Do not invent or omit it — the output will be rejected without it.

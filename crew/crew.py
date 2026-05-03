@@ -39,7 +39,7 @@ from crew.tools.get_case_files_tool import GetCaseFilesTool
 
 from crew.tools.get_case_stage_details_tool import GetCaseStageDetailsTool
 from crew.tools.analyze_override_tool import AnalyzeOverrideTool
-from crew.tools.search_tools import SearchTool
+
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
 from crew.update_case import update_adverse_media_result, update_risk_list_screening_result
@@ -133,8 +133,6 @@ class KYCCrew():
             config=self.agents_config["adverse_media_agent"],  # type: ignore[index]
             verbose=True,
             tools=[
-                GetCaseDetailsTool(),
-                SearchTool(),
                 AdverseMediaAnalysisTool(),
             ],
             llm=self.get_llm(),
