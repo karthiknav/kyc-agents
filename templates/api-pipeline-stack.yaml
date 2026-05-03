@@ -86,7 +86,7 @@ Resources:
             build:
               commands:
                 - mkdir -p /tmp/backend_pkg
-                - pip install -q -r backend/requirements.txt -t /tmp/backend_pkg --platform manylinux_2_17_x86_64 --python-version 3.11 --only-binary=:all: --upgrade
+                - "pip install -q -r backend/requirements.txt -t /tmp/backend_pkg --platform manylinux_2_17_x86_64 --python-version 3.11 --only-binary=:all: --upgrade"
                 - cp backend/main.py /tmp/backend_pkg/
                 - cd /tmp/backend_pkg && zip -r $OLDPWD/$BACKEND_ZIP . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*"
                 - cd $OLDPWD
