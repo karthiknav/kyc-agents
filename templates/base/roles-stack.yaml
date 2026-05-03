@@ -367,6 +367,16 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackName}-*"
                   - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:event-source-mapping:*"
+        - PolicyName: ApiGatewayDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ApiGatewayManage
+                Effect: Allow
+                Action: apigateway:*
+                Resource:
+                  - !Sub "arn:aws:apigateway:${AWS::Region}::/restapis"
+                  - !Sub "arn:aws:apigateway:${AWS::Region}::/restapis/*"
 
   # ── KYC processor Lambda: SQS consume, DynamoDB table access, Bedrock Agent Core invoke
   KycLambdaExecutionRole:
