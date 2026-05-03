@@ -11,6 +11,9 @@ Parameters:
   PipelineStackName:
     Type: String
     Description: Name of the pipeline stack (determines the artifact bucket name)
+  ApiPipelineStackName:
+    Type: String
+    Description: Name of the pipeline stack (determines the artifact bucket name)
 
 Resources:
   AgentExecutionRole:
@@ -288,12 +291,15 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}"
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}/*"
+                  - !Sub "arn:aws:s3:::${ApiPipelineStackName}-artifacts-${AWS::AccountId}/*"
               - Sid: CodeBuild
                 Effect: Allow
                 Action:
                   - codebuild:StartBuild
                   - codebuild:BatchGetBuilds
-                Resource: !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${PipelineStackName}-*"
+                Resource: 
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${PipelineStackName}-*"
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ApiPipelineStackName}-*"
               - Sid: CloudFormationDeploy
                 Effect: Allow
                 Action:
