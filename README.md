@@ -270,3 +270,20 @@ aws cloudformation deploy \
 
 Once this completes, the pipeline triggers automatically and deploys `kyc-agentcore` for the first time.
 All subsequent deployments happen on every push to `main` — no further manual action required.
+
+
+#### Deploy the UI pipeline stack
+
+```bash
+aws cloudformation deploy \
+   --stack-name kyc-agent-ui-pipeline \
+   --template-file templates/ui-pipeline-stack.yaml \
+   --parameter-overrides \
+             GitHubConnectionArn=arn:aws:codeconnections:us-east-1:926529379586:connection/ce0bf520-65e4-4687-9f8c-9d25aa9e62ef \
+             GitHubRepo=karthiknav/kyc-agents \
+             GitHubBranch=main \
+             RolesStackName=kyc-agent-roles \
+             UiStackName=kyc-agent-ui \
+             ApiStackName=kyc-agent-api \
+   --capabilities CAPABILITY_NAMED_IAM
+```

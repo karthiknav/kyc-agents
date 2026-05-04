@@ -212,6 +212,14 @@ Resources:
                   - !Sub "arn:aws:s3:::${BaseStackName}-*/*"
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}"
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}/*"
+        - PolicyName: CloudFrontPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/*"
         - PolicyName: LangfuseRelaunchAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -289,17 +297,15 @@ Resources:
                   - s3:PutObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}"
-                  - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}/*"
-                  - !Sub "arn:aws:s3:::${ApiPipelineStackName}-artifacts-${AWS::AccountId}/*"
+                  - !Sub "arn:aws:s3:::${BaseStackName}-*"
+                  - !Sub "arn:aws:s3:::${BaseStackName}-*/*"
               - Sid: CodeBuild
                 Effect: Allow
                 Action:
                   - codebuild:StartBuild
                   - codebuild:BatchGetBuilds
                 Resource: 
-                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${PipelineStackName}-*"
-                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ApiPipelineStackName}-*"
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${BaseStackName}-*"
               - Sid: CloudFormationDeploy
                 Effect: Allow
                 Action:
@@ -334,14 +340,16 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess
       Policies:
-        - PolicyName: AgentCoreDeployPolicy
+        - PolicyName: PassRolePolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Sid: PassAgentExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
-                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-agent-execution-role"
+                Resource: 
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-agent-execution-role"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-*"
         - PolicyName: LambdaDeployPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -365,7 +373,7 @@ Resources:
                   - lambda:DeleteEventSourceMapping
                   - lambda:GetEventSourceMapping
                 Resource:
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackName}-*"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${BaseStackName}-*"
                   - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:event-source-mapping:*"
         - PolicyName: ApiGatewayDeployPolicy
           PolicyDocument:
