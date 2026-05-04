@@ -207,6 +207,7 @@ Resources:
                   - s3:GetObjectVersion
                   - s3:PutObject
                   - s3:ListBucket
+                  - s3:DeleteObject
                 Resource:
                   - !Sub "arn:aws:s3:::${BaseStackName}-*"
                   - !Sub "arn:aws:s3:::${BaseStackName}-*/*"
