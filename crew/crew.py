@@ -25,10 +25,12 @@ from crew.bedrock_tool_args_patch import (
 )
 from crew.crewai_tool_observation_patch import apply_slim_tool_observations_patch
 from crew.bedrock_stop_sequences_patch import apply_bedrock_stop_sequences_patch
+from crew.crewai_guardrail_scratchpad_patch import apply_guardrail_scratchpad_patch
 apply_bedrock_stop_sequences_patch()
 
 apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
+apply_guardrail_scratchpad_patch()
 
 from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool, get_last_adverse_id, reset_adverse_state
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool, get_last_run_id, reset_run_id

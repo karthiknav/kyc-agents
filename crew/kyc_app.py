@@ -174,10 +174,20 @@ def _run_kyc_crew_background(*, case_id: str, job_id: str) -> None:
                 except Exception:
                     logger.exception("[job=%s] Langfuse flush failed; continuing", job_id)
             return
-        except Exception:
-            logger.exception("[job=%s] KYC kickoff attempt %d/%d failed (caseId=%s)", job_id, attempt, max_attempts, case_id)
+        except Exception as e:
+            err_str = str(e)
+            is_guardrail_exhaustion = "validation after" in err_str and "retries" in err_str
+            restart_reason = "guardrail exhaustion" if is_guardrail_exhaustion else "transient error"
+            logger.exception(
+                "[job=%s] KYC kickoff attempt %d/%d failed — reason=%s (caseId=%s)",
+                job_id, attempt, max_attempts, restart_reason, case_id,
+            )
             if attempt < max_attempts:
-                logger.info("[job=%s] Retrying with a fresh crew instance...", job_id)
+                logger.warning(
+                    "[job=%s] ⚠️  Restarting ENTIRE crew from task 1 (attempt %d→%d, reason=%s). "
+                    "All stages including already-completed ones will re-run (caseId=%s)",
+                    job_id, attempt, attempt + 1, restart_reason, case_id,
+                )
 
     logger.error("[job=%s] All %d KYC kickoff attempts failed (caseId=%s)", job_id, max_attempts, case_id)
 
