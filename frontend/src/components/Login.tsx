@@ -29,7 +29,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 </div>
                 <div className="login-hero">
                     <h1>Intelligent KYC<br />powered by <span>Agentic AI</span></h1>
-                    <p>Automate document verification, sanctions screening, PEP checks, and risk scoring with multi-agent orchestration. Reduce onboarding time by 68% while maintaining full DNB compliance.</p>
+                    <p>Automate document verification, sanctions screening, PEP checks, and risk scoring with multi-agent orchestration. Reduce onboarding time by 70% while maintaining full DNB compliance.</p>
                 </div>
                 <div className="login-features">
                     <div className="login-feature">
