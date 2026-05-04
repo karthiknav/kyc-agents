@@ -532,10 +532,10 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
 
                                 <div className="upload-grid" style={{ marginTop: '30px', textAlign: 'left' }}>
                                     {/* Document Verification Stage */}
-                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'var(--accent-green)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
+                                    <div className="upload-card" style={{ borderLeft: `4px solid ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'var(--accent-green)' : selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MISMATCH' ? 'var(--accent-red)' : submissionStages?.documentProcessing ? 'var(--accent-blue)' : 'var(--border)'}` }}>
                                         <div className="upload-card-header" style={{ marginBottom: 0 }}>
                                             <div className="left">
-                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'verified' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🪪</div>
+                                                <div className={`doc-icon ${selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MATCH' ? 'verified' : selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MISMATCH' ? 'error' : submissionStages?.documentProcessing ? 'processing' : ''}`}>🪪</div>
                                                 <div>
                                                     <div className="doc-name">Document Verification</div>
                                                     <div className="doc-req">Analyzing ID authenticity and OCR extraction</div>
@@ -545,6 +545,8 @@ const Uploader: React.FC<UploaderProps> = ({ userId, initialStatus, initialSubmi
                                                 <span className="status-chip verified">✓ Completed</span>
                                             ) : selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'PARTIAL_MATCH' ? (
                                                 <span className="status-chip" style={{ background: 'var(--accent-orange-dim)', color: 'var(--accent-orange)' }}>⚠️ Partial Match</span>
+                                            ) : selectedSubmissionStageStatus(submissionStages?.documentProcessing) === 'MISMATCH' ? (
+                                                <span className="status-chip" style={{ background: 'var(--accent-red-dim)', color: 'var(--accent-red)' }}>✗ Mismatch</span>
                                             ) : submissionStages?.documentProcessing ? (
                                                 <span className="status-chip processing">⟳ In Progress</span>
                                             ) : (
