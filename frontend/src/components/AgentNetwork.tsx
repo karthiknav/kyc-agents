@@ -29,10 +29,11 @@ const net = networkData as NetworkData;
 
 // ── Layout ─────────────────────────────────────────────────────────────────
 const TOOL_W      = 178;
-const TOOL_X      = -270;   // right edge at -270+178 = -92, left edge of agent at 0 → 92px gap
+const TOOL_X      = -240;   // right edge at -240+178 = -62, left edge of agent at 0 → 62px gap
 const TOOL_STEP   = 58;
 const TOOL_H_EST  = 36;
-const TOOL_LANE_PADDING = 72;
+const TOOL_LANE_PADDING = 56;
+const TOOL_EDGE_COLOR = '#7C3AED';
 
 const AGENT_W     = 255;
 const AGENT_X     = 0;
@@ -41,7 +42,7 @@ const AGENT_STEP  = 290;
 const AGENT_H_EST = 120;
 const AUX_AGENT_X = TOOL_X - TOOL_W - TOOL_LANE_PADDING;
 const AUX_TOOL_X  = AUX_AGENT_X - TOOL_W - TOOL_LANE_PADDING;
-const AUX_AGENT_Y_GAP = 180;
+const SHARED_TOOL_X = AUX_TOOL_X;
 
 const INTG_W      = 185;
 const INTG_X      = 360;   // 105px gap from agent right edge
@@ -86,6 +87,19 @@ function buildGraph(data: NetworkData) {
   const agentY    = (i: number) => AGENT_Y0 + i * AGENT_STEP;
   const agentCtrY = (i: number) => agentY(i) + AGENT_H_EST / 2;
 
+  // Tool usage → detect shared tools (used by > 1 agent)
+  const toolToAgents = new Map<string, string[]>();
+  for (const agent of data.agents) {
+    for (const tool of agent.tools) {
+      const list = toolToAgents.get(tool);
+      if (list) list.push(agent.id);
+      else toolToAgents.set(tool, [agent.id]);
+    }
+  }
+  const sharedTools = new Set(
+    [...toolToAgents.entries()].filter(([, ids]) => ids.length > 1).map(([tool]) => tool)
+  );
+
   // Sort integrations by average agent-index centroid
   const sortedIntg = [...data.integrations].sort((a, b) => {
     const cent = (r: IntegrationRecord) => {
@@ -97,6 +111,7 @@ function buildGraph(data: NetworkData) {
 
   const nodes: Node[] = [];
   const edges: Edge[] = [];
+  const agentCenterY: Record<string, number> = {};
 
   // ── START ──────────────────────────────────────────────────────────────
   nodes.push({
@@ -120,12 +135,15 @@ function buildGraph(data: NetworkData) {
       },
     });
 
+    agentCenterY[agent.id] = agentCtrY(i);
+
     // ── Tool nodes for this agent ────────────────────────────────────────
-    const toolCount = agent.tools.length;
+    const uniqueTools = agent.tools.filter(t => !sharedTools.has(t));
+    const toolCount = uniqueTools.length;
     const spread    = (toolCount - 1) * TOOL_STEP;
     const startY    = agentCtrY(i) - spread / 2 - TOOL_H_EST / 2;
 
-    agent.tools.forEach((tool, j) => {
+    uniqueTools.forEach((tool, j) => {
       const nodeId = `__tool__${agent.id}__${tool}`;
       nodes.push({
         id: nodeId,
@@ -140,7 +158,7 @@ function buildGraph(data: NetworkData) {
         target: agent.id,
         targetHandle: 'left',
         type: 'smoothstep',
-        style: { stroke: accent(i), strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
+        style: { stroke: TOOL_EDGE_COLOR, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
         animated: false,
       });
     });
@@ -148,7 +166,9 @@ function buildGraph(data: NetworkData) {
 
   // ── END ────────────────────────────────────────────────────────────────
   const endY = agentY(pipeline.length) + 20;
-  const auxAgentY0 = endY + AUX_AGENT_Y_GAP;
+  const auxAgentY0 = pipeline.length
+    ? agentY(pipeline.length - 1)
+    : AGENT_Y0;
   nodes.push({
     id: '__end__',
     type: 'terminalNode',
@@ -175,12 +195,15 @@ function buildGraph(data: NetworkData) {
       },
     });
 
+    agentCenterY[agent.id] = auxCtrY;
+
     // ── Tool nodes for this auxiliary agent ─────────────────────────────
-    const toolCount = agent.tools.length;
+    const uniqueTools = agent.tools.filter(t => !sharedTools.has(t));
+    const toolCount = uniqueTools.length;
     const spread = (toolCount - 1) * TOOL_STEP;
     const startY = auxCtrY - spread / 2 - TOOL_H_EST / 2;
 
-    agent.tools.forEach((tool, j) => {
+    uniqueTools.forEach((tool, j) => {
       const nodeId = `__tool__${agent.id}__${tool}`;
       nodes.push({
         id: nodeId,
@@ -194,11 +217,48 @@ function buildGraph(data: NetworkData) {
         target: agent.id,
         targetHandle: 'left',
         type: 'smoothstep',
-        style: { stroke: auxAccent, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
+        style: { stroke: TOOL_EDGE_COLOR, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
         animated: false,
       });
     });
   });
+
+  // ── Shared tool nodes (used by > 1 agent) ───────────────────────────────
+  const sharedToolColor = TOOL_EDGE_COLOR;
+  const desiredShared = [...sharedTools]
+    .map(tool => {
+      const ids = toolToAgents.get(tool) ?? [];
+      const ys = ids.map(id => agentCenterY[id]).filter((v): v is number => typeof v === 'number');
+      const avg = ys.length ? ys.reduce((s, v) => s + v, 0) / ys.length : AGENT_Y0;
+      return { tool, ids, desiredTopY: avg - TOOL_H_EST / 2 };
+    })
+    .sort((a, b) => a.desiredTopY - b.desiredTopY || a.tool.localeCompare(b.tool));
+
+  let lastTopY = -Infinity;
+  for (const item of desiredShared) {
+    const topY = Math.max(item.desiredTopY, lastTopY + TOOL_STEP);
+    lastTopY = topY;
+    const nodeId = `__tool__shared__${item.tool}`;
+
+    nodes.push({
+      id: nodeId,
+      type: 'toolNode',
+      position: { x: SHARED_TOOL_X, y: topY },
+      data: { label: item.tool, accentColor: sharedToolColor },
+    });
+
+    for (const agentId of item.ids) {
+      edges.push({
+        id: `tool-shared-${item.tool}-${agentId}`,
+        source: nodeId,
+        target: agentId,
+        targetHandle: 'left',
+        type: 'smoothstep',
+        style: { stroke: sharedToolColor, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
+        animated: false,
+      });
+    }
+  }
 
   // ── Integration nodes ──────────────────────────────────────────────────
   sortedIntg.forEach((intg, i) => {
