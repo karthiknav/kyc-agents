@@ -28,29 +28,41 @@ interface NetworkData {
 const net = networkData as NetworkData;
 
 // ── Layout ─────────────────────────────────────────────────────────────────
-const TOOL_W      = 178;
-const TOOL_X      = -240;   // right edge at -240+178 = -62, left edge of agent at 0 → 62px gap
+const TOOL_W      = 200;
+const TOOL_X      = -320;
 const TOOL_STEP   = 58;
 const TOOL_H_EST  = 36;
-const TOOL_LANE_PADDING = 56;
-const TOOL_EDGE_COLOR = '#7C3AED';
 
-const AGENT_W     = 255;
+const AGENT_W     = 300;
 const AGENT_X     = 0;
 const AGENT_Y0    = 130;
-const AGENT_STEP  = 290;
+const AGENT_STEP  = 330;
 const AGENT_H_EST = 120;
-const AUX_AGENT_X = TOOL_X - TOOL_W - TOOL_LANE_PADDING;
-const AUX_TOOL_X  = AUX_AGENT_X - TOOL_W - TOOL_LANE_PADDING;
-const SHARED_TOOL_X = AUX_TOOL_X;
 
-const INTG_W      = 185;
-const INTG_X      = 360;   // 105px gap from agent right edge
+const INTG_W      = 210;
+const INTG_X      = 410;
 const INTG_STEP   = 128;
 
 // Accent color per pipeline position
 const ACCENT = ['#3B82F6', '#EF4444', '#F59E0B', '#10B981', '#8B5CF6'];
 const accent = (i: number) => ACCENT[i % ACCENT.length] ?? '#3B82F6';
+
+// ── Tool icon lookup ───────────────────────────────────────────────────────
+const TOOL_ICONS: Record<string, string> = {
+  get_case_details:               '📋',
+  get_case_files:                 '📁',
+  extract_document_text:          '🔬',
+  verify_identity_document:       '🪪',
+  compare_identity_documents:     '⚖️',
+  risk_list_screening:            '🛡️',
+  produce_adverse_media_analysis: '📰',
+  escalate_to_human:              '🚨',
+  get_case_stage_details:         '📊',
+  get_case_stages:                '📊',
+  analyze_override:               '🔍',
+  search_internet:                '🌐',
+};
+const toolIcon = (name: string) => TOOL_ICONS[name] ?? '🔧';
 
 // ── Output colors ──────────────────────────────────────────────────────────
 const OUTPUT_COLORS: Record<string, string> = {
@@ -58,10 +70,21 @@ const OUTPUT_COLORS: Record<string, string> = {
   MISMATCH: '#EF4444', ESCALATED: '#EF4444', NOK: '#EF4444', HIT: '#EF4444', INVALID: '#EF4444',
   PARTIAL_MATCH: '#F59E0B', PENDING_REVIEW: '#F59E0B', ERROR: '#F59E0B',
 };
-const TYPE_ICON: Record<string, string> = {
-  database: '🗄️', storage: '📦', api: '🌐', queue: '📨', llm: '🤖', search: '🔎',
-};
 const oc = (v: string) => OUTPUT_COLORS[v] ?? '#5A6580';
+
+// ── Integration type colors & icons ───────────────────────────────────────
+const INTG_TYPE_COLOR: Record<string, string> = {
+  database: '#F59E0B',
+  storage:  '#06B6D4',
+  api:      '#10B981',
+  queue:    '#EF4444',
+  llm:      '#8B5CF6',
+  search:   '#3B82F6',
+};
+const TYPE_ICON: Record<string, string> = {
+  database: '🗄️', storage: '☁️', api: '🌐', queue: '📨', llm: '🤖', search: '🔎',
+};
+const intgColor = (type: string) => INTG_TYPE_COLOR[type] ?? '#5A6580';
 
 // ── Pipeline builder ───────────────────────────────────────────────────────
 function buildPipeline(agents: AgentRecord[], flow: FlowEdge[]): AgentRecord[] {
@@ -87,20 +110,6 @@ function buildGraph(data: NetworkData) {
   const agentY    = (i: number) => AGENT_Y0 + i * AGENT_STEP;
   const agentCtrY = (i: number) => agentY(i) + AGENT_H_EST / 2;
 
-  // Tool usage → detect shared tools (used by > 1 agent)
-  const toolToAgents = new Map<string, string[]>();
-  for (const agent of data.agents) {
-    for (const tool of agent.tools) {
-      const list = toolToAgents.get(tool);
-      if (list) list.push(agent.id);
-      else toolToAgents.set(tool, [agent.id]);
-    }
-  }
-  const sharedTools = new Set(
-    [...toolToAgents.entries()].filter(([, ids]) => ids.length > 1).map(([tool]) => tool)
-  );
-
-  // Sort integrations by average agent-index centroid
   const sortedIntg = [...data.integrations].sort((a, b) => {
     const cent = (r: IntegrationRecord) => {
       const idxs = r.used_by.map(id => idToIdx[id] ?? 0);
@@ -111,13 +120,12 @@ function buildGraph(data: NetworkData) {
 
   const nodes: Node[] = [];
   const edges: Edge[] = [];
-  const agentCenterY: Record<string, number> = {};
 
   // ── START ──────────────────────────────────────────────────────────────
   nodes.push({
     id: '__start__',
     type: 'terminalNode',
-    position: { x: AGENT_X + AGENT_W / 2 - 42, y: 0 },
+    position: { x: AGENT_X + AGENT_W / 2 - 46, y: 0 },
     data: { label: 'START', isStart: true },
   });
 
@@ -132,18 +140,16 @@ function buildGraph(data: NetworkData) {
         role: agent.role,
         outputs: agent.outputs,
         accentColor: accent(i),
+        stepIndex: i,
       },
     });
 
-    agentCenterY[agent.id] = agentCtrY(i);
-
-    // ── Tool nodes for this agent ────────────────────────────────────────
-    const uniqueTools = agent.tools.filter(t => !sharedTools.has(t));
-    const toolCount = uniqueTools.length;
+    // ── Tool nodes ───────────────────────────────────────────────────────
+    const toolCount = agent.tools.length;
     const spread    = (toolCount - 1) * TOOL_STEP;
     const startY    = agentCtrY(i) - spread / 2 - TOOL_H_EST / 2;
 
-    uniqueTools.forEach((tool, j) => {
+    agent.tools.forEach((tool, j) => {
       const nodeId = `__tool__${agent.id}__${tool}`;
       nodes.push({
         id: nodeId,
@@ -151,14 +157,13 @@ function buildGraph(data: NetworkData) {
         position: { x: TOOL_X, y: startY + j * TOOL_STEP },
         data: { label: tool, accentColor: accent(i) },
       });
-      // Tool → Agent edge (tool feeds into agent, left to right)
       edges.push({
         id: `tool-${nodeId}`,
         source: nodeId,
         target: agent.id,
         targetHandle: 'left',
         type: 'smoothstep',
-        style: { stroke: TOOL_EDGE_COLOR, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
+        style: { stroke: accent(i), strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.7 },
         animated: false,
       });
     });
@@ -166,99 +171,28 @@ function buildGraph(data: NetworkData) {
 
   // ── END ────────────────────────────────────────────────────────────────
   const endY = agentY(pipeline.length) + 20;
-  const auxAgentY0 = pipeline.length
-    ? agentY(pipeline.length - 1)
-    : AGENT_Y0;
   nodes.push({
     id: '__end__',
     type: 'terminalNode',
-    position: { x: AGENT_X + AGENT_W / 2 - 42, y: endY },
+    position: { x: AGENT_X + AGENT_W / 2 - 46, y: endY },
     data: { label: 'END', isStart: false },
   });
 
-  // ── Auxiliary agents (not in flow) ─────────────────────────────────────
+  // ── Auxiliary agents ───────────────────────────────────────────────────
   data.agents.filter(a => !pipeIds.has(a.id)).forEach((agent, i) => {
-    const auxY = auxAgentY0 + i * AGENT_STEP;
-    const auxCtrY = auxY + AGENT_H_EST / 2;
-    const auxAccent = '#8B5CF6';
-
     nodes.push({
       id: agent.id,
       type: 'agentNode',
-      position: { x: AUX_AGENT_X, y: auxY },
+      position: { x: AGENT_X - 430, y: AGENT_Y0 + i * AGENT_STEP },
       data: {
         label: agent.label,
         role: agent.role,
         outputs: agent.outputs,
-        accentColor: auxAccent,
+        accentColor: '#8B5CF6',
         auxiliary: true,
       },
     });
-
-    agentCenterY[agent.id] = auxCtrY;
-
-    // ── Tool nodes for this auxiliary agent ─────────────────────────────
-    const uniqueTools = agent.tools.filter(t => !sharedTools.has(t));
-    const toolCount = uniqueTools.length;
-    const spread = (toolCount - 1) * TOOL_STEP;
-    const startY = auxCtrY - spread / 2 - TOOL_H_EST / 2;
-
-    uniqueTools.forEach((tool, j) => {
-      const nodeId = `__tool__${agent.id}__${tool}`;
-      nodes.push({
-        id: nodeId,
-        type: 'toolNode',
-        position: { x: AUX_TOOL_X, y: startY + j * TOOL_STEP },
-        data: { label: tool, accentColor: auxAccent },
-      });
-      edges.push({
-        id: `tool-${nodeId}`,
-        source: nodeId,
-        target: agent.id,
-        targetHandle: 'left',
-        type: 'smoothstep',
-        style: { stroke: TOOL_EDGE_COLOR, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
-        animated: false,
-      });
-    });
   });
-
-  // ── Shared tool nodes (used by > 1 agent) ───────────────────────────────
-  const sharedToolColor = TOOL_EDGE_COLOR;
-  const desiredShared = [...sharedTools]
-    .map(tool => {
-      const ids = toolToAgents.get(tool) ?? [];
-      const ys = ids.map(id => agentCenterY[id]).filter((v): v is number => typeof v === 'number');
-      const avg = ys.length ? ys.reduce((s, v) => s + v, 0) / ys.length : AGENT_Y0;
-      return { tool, ids, desiredTopY: avg - TOOL_H_EST / 2 };
-    })
-    .sort((a, b) => a.desiredTopY - b.desiredTopY || a.tool.localeCompare(b.tool));
-
-  let lastTopY = -Infinity;
-  for (const item of desiredShared) {
-    const topY = Math.max(item.desiredTopY, lastTopY + TOOL_STEP);
-    lastTopY = topY;
-    const nodeId = `__tool__shared__${item.tool}`;
-
-    nodes.push({
-      id: nodeId,
-      type: 'toolNode',
-      position: { x: SHARED_TOOL_X, y: topY },
-      data: { label: item.tool, accentColor: sharedToolColor },
-    });
-
-    for (const agentId of item.ids) {
-      edges.push({
-        id: `tool-shared-${item.tool}-${agentId}`,
-        source: nodeId,
-        target: agentId,
-        targetHandle: 'left',
-        type: 'smoothstep',
-        style: { stroke: sharedToolColor, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
-        animated: false,
-      });
-    }
-  }
 
   // ── Integration nodes ──────────────────────────────────────────────────
   sortedIntg.forEach((intg, i) => {
@@ -270,7 +204,7 @@ function buildGraph(data: NetworkData) {
     });
   });
 
-  // ── Pipeline edges (animated blue) ────────────────────────────────────
+  // ── Pipeline edges ─────────────────────────────────────────────────────
   const pipeNodes = ['__start__', ...pipeline.map(a => a.id), '__end__'];
   for (let i = 0; i < pipeNodes.length - 1; i++) {
     const src = pipeNodes[i]!;
@@ -291,11 +225,11 @@ function buildGraph(data: NetworkData) {
       labelStyle: { fill: '#5A6580', fontSize: 9, fontFamily: "'JetBrains Mono', monospace" },
       labelBgStyle: { fill: '#0D1323', fillOpacity: 0.95 },
       labelBgPadding: [5, 3] as [number, number],
-      labelBgBorderRadius: 4,
+      labelBgBorderRadius: 6,
     });
   }
 
-  // ── Integration edges (dashed slate) ──────────────────────────────────
+  // ── Integration edges ──────────────────────────────────────────────────
   sortedIntg.forEach(intg => {
     const tgt = `__intg__${intg.name}`;
     intg.used_by.filter(id => pipeIds.has(id)).forEach(agentId => {
@@ -304,7 +238,7 @@ function buildGraph(data: NetworkData) {
         source: agentId, target: tgt,
         sourceHandle: 'right',
         type: 'smoothstep',
-        style: { stroke: '#3B4F8A', strokeWidth: 1.5, strokeDasharray: '5 4', opacity: 0.7 },
+        style: { stroke: intgColor(intg.type), strokeWidth: 1.5, strokeDasharray: '5 4', opacity: 0.45 },
         animated: false,
       });
     });
@@ -320,23 +254,23 @@ function TerminalNode({ data }: NodeProps) {
   const color   = isStart ? '#06B6D4' : '#F59E0B';
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 7,
+      display: 'inline-flex', alignItems: 'center', gap: 8,
       background: color + '18',
       border: `1.5px solid ${color}`,
-      boxShadow: `0 0 16px ${color}44`,
-      borderRadius: 24, padding: '6px 16px',
+      boxShadow: `0 0 20px ${color}50, 0 0 40px ${color}20`,
+      borderRadius: 28, padding: '8px 20px',
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: 11, fontWeight: 700, color,
-      letterSpacing: '1px', whiteSpace: 'nowrap',
+      letterSpacing: '1.5px', whiteSpace: 'nowrap',
     }}>
       {!isStart && (
         <Handle type="target" position={Position.Top}
           style={{ background: color, border: 'none', width: 8, height: 8 }} />
       )}
       <span style={{
-        width: 7, height: 7, borderRadius: '50%',
+        width: 9, height: 9, borderRadius: '50%',
         background: color, display: 'inline-block',
-        boxShadow: `0 0 6px ${color}`,
+        boxShadow: `0 0 8px ${color}`,
       }} />
       {label}
       {isStart && (
@@ -354,82 +288,105 @@ function AgentNode({ data }: NodeProps) {
   const outputs     = data.outputs     as string[];
   const accentColor = data.accentColor as string;
   const aux         = data.auxiliary   as boolean | undefined;
+  const stepIndex   = data.stepIndex   as number | undefined;
 
   return (
     <div style={{
       width: AGENT_W,
       background: aux
-        ? 'linear-gradient(135deg, #111827 0%, #0D1323 100%)'
-        : 'linear-gradient(135deg, #1A2035 0%, #151C2E 100%)',
-      border: `1px solid ${accentColor}55`,
-      borderLeft: `3px solid ${accentColor}`,
-      borderRadius: 10,
+        ? 'linear-gradient(145deg, #111827 0%, #0D1323 100%)'
+        : 'linear-gradient(145deg, #1E2640 0%, #151C2E 60%, #111827 100%)',
+      border: `1px solid ${accentColor}40`,
+      borderRadius: 16,
       boxShadow: aux
         ? 'none'
-        : `0 0 20px ${accentColor}18, inset 0 1px 0 rgba(255,255,255,0.04)`,
-      padding: '13px 15px 13px 13px',
+        : `0 0 32px ${accentColor}28, 0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)`,
+      overflow: 'hidden',
       fontFamily: "'DM Sans', sans-serif",
       opacity: aux ? 0.7 : 1,
     }}>
-      <Handle id="top"    type="target" position={Position.Top}
-        style={{ background: '#3B82F6', border: '2px solid #0B0F1A', width: 10, height: 10 }} />
-      <Handle id="bottom" type="source" position={Position.Bottom}
-        style={{ background: '#3B82F6', border: '2px solid #0B0F1A', width: 10, height: 10 }} />
-      <Handle id="left"   type="target" position={Position.Left}
-        style={{ background: accentColor, border: '2px solid #0B0F1A', width: 9, height: 9 }} />
-      <Handle id="right"  type="source" position={Position.Right}
-        style={{ background: '#3B4F8A', border: '2px solid #0B0F1A', width: 9, height: 9 }} />
-
-      {aux && (
-        <div style={{
-          fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px',
-          color: '#8B5CF6', marginBottom: 5,
-        }}>
-          Auxiliary
-        </div>
-      )}
-
+      {/* Colored header bar */}
       <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8,
-      }}>
-        <div style={{
-          width: 6, height: 6, borderRadius: '50%',
-          background: accentColor, marginTop: 5, flexShrink: 0,
-          boxShadow: `0 0 6px ${accentColor}`,
-        }} />
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 13, color: '#E8ECF4', lineHeight: 1.3 }}>
-            {label}
-          </div>
-          <div style={{ fontSize: 11, color: '#8892A8', lineHeight: 1.5, marginTop: 3 }}>
-            <span style={{
-              display: 'block',
-              whiteSpace: 'normal',
-              overflowWrap: 'anywhere',
-              wordBreak: 'break-word',
-            }}>
-              {role}
-            </span>
-          </div>
-        </div>
-      </div>
+        height: 6,
+        background: `linear-gradient(90deg, ${accentColor}cc 0%, ${accentColor}44 100%)`,
+      }} />
 
-      {outputs.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 14 }}>
-          {outputs.map(out => (
-            <span key={out} style={{
-              background: oc(out) + '1a', color: oc(out),
-              border: `1px solid ${oc(out)}55`,
-              borderRadius: 4, padding: '2px 7px',
-              fontSize: 10, fontWeight: 700,
+      <div style={{ padding: '12px 15px 14px 14px' }}>
+        <Handle id="top"    type="target" position={Position.Top}
+          style={{ background: accentColor, border: `2px solid #0B0F1A`, width: 10, height: 10, top: -1 }} />
+        <Handle id="bottom" type="source" position={Position.Bottom}
+          style={{ background: accentColor, border: `2px solid #0B0F1A`, width: 10, height: 10 }} />
+        <Handle id="left"   type="target" position={Position.Left}
+          style={{ background: accentColor, border: '2px solid #0B0F1A', width: 9, height: 9 }} />
+        <Handle id="right"  type="source" position={Position.Right}
+          style={{ background: '#3B4F8A', border: '2px solid #0B0F1A', width: 9, height: 9 }} />
+
+        {/* Step / aux badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          {!aux && stepIndex !== undefined && (
+            <span style={{
+              background: accentColor + '22',
+              border: `1px solid ${accentColor}55`,
+              color: accentColor,
+              borderRadius: 6,
+              padding: '1px 7px',
+              fontSize: 9, fontWeight: 700,
               fontFamily: "'JetBrains Mono', monospace",
-              letterSpacing: '0.3px',
+              letterSpacing: '1px',
+              flexShrink: 0,
             }}>
-              {out}
+              STEP {String(stepIndex + 1).padStart(2, '0')}
             </span>
-          ))}
+          )}
+          {aux && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px',
+              color: '#8B5CF6',
+              background: '#8B5CF622',
+              border: '1px solid #8B5CF644',
+              borderRadius: 6, padding: '1px 7px',
+            }}>
+              Auxiliary
+            </span>
+          )}
         </div>
-      )}
+
+        {/* Label + role */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: accentColor, marginTop: 6, flexShrink: 0,
+            boxShadow: `0 0 8px ${accentColor}`,
+          }} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#E8ECF4', lineHeight: 1.3 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: 11, color: '#8892A8', lineHeight: 1.5, marginTop: 3 }}>
+              {role}
+            </div>
+          </div>
+        </div>
+
+        {/* Output badges */}
+        {outputs.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, paddingLeft: 16 }}>
+            {outputs.map(out => (
+              <span key={out} style={{
+                background: oc(out) + '18', color: oc(out),
+                border: `1px solid ${oc(out)}55`,
+                borderRadius: 20, padding: '3px 9px',
+                fontSize: 10, fontWeight: 700,
+                fontFamily: "'JetBrains Mono', monospace",
+                letterSpacing: '0.3px',
+                boxShadow: `0 0 8px ${oc(out)}22`,
+              }}>
+                {out}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -441,29 +398,20 @@ function ToolNode({ data }: NodeProps) {
   return (
     <div style={{
       width: TOOL_W,
-      background: 'linear-gradient(135deg, #0E0B1F 0%, #130F2A 100%)',
+      background: `linear-gradient(135deg, ${accentColor}0d 0%, rgba(255,255,255,0.02) 100%)`,
       border: `1px solid ${accentColor}44`,
-      borderRight: `2px solid ${accentColor}`,
-      borderRadius: 6,
-      boxShadow: `0 0 12px ${accentColor}22`,
-      padding: '7px 10px',
-      display: 'flex', alignItems: 'center', gap: 7,
+      borderRadius: 20,
+      boxShadow: `0 0 14px ${accentColor}1a, 0 2px 8px rgba(0,0,0,0.3)`,
+      padding: '7px 12px',
+      display: 'flex', alignItems: 'center', gap: 8,
       fontFamily: "'JetBrains Mono', monospace",
     }}>
       <Handle type="source" position={Position.Right}
         style={{ background: accentColor, border: '2px solid #0B0F1A', width: 8, height: 8 }} />
+      <span style={{ fontSize: 15, flexShrink: 0 }}>{toolIcon(label)}</span>
       <span style={{
-        fontSize: 13, color: accentColor, flexShrink: 0, opacity: 0.8,
-      }}>⚙</span>
-      <span style={{
-        fontSize: 10.5,
-        color: '#A5B4FC',
-        lineHeight: 1.4,
-        flex: '1 1 auto',
-        minWidth: 0,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
+        fontSize: 10.5, color: '#A5B4FC', lineHeight: 1.4,
+        wordBreak: 'break-all',
       }}>
         {label}
       </span>
@@ -475,32 +423,28 @@ function ToolNode({ data }: NodeProps) {
 function IntegrationNode({ data }: NodeProps) {
   const label    = data.label    as string;
   const intgType = data.intgType as string;
+  const color    = intgColor(intgType);
   return (
     <div style={{
       width: INTG_W,
-      background: 'linear-gradient(135deg, #0B1120 0%, #0D1628 100%)',
-      border: '1px solid #1E3A5F',
-      borderLeft: '2px solid #3B82F655',
-      borderRadius: 8,
-      boxShadow: '0 0 10px #3B82F610',
-      padding: '9px 12px',
-      display: 'flex', alignItems: 'center', gap: 9,
+      background: `linear-gradient(135deg, ${color}0d 0%, #0B1120 100%)`,
+      border: `1px solid ${color}33`,
+      borderLeft: `3px solid ${color}99`,
+      borderRadius: 12,
+      boxShadow: `0 0 16px ${color}18, 0 2px 10px rgba(0,0,0,0.35)`,
+      padding: '10px 14px',
+      display: 'flex', alignItems: 'center', gap: 10,
       fontFamily: "'DM Sans', sans-serif",
     }}>
       <Handle type="target" position={Position.Left}
-        style={{ background: '#3B4F8A', border: '2px solid #0B0F1A', width: 8, height: 8 }} />
-      <span style={{ fontSize: 16, flexShrink: 0 }}>{TYPE_ICON[intgType] ?? '🔌'}</span>
+        style={{ background: color, border: '2px solid #0B0F1A', width: 8, height: 8 }} />
+      <span style={{ fontSize: 20, flexShrink: 0 }}>{TYPE_ICON[intgType] ?? '🔌'}</span>
       <div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#C4D0E8' }}>{label}</div>
         <div style={{
-          fontSize: 12,
-          fontWeight: 500,
-          color: '#C4D0E8',
-          maxWidth: INTG_W - 60,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>{label}</div>
-        <div style={{ fontSize: 10, color: '#3B4F8A', textTransform: 'capitalize', marginTop: 1 }}>
+          fontSize: 10, fontWeight: 600, textTransform: 'capitalize', marginTop: 2,
+          color: color, opacity: 0.85,
+        }}>
           {intgType}
         </div>
       </div>
@@ -522,7 +466,7 @@ function Pill({ color, children }: { color: string; children: React.ReactNode })
   );
 }
 
-// ── Legend dot ─────────────────────────────────────────────────────────────
+// ── Legend item ────────────────────────────────────────────────────────────
 function LegendItem({ color, label }: { color: string; label: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -546,90 +490,68 @@ const nodeTypes = {
 };
 
 // ── Main component ─────────────────────────────────────────────────────────
-interface AgentNetworkProps {
-  topOffsetPx?: number;
-}
-
-const AgentNetwork: React.FC<AgentNetworkProps> = ({ topOffsetPx = 56 }) => {
+const AgentNetwork: React.FC = () => {
   const { nodes, edges } = useMemo(() => buildGraph(net), []);
 
   return (
-    <div style={{
-      height: `calc(100dvh - ${topOffsetPx}px)`,
-      marginTop: topOffsetPx,
-      background: '#0B0F1A',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
+    <div style={{ height: 'calc(100vh - 60px)', background: '#0B0F1A', position: 'relative' }}>
 
       {/* Top info bar */}
       <div style={{
-        paddingTop: 14,
-        paddingBottom: 10,
-        display: 'flex',
-        justifyContent: 'center',
+        position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 10,
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: 'rgba(13, 19, 35, 0.92)',
+        border: '1px solid #2A3454',
+        borderRadius: 28, padding: '7px 22px',
+        backdropFilter: 'blur(16px)',
+        boxShadow: '0 4px 28px rgba(0,0,0,0.6)',
+        whiteSpace: 'nowrap',
       }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: 'rgba(13, 19, 35, 0.9)',
-          border: '1px solid #2A3454',
-          borderRadius: 24, padding: '6px 20px',
-          backdropFilter: 'blur(12px)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
-          whiteSpace: 'nowrap',
-        }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#E8ECF4', letterSpacing: '0.3px' }}>
-            Agent Network
-          </span>
-          <span style={{ width: 1, height: 14, background: '#2A3454', display: 'inline-block', margin: '0 2px' }} />
-          <Pill color="#8B5CF6">{net.metadata.framework}</Pill>
-          <Pill color="#3B82F6">{net.metadata.execution_model}</Pill>
-          <span style={{ fontSize: 11, color: '#5A6580', fontFamily: "'JetBrains Mono', monospace" }}>
-            {net.metadata.entry_point}
-          </span>
-        </div>
-      </div>
-
-      <div style={{ flex: '1 1 auto', minHeight: 0 }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.12 }}
-          nodesDraggable
-          nodesConnectable={false}
-          elementsSelectable={false}
-          style={{ width: '100%', height: '100%', background: '#0B0F1A' }}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} color="#1A2035" gap={22} size={1} />
-          <Controls style={{
-            background: '#1A2035', border: '1px solid #2A3454',
-            borderRadius: 8, bottom: 16, left: 16,
-          }} />
-        </ReactFlow>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#E8ECF4', letterSpacing: '0.3px' }}>
+          Agent Network
+        </span>
+        <span style={{ width: 1, height: 14, background: '#2A3454', display: 'inline-block', margin: '0 2px' }} />
+        <Pill color="#8B5CF6">{net.metadata.framework}</Pill>
+        <Pill color="#3B82F6">{net.metadata.execution_model}</Pill>
+        <span style={{ fontSize: 11, color: '#5A6580', fontFamily: "'JetBrains Mono', monospace" }}>
+          {net.metadata.entry_point}
+        </span>
       </div>
 
       {/* Bottom legend */}
       <div style={{
-        paddingTop: 10,
-        paddingBottom: 16,
-        display: 'flex',
-        justifyContent: 'center',
+        position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 10,
+        display: 'flex', alignItems: 'center', gap: 16,
+        background: 'rgba(13, 19, 35, 0.88)',
+        border: '1px solid #2A3454',
+        borderRadius: 24, padding: '7px 22px',
+        backdropFilter: 'blur(10px)',
       }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 16,
-          background: 'rgba(13, 19, 35, 0.85)',
-          border: '1px solid #2A3454',
-          borderRadius: 20, padding: '6px 20px',
-          backdropFilter: 'blur(8px)',
-        }}>
-          <LegendItem color="#3B82F6" label="Pipeline flow" />
-          <LegendItem color="#7C3AED" label="Tool call" />
-          <LegendItem color="#3B4F8A" label="Integration" />
-        </div>
+        <LegendItem color="#3B82F6" label="Pipeline flow" />
+        <LegendItem color="#7C3AED" label="Tool call" />
+        <LegendItem color="#4B6FA8" label="Integration" />
       </div>
+
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.12 }}
+        nodesDraggable
+        nodesConnectable={false}
+        elementsSelectable={false}
+        style={{ background: '#0B0F1A' }}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} color="#1A2035" gap={24} size={1.2} />
+        <Controls style={{
+          background: '#1A2035', border: '1px solid #2A3454',
+          borderRadius: 10, bottom: 64, left: 16,
+        }} />
+      </ReactFlow>
     </div>
   );
 };
