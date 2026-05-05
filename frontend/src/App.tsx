@@ -4,6 +4,7 @@ import Navbar from './components/Navbar.js';
 import Uploader from './components/Uploader.js';
 import Dashboard from './components/Dashboard.js';
 import Escalation from './components/Escalation.js';
+import AgentNetwork from './components/AgentNetwork.js';
 
 import type { Role, User } from './types.js';
 import { API_BASE_URL } from './config.js';
@@ -75,6 +76,7 @@ function App() {
       )}
       {currentView === 'dashboard' && <Dashboard onEscalate={() => handleViewChange('escalation')} />}
       {currentView === 'escalation' && <Escalation />}
+      {currentView === 'agent-network' && <AgentNetwork />}
     </div>
   );
 }

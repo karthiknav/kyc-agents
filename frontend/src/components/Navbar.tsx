@@ -47,6 +47,12 @@ const Navbar: React.FC<NavbarProps> = ({ role, onLogout, currentView, onViewChan
                                 {escalationCount}
                             </span>
                         </button>
+                        <button
+                            className={`role-tab ${currentView === 'agent-network' ? 'active' : ''}`}
+                            onClick={() => onViewChange('agent-network')}
+                        >
+                            🕸️ Agent Network
+                        </button>
                     </>
                 ) : ''}
             </div>

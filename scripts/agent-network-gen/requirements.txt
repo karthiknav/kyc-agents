@@ -1,0 +1,4 @@
+llama-index>=0.12
+llama-index-embeddings-bedrock>=0.4
+llama-index-llms-bedrock-converse>=0.4
+boto3>=1.34
