@@ -171,6 +171,87 @@ Resources:
         Type: CODEPIPELINE
         BuildSpec: buildspec-langfuse.yml
 
+  # ── CodeBuild — generates agent-network JSON ─────────────────────────────
+  GenerateAgentNetworkCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-generate-agent-network"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GenerateAgentNetwork
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${PipelineArtifactBucket}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${PipelineArtifactBucket}/*"
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+
+  GenerateAgentNetworkProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-generate-agent-network"
+      Description: Generate agent network JSON by indexing crew/ and querying via Bedrock
+      ServiceRole: !GetAtt GenerateAgentNetworkCodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+          - Name: PYTHONUNBUFFERED
+            Value: "1"
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.11
+              commands:
+                - python -m pip install --upgrade pip
+            build:
+              commands:
+                - cd scripts/agent-network-gen
+                - python -m pip install -r requirements.txt
+                - python generate_agent_network.py --input-dir crew --output-file agent-network.json
+                - test -f agent-network.json
+                - cd ../..
+          artifacts:
+            files:
+              - scripts/agent-network-gen/agent-network.json
+            discard-paths: no
+
   # ── CodePipeline ─────────────────────────────────────────────────────────────
   AgentPipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -266,6 +347,23 @@ Resources:
                 ProjectName: !Ref LangfuseRelaunchProject
               InputArtifacts:
                 - Name: SourceArtifact
+              RunOrder: 1
+
+        # Stage 5: generate agent network JSON for the frontend
+        - Name: GenerateAgentNetwork
+          Actions:
+            - Name: GenerateAgentNetwork
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref GenerateAgentNetworkProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: AgentNetworkArtifact
               RunOrder: 1
 
 Outputs:

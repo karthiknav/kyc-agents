@@ -6,8 +6,16 @@ Usage (from repo root):
     python -m venv .venv
     .venv/Scripts/pip install -r requirements.txt
     python generate_agent_network.py
+
+Optional:
+    # Index a different folder than crew/
+    python generate_agent_network.py --input-dir crew
+
+    # Write output somewhere else (relative paths are relative to your current directory)
+    python generate_agent_network.py --output-file agent-network.json
 """
 
+import argparse
 import json
 import pathlib
 import sys
@@ -19,11 +27,35 @@ from llama_index.llms.bedrock_converse import BedrockConverse
 # ── Paths ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR = pathlib.Path(__file__).parent
 REPO_ROOT   = SCRIPT_DIR.parent.parent          # kyc-agents/
-CREW_DIR    = REPO_ROOT / "crew"
-OUT_FILE    = REPO_ROOT / "frontend" / "src" / "agent-network.json"
 
-if not CREW_DIR.exists():
-    sys.exit(f"ERROR: crew/ directory not found at {CREW_DIR}")
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate agent-network JSON from a code folder")
+    parser.add_argument(
+        "--input-dir",
+        default="crew",
+        help="Folder to index (absolute or relative to repo root). Default: crew",
+    )
+    parser.add_argument(
+        "--output-file",
+        default="agent-network.json",
+        help="Where to write the JSON output (absolute or relative to current directory). Default: agent-network.json",
+    )
+    return parser.parse_args()
+
+
+args = _parse_args()
+input_dir = pathlib.Path(args.input_dir)
+if not input_dir.is_absolute():
+    input_dir = (REPO_ROOT / input_dir)
+input_dir = input_dir.resolve()
+
+out_file = pathlib.Path(args.output_file)
+if not out_file.is_absolute():
+    out_file = (pathlib.Path.cwd() / out_file)
+out_file = out_file.resolve()
+
+if not input_dir.exists():
+    sys.exit(f"ERROR: input directory not found at {input_dir}")
 
 # ── Models ────────────────────────────────────────────────────────────────
 Settings.embed_model = BedrockEmbedding(model_name="amazon.titan-embed-text-v2:0")
@@ -34,9 +66,9 @@ Settings.llm = BedrockConverse(
 )
 
 # ── Load crew/ source files ───────────────────────────────────────────────
-print(f"Reading {CREW_DIR} ...")
+print(f"Reading {input_dir} ...")
 docs = SimpleDirectoryReader(
-    input_dir=str(CREW_DIR),
+    input_dir=str(input_dir),
     exclude_hidden=True,
     exclude=["__pycache__", ".venv", "venv", "*.pyc", "output"],
     required_exts=[".py", ".yaml", ".yml", ".toml"],
@@ -104,9 +136,9 @@ manifest = {
 }
 
 # ── Write output ──────────────────────────────────────────────────────────
-OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-OUT_FILE.write_text(json.dumps(manifest, indent=2))
+out_file.parent.mkdir(parents=True, exist_ok=True)
+out_file.write_text(json.dumps(manifest, indent=2))
 
-print(f"\nDone — written to {OUT_FILE}")
+print(f"\nDone — written to {out_file}")
 print(f"  {len(manifest['agents'])} agents")
 print(f"  {len(manifest['flow'])} flow edges")
