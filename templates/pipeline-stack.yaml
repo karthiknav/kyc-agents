@@ -230,6 +230,10 @@ Resources:
             Value: !Ref AWS::Region
           - Name: PYTHONUNBUFFERED
             Value: "1"
+          - Name: AGENT_NETWORK_PUBLISH_BUCKET
+            Value: !Ref PipelineArtifactBucket
+          - Name: AGENT_NETWORK_PUBLISH_PREFIX
+            Value: "published/agent-network"
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -246,6 +250,7 @@ Resources:
                 - python -m pip install -r requirements.txt
                 - python generate_agent_network.py --input-dir crew --output-file agent-network.json
                 - test -f agent-network.json
+                - aws s3 cp agent-network.json "s3://$AGENT_NETWORK_PUBLISH_BUCKET/$AGENT_NETWORK_PUBLISH_PREFIX/latest.json" --region "$AWS_DEFAULT_REGION"
                 - cd ../..
           artifacts:
             files:
@@ -372,6 +377,24 @@ Outputs:
     Value: !GetAtt ECRRepository.RepositoryUri
     Export:
       Name: !Sub "${AWS::StackName}-ECRRepositoryUri"
+
+  PipelineArtifactBucketName:
+    Description: S3 bucket name used for pipeline artifacts (also stores published agent-network JSON)
+    Value: !Ref PipelineArtifactBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineArtifactBucketName"
+
+  AgentNetworkLatestBucketName:
+    Description: S3 bucket containing the published agent-network latest JSON
+    Value: !Ref PipelineArtifactBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentNetworkLatestBucketName"
+
+  AgentNetworkLatestObjectKey:
+    Description: S3 object key for the published agent-network latest JSON
+    Value: "published/agent-network/latest.json"
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentNetworkLatestObjectKey"
 
   PipelineName:
     Description: Name of the CodePipeline
