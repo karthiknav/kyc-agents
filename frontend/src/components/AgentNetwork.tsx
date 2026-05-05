@@ -40,6 +40,8 @@ const AGENT_Y0    = 130;
 const AGENT_STEP  = 290;
 const AGENT_H_EST = 120;
 const AUX_AGENT_X = TOOL_X - TOOL_W - TOOL_LANE_PADDING;
+const AUX_TOOL_X  = AUX_AGENT_X - TOOL_W - TOOL_LANE_PADDING;
+const AUX_AGENT_Y_GAP = 180;
 
 const INTG_W      = 185;
 const INTG_X      = 360;   // 105px gap from agent right edge
@@ -146,6 +148,7 @@ function buildGraph(data: NetworkData) {
 
   // ── END ────────────────────────────────────────────────────────────────
   const endY = agentY(pipeline.length) + 20;
+  const auxAgentY0 = endY + AUX_AGENT_Y_GAP;
   nodes.push({
     id: '__end__',
     type: 'terminalNode',
@@ -155,17 +158,45 @@ function buildGraph(data: NetworkData) {
 
   // ── Auxiliary agents (not in flow) ─────────────────────────────────────
   data.agents.filter(a => !pipeIds.has(a.id)).forEach((agent, i) => {
+    const auxY = auxAgentY0 + i * AGENT_STEP;
+    const auxCtrY = auxY + AGENT_H_EST / 2;
+    const auxAccent = '#8B5CF6';
+
     nodes.push({
       id: agent.id,
       type: 'agentNode',
-      position: { x: AUX_AGENT_X, y: AGENT_Y0 + i * AGENT_STEP },
+      position: { x: AUX_AGENT_X, y: auxY },
       data: {
         label: agent.label,
         role: agent.role,
         outputs: agent.outputs,
-        accentColor: '#8B5CF6',
+        accentColor: auxAccent,
         auxiliary: true,
       },
+    });
+
+    // ── Tool nodes for this auxiliary agent ─────────────────────────────
+    const toolCount = agent.tools.length;
+    const spread = (toolCount - 1) * TOOL_STEP;
+    const startY = auxCtrY - spread / 2 - TOOL_H_EST / 2;
+
+    agent.tools.forEach((tool, j) => {
+      const nodeId = `__tool__${agent.id}__${tool}`;
+      nodes.push({
+        id: nodeId,
+        type: 'toolNode',
+        position: { x: AUX_TOOL_X, y: startY + j * TOOL_STEP },
+        data: { label: tool, accentColor: auxAccent },
+      });
+      edges.push({
+        id: `tool-${nodeId}`,
+        source: nodeId,
+        target: agent.id,
+        targetHandle: 'left',
+        type: 'smoothstep',
+        style: { stroke: auxAccent, strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.65 },
+        animated: false,
+      });
     });
   });
 
