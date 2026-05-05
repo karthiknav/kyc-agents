@@ -183,6 +183,19 @@ class KYCCrew():
             except Exception:
                 parsed = {}
 
+            # Detect the "tool call as Final Answer" failure mode: the model outputs
+            # {"tool": "...", "tool_input": {...}} as text instead of calling the tool via the API.
+            if isinstance(parsed, dict) and "tool" in parsed and "tool_input" in parsed:
+                tool_name = parsed.get("tool", "unknown")
+                return (
+                    False,
+                    f"REJECTED: Your final answer IS a tool call (tool='{tool_name}'). "
+                    "You must EXECUTE tools by calling them — do not describe tool calls in your final answer. "
+                    "Start over: call get_case_details, get_case_files, extract_document_text, "
+                    "verify_identity_document, then compare_identity_documents. "
+                    "Only after all five tools have returned results should you produce your final JSON output.",
+                )
+
             expected = get_last_run_id()
             if not expected:
                 return (
@@ -223,6 +236,16 @@ class KYCCrew():
             except Exception:
                 parsed = {}
 
+            if isinstance(parsed, dict) and "tool" in parsed and "tool_input" in parsed:
+                tool_name = parsed.get("tool", "unknown")
+                return (
+                    False,
+                    f"REJECTED: Your final answer IS a tool call (tool='{tool_name}'). "
+                    "You must EXECUTE tools by calling them — do not describe tool calls in your final answer. "
+                    "Call get_case_details, then risk_list_screening. Only after both tools return results "
+                    "should you produce your final JSON output.",
+                )
+
             expected = get_last_screening_id()
             if not expected:
                 return (
@@ -259,6 +282,16 @@ class KYCCrew():
                 parsed = _json.loads(raw)
             except Exception:
                 parsed = {}
+
+            if isinstance(parsed, dict) and "tool" in parsed and "tool_input" in parsed:
+                tool_name = parsed.get("tool", "unknown")
+                return (
+                    False,
+                    f"REJECTED: Your final answer IS a tool call (tool='{tool_name}'). "
+                    "You must EXECUTE tools by calling them — do not describe tool calls in your final answer. "
+                    "Call get_case_details, search_internet, then produce_adverse_media_analysis. "
+                    "Only after all tools return results should you produce your final JSON output.",
+                )
 
             expected = get_last_adverse_id()
             if not expected:
