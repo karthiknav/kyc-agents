@@ -14,6 +14,7 @@ import { API_BASE_URL } from './config.js';
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<string>('dashboard');
+  const isAdminPath = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
 
   const handleLogin = async (email: string, password: string): Promise<boolean> => {
     try {
@@ -56,6 +57,29 @@ function App() {
     return <Login onLogin={handleLogin} />;
   }
 
+  if (isAdminPath) {
+    return (
+      <div className="app-container">
+        <Navbar
+          role={user.role}
+          onLogout={handleLogout}
+          currentView={'admin'}
+          onViewChange={(_view: string) => { }}
+          escalationCount={3}
+          variant="admin"
+        />
+
+        {user.role === 'analyst' ? (
+          <AgentNetwork />
+        ) : (
+          <div style={{ padding: '88px 32px 40px', color: 'var(--text-secondary)' }}>
+            You don’t have access to this page.
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       <Navbar
@@ -71,12 +95,10 @@ function App() {
           userId={user.user_id}
           initialStatus={user.status}
           initialSubmissionId={user.caseId}
-          onComplete={() => { }} // No longer need to switch views
         />
       )}
       {currentView === 'dashboard' && <Dashboard onEscalate={() => handleViewChange('escalation')} />}
       {currentView === 'escalation' && <Escalation />}
-      {currentView === 'agent-network' && <AgentNetwork />}
     </div>
   );
 }

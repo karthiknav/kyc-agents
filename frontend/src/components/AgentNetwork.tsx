@@ -32,12 +32,14 @@ const TOOL_W      = 178;
 const TOOL_X      = -270;   // right edge at -270+178 = -92, left edge of agent at 0 → 92px gap
 const TOOL_STEP   = 58;
 const TOOL_H_EST  = 36;
+const TOOL_LANE_PADDING = 72;
 
 const AGENT_W     = 255;
 const AGENT_X     = 0;
 const AGENT_Y0    = 130;
 const AGENT_STEP  = 290;
 const AGENT_H_EST = 120;
+const AUX_AGENT_X = TOOL_X - TOOL_W - TOOL_LANE_PADDING;
 
 const INTG_W      = 185;
 const INTG_X      = 360;   // 105px gap from agent right edge
@@ -156,7 +158,7 @@ function buildGraph(data: NetworkData) {
     nodes.push({
       id: agent.id,
       type: 'agentNode',
-      position: { x: AGENT_X - 380, y: AGENT_Y0 + i * AGENT_STEP },
+      position: { x: AUX_AGENT_X, y: AGENT_Y0 + i * AGENT_STEP },
       data: {
         label: agent.label,
         role: agent.role,
@@ -309,7 +311,14 @@ function AgentNode({ data }: NodeProps) {
             {label}
           </div>
           <div style={{ fontSize: 11, color: '#8892A8', lineHeight: 1.5, marginTop: 3 }}>
-            {role}
+            <span style={{
+              display: 'block',
+              whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}>
+              {role}
+            </span>
           </div>
         </div>
       </div>
@@ -356,8 +365,14 @@ function ToolNode({ data }: NodeProps) {
         fontSize: 13, color: accentColor, flexShrink: 0, opacity: 0.8,
       }}>⚙</span>
       <span style={{
-        fontSize: 10.5, color: '#A5B4FC', lineHeight: 1.4,
-        wordBreak: 'break-all',
+        fontSize: 10.5,
+        color: '#A5B4FC',
+        lineHeight: 1.4,
+        flex: '1 1 auto',
+        minWidth: 0,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
       }}>
         {label}
       </span>
@@ -385,7 +400,15 @@ function IntegrationNode({ data }: NodeProps) {
         style={{ background: '#3B4F8A', border: '2px solid #0B0F1A', width: 8, height: 8 }} />
       <span style={{ fontSize: 16, flexShrink: 0 }}>{TYPE_ICON[intgType] ?? '🔌'}</span>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 500, color: '#C4D0E8' }}>{label}</div>
+        <div style={{
+          fontSize: 12,
+          fontWeight: 500,
+          color: '#C4D0E8',
+          maxWidth: INTG_W - 60,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>{label}</div>
         <div style={{ fontSize: 10, color: '#3B4F8A', textTransform: 'capitalize', marginTop: 1 }}>
           {intgType}
         </div>
@@ -432,68 +455,90 @@ const nodeTypes = {
 };
 
 // ── Main component ─────────────────────────────────────────────────────────
-const AgentNetwork: React.FC = () => {
+interface AgentNetworkProps {
+  topOffsetPx?: number;
+}
+
+const AgentNetwork: React.FC<AgentNetworkProps> = ({ topOffsetPx = 56 }) => {
   const { nodes, edges } = useMemo(() => buildGraph(net), []);
 
   return (
-    <div style={{ height: 'calc(100vh - 60px)', background: '#0B0F1A', position: 'relative' }}>
+    <div style={{
+      height: `calc(100dvh - ${topOffsetPx}px)`,
+      marginTop: topOffsetPx,
+      background: '#0B0F1A',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
 
       {/* Top info bar */}
       <div style={{
-        position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)',
-        zIndex: 10,
-        display: 'flex', alignItems: 'center', gap: 8,
-        background: 'rgba(13, 19, 35, 0.9)',
-        border: '1px solid #2A3454',
-        borderRadius: 24, padding: '6px 20px',
-        backdropFilter: 'blur(12px)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
-        whiteSpace: 'nowrap',
+        paddingTop: 14,
+        paddingBottom: 10,
+        display: 'flex',
+        justifyContent: 'center',
       }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#E8ECF4', letterSpacing: '0.3px' }}>
-          Agent Network
-        </span>
-        <span style={{ width: 1, height: 14, background: '#2A3454', display: 'inline-block', margin: '0 2px' }} />
-        <Pill color="#8B5CF6">{net.metadata.framework}</Pill>
-        <Pill color="#3B82F6">{net.metadata.execution_model}</Pill>
-        <span style={{ fontSize: 11, color: '#5A6580', fontFamily: "'JetBrains Mono', monospace" }}>
-          {net.metadata.entry_point}
-        </span>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'rgba(13, 19, 35, 0.9)',
+          border: '1px solid #2A3454',
+          borderRadius: 24, padding: '6px 20px',
+          backdropFilter: 'blur(12px)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+          whiteSpace: 'nowrap',
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#E8ECF4', letterSpacing: '0.3px' }}>
+            Agent Network
+          </span>
+          <span style={{ width: 1, height: 14, background: '#2A3454', display: 'inline-block', margin: '0 2px' }} />
+          <Pill color="#8B5CF6">{net.metadata.framework}</Pill>
+          <Pill color="#3B82F6">{net.metadata.execution_model}</Pill>
+          <span style={{ fontSize: 11, color: '#5A6580', fontFamily: "'JetBrains Mono', monospace" }}>
+            {net.metadata.entry_point}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ flex: '1 1 auto', minHeight: 0 }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.12 }}
+          nodesDraggable
+          nodesConnectable={false}
+          elementsSelectable={false}
+          style={{ width: '100%', height: '100%', background: '#0B0F1A' }}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Dots} color="#1A2035" gap={22} size={1} />
+          <Controls style={{
+            background: '#1A2035', border: '1px solid #2A3454',
+            borderRadius: 8, bottom: 16, left: 16,
+          }} />
+        </ReactFlow>
       </div>
 
       {/* Bottom legend */}
       <div style={{
-        position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-        zIndex: 10,
-        display: 'flex', alignItems: 'center', gap: 16,
-        background: 'rgba(13, 19, 35, 0.85)',
-        border: '1px solid #2A3454',
-        borderRadius: 20, padding: '6px 20px',
-        backdropFilter: 'blur(8px)',
+        paddingTop: 10,
+        paddingBottom: 16,
+        display: 'flex',
+        justifyContent: 'center',
       }}>
-        <LegendItem color="#3B82F6" label="Pipeline flow" />
-        <LegendItem color="#7C3AED" label="Tool call" />
-        <LegendItem color="#3B4F8A" label="Integration" />
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 16,
+          background: 'rgba(13, 19, 35, 0.85)',
+          border: '1px solid #2A3454',
+          borderRadius: 20, padding: '6px 20px',
+          backdropFilter: 'blur(8px)',
+        }}>
+          <LegendItem color="#3B82F6" label="Pipeline flow" />
+          <LegendItem color="#7C3AED" label="Tool call" />
+          <LegendItem color="#3B4F8A" label="Integration" />
+        </div>
       </div>
-
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.12 }}
-        nodesDraggable
-        nodesConnectable={false}
-        elementsSelectable={false}
-        style={{ background: '#0B0F1A' }}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Dots} color="#1A2035" gap={22} size={1} />
-        <Controls style={{
-          background: '#1A2035', border: '1px solid #2A3454',
-          borderRadius: 8, bottom: 60, left: 16,
-        }} />
-      </ReactFlow>
     </div>
   );
 };
