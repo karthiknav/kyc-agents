@@ -279,7 +279,7 @@ function buildGraph(data: NetworkData) {
       animated: true,
       label: meta?.label,
       style: { stroke: '#3B82F6', strokeWidth: 2.5 },
-      labelStyle: { fill: '#5A6580', fontSize: 9, fontFamily: "'JetBrains Mono', monospace" },
+      labelStyle: { fill: '#5A6580', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" },
       labelBgStyle: { fill: '#0D1323', fillOpacity: 0.95 },
       labelBgPadding: [5, 3] as [number, number],
       labelBgBorderRadius: 6,
@@ -381,7 +381,7 @@ function AgentNode({ data }: NodeProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
           {aux && (
             <span style={{
-              fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px',
+              fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px',
               color: '#8B5CF6',
               background: '#8B5CF622',
               border: '1px solid #8B5CF644',
@@ -400,10 +400,10 @@ function AgentNode({ data }: NodeProps) {
             boxShadow: `0 0 8px ${accentColor}`,
           }} />
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14, color: '#E8ECF4', lineHeight: 1.3 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#E8ECF4', lineHeight: 1.3 }}>
               {label}
             </div>
-            <div style={{ fontSize: 11, color: '#8892A8', lineHeight: 1.5, marginTop: 3 }}>
+            <div style={{ fontSize: 12, color: '#8892A8', lineHeight: 1.5, marginTop: 3 }}>
               {role}
             </div>
           </div>
@@ -417,7 +417,7 @@ function AgentNode({ data }: NodeProps) {
                 background: oc(out) + '18', color: oc(out),
                 border: `1px solid ${oc(out)}55`,
                 borderRadius: 20, padding: '3px 9px',
-                fontSize: 10, fontWeight: 700,
+                fontSize: 11, fontWeight: 700,
                 fontFamily: "'JetBrains Mono', monospace",
                 letterSpacing: '0.3px',
                 boxShadow: `0 0 8px ${oc(out)}22`,
@@ -457,7 +457,7 @@ function ToolNode({ data }: NodeProps) {
         style={{ background: borderColor, border: '2px solid #0B0F1A', width: 8, height: 8 }} />
       <span style={{ fontSize: 15, flexShrink: 0 }}>{toolIcon(label)}</span>
       <span style={{
-        fontSize: 10.5, color: shared ? '#C4B5FD' : '#A5B4FC', lineHeight: 1.4,
+        fontSize: 12, color: shared ? '#C4B5FD' : '#A5B4FC', lineHeight: 1.4,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
       }}>
         {label}
@@ -485,11 +485,11 @@ function IntegrationNode({ data }: NodeProps) {
     }}>
       <Handle type="target" position={Position.Left}
         style={{ background: color, border: '2px solid #0B0F1A', width: 8, height: 8 }} />
-      <span style={{ fontSize: 20, flexShrink: 0 }}>{TYPE_ICON[intgType] ?? '🔌'}</span>
+      <span style={{ fontSize: 22, flexShrink: 0 }}>{TYPE_ICON[intgType] ?? '🔌'}</span>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#C4D0E8' }}>{label}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#C4D0E8' }}>{label}</div>
         <div style={{
-          fontSize: 10, fontWeight: 600, textTransform: 'capitalize', marginTop: 2,
+          fontSize: 11, fontWeight: 600, textTransform: 'capitalize', marginTop: 2,
           color: color, opacity: 0.85,
         }}>
           {intgType}
@@ -506,7 +506,7 @@ function Pill({ color, children }: { color: string; children: React.ReactNode })
       background: color + '20', color,
       border: `1px solid ${color}55`,
       borderRadius: 20, padding: '2px 10px',
-      fontSize: 11, fontWeight: 500,
+      fontSize: 12, fontWeight: 500,
     }}>
       {children}
     </span>
@@ -526,7 +526,7 @@ function LegendItem({ color, label, dash, thickness = 2 }: {
           strokeLinecap="round"
         />
       </svg>
-      <span style={{ fontSize: 10, color: '#8892A8', letterSpacing: '0.2px' }}>{label}</span>
+      <span style={{ fontSize: 11, color: '#8892A8', letterSpacing: '0.2px' }}>{label}</span>
     </div>
   );
 }
@@ -537,7 +537,7 @@ function StatPill({ children }: { children: React.ReactNode }) {
     <span style={{
       background: 'rgba(90,101,128,0.15)', color: '#8892A8',
       border: '1px solid #2A3454', borderRadius: 20,
-      padding: '2px 10px', fontSize: 11, fontWeight: 500,
+      padding: '2px 10px', fontSize: 12, fontWeight: 500,
       fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.2px',
     }}>
       {children}
