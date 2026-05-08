@@ -79,18 +79,14 @@ print(f"  {len(docs)} files loaded")
 # ── Build in-memory RAG index ─────────────────────────────────────────────
 print("Building index...")
 index = VectorStoreIndex.from_documents(docs)
-qe    = index.as_query_engine(similarity_top_k=8)
+qe        = index.as_query_engine(similarity_top_k=8)
+qe_agents = index.as_query_engine(similarity_top_k=20)  # wider net for agent discovery
 print("  Index ready")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
-def ask(question: str) -> "dict | list":
-    """Query the index; parse the LLM reply as JSON."""
-    result = qe.query(
-        f"{question}\n\nReply with valid JSON only. No explanation. No markdown."
-    )
-    text = str(result).strip()
-    # Strip accidental code-fence wrappers
+def _parse(text: str) -> "dict | list":
+    text = text.strip()
     for fence in ("```json", "```"):
         if text.startswith(fence):
             text = text[len(fence):]
@@ -98,18 +94,48 @@ def ask(question: str) -> "dict | list":
             text = text[:-3]
     return json.loads(text.strip())
 
+def ask(question: str) -> "dict | list":
+    """Query the index; parse the LLM reply as JSON."""
+    result = qe.query(f"{question}\n\nReply with valid JSON only. No explanation. No markdown.")
+    return _parse(str(result))
+
+def ask_agents(question: str) -> list:
+    """Like ask() but uses a wider retrieval window for better agent coverage."""
+    result = qe_agents.query(f"{question}\n\nReply with valid JSON only. No explanation. No markdown.")
+    return _parse(str(result))
+
 
 # ── Structured queries ────────────────────────────────────────────────────
 print("Querying...")
 
+AGENT_ITEM_SCHEMA = (
+    "id (snake_case), label (display name), "
+    "role (10 words max — high-level verb phrase, e.g. 'Screens PEP and sanctions lists'), "
+    "tools (list of tool/function names it can call), "
+    "outputs (possible result values like APPROVED, MATCH, OK, VALID, INVALID)."
+)
+
+# Primary pass — main pipeline agents
+pipeline_agents: list = ask_agents(
+    "List every agent defined in agents.yaml or similar config files that is part of the main "
+    "sequential KYC pipeline. "
+    f"Return a JSON array where each item has: {AGENT_ITEM_SCHEMA}"
+)
+
+# Secondary pass — standalone / auxiliary agents (separate yaml files, on-demand crews)
+aux_agents: list = ask_agents(
+    "List every agent defined in override_agents.yaml or any other separate agent config file "
+    "that runs independently of the main pipeline (e.g. override validation, human review). "
+    "Do NOT repeat agents already in the main pipeline. "
+    f"Return a JSON array where each item has: {AGENT_ITEM_SCHEMA}"
+)
+
+# Merge, deduplicating by id
+seen_ids: set = {a["id"] for a in pipeline_agents}
+all_agents = pipeline_agents + [a for a in aux_agents if a["id"] not in seen_ids]
+
 manifest = {
-    "agents": ask(
-        "List every agent or autonomous unit in this codebase. "
-        "Return a JSON array where each item has: "
-        "id (snake_case), label (display name), role (10 words max — high-level verb phrase, e.g. 'Screens PEP and sanctions lists'), "
-        "tools (list of tool/function names it can call), "
-        "outputs (possible result values like APPROVED, MATCH, OK)."
-    ),
+    "agents": all_agents,
     "flow": ask(
         "What is the execution order or graph between agents? "
         "Return a JSON array of edges, each with: "
