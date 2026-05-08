@@ -110,7 +110,7 @@ print("Querying...")
 
 AGENT_ITEM_SCHEMA = (
     "id (snake_case), label (display name), "
-    "role (10 words max — high-level verb phrase, e.g. 'Screens PEP and sanctions lists'), "
+    "role (5 words max — IMPORTANT - very high-level verb phrase, e.g. 'Screens PEP and sanctions lists'), "
     "tools (list of tool/function names it can call), "
     "outputs (possible result values like APPROVED, MATCH, OK, VALID, INVALID)."
 )
