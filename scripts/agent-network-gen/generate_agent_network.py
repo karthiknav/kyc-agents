@@ -106,7 +106,7 @@ manifest = {
     "agents": ask(
         "List every agent or autonomous unit in this codebase. "
         "Return a JSON array where each item has: "
-        "id (snake_case), label (display name), role (one sentence), "
+        "id (snake_case), label (display name), role (10 words max — high-level verb phrase, e.g. 'Screens PEP and sanctions lists'), "
         "tools (list of tool/function names it can call), "
         "outputs (possible result values like APPROVED, MATCH, OK)."
     ),

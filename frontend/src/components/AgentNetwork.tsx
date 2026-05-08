@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
@@ -6,6 +6,7 @@ import {
   Handle,
   Position,
   BackgroundVariant,
+  useViewport,
   type Node,
   type Edge,
   type NodeProps,
@@ -27,21 +28,31 @@ interface NetworkData {
 
 const net = networkData as NetworkData;
 
+const STATS = {
+  agents:       net.agents.length,
+  tools:        new Set(net.agents.flatMap(a => a.tools)).size,
+  integrations: net.integrations.length,
+};
+
+
 // ── Layout ─────────────────────────────────────────────────────────────────
-const TOOL_W      = 200;
-const TOOL_X      = -320;
-const TOOL_STEP   = 58;
+const TOOL_W      = 230;
+const TOOL_X      = -350;
+const TOOL_STEP   = 52;
 const TOOL_H_EST  = 36;
 
 const AGENT_W     = 300;
 const AGENT_X     = 0;
-const AGENT_Y0    = 130;
-const AGENT_STEP  = 330;
+const AGENT_Y0    = 100;
+const AGENT_STEP  = 230;
 const AGENT_H_EST = 120;
 
 const INTG_W      = 210;
 const INTG_X      = 410;
-const INTG_STEP   = 128;
+const INTG_STEP   = 95;
+
+const AUX_AGENT_X = AGENT_X - 700;    // -700  (right edge -400, clears pipeline tools at -320)
+const AUX_TOOL_X  = AUX_AGENT_X - 260; // -960
 
 // Accent color per pipeline position
 const ACCENT = ['#3B82F6', '#EF4444', '#F59E0B', '#10B981', '#8B5CF6'];
@@ -107,6 +118,11 @@ function buildGraph(data: NetworkData) {
   const pipeline  = buildPipeline(data.agents, data.flow);
   const pipeIds   = new Set(pipeline.map(a => a.id));
   const idToIdx   = Object.fromEntries(pipeline.map((a, i) => [a.id, i]));
+  const auxAgents = data.agents.filter(a => !pipeIds.has(a.id));
+
+  const pipeToolNames  = new Set(pipeline.flatMap(a => a.tools));
+  const auxToolNames   = new Set(auxAgents.flatMap(a => a.tools));
+  const sharedToolNames = new Set([...pipeToolNames].filter(t => auxToolNames.has(t)));
   const agentY    = (i: number) => AGENT_Y0 + i * AGENT_STEP;
   const agentCtrY = (i: number) => agentY(i) + AGENT_H_EST / 2;
 
@@ -140,7 +156,6 @@ function buildGraph(data: NetworkData) {
         role: agent.role,
         outputs: agent.outputs,
         accentColor: accent(i),
-        stepIndex: i,
       },
     });
 
@@ -155,7 +170,7 @@ function buildGraph(data: NetworkData) {
         id: nodeId,
         type: 'toolNode',
         position: { x: TOOL_X, y: startY + j * TOOL_STEP },
-        data: { label: tool, accentColor: accent(i) },
+        data: { label: tool, accentColor: accent(i), shared: sharedToolNames.has(tool) },
       });
       edges.push({
         id: `tool-${nodeId}`,
@@ -178,12 +193,14 @@ function buildGraph(data: NetworkData) {
     data: { label: 'END', isStart: false },
   });
 
-  // ── Auxiliary agents ───────────────────────────────────────────────────
-  data.agents.filter(a => !pipeIds.has(a.id)).forEach((agent, i) => {
+  // ── Auxiliary agents + their tools ────────────────────────────────────
+  auxAgents.forEach((agent, i) => {
+    const auxCtrY = AGENT_Y0 + i * AGENT_STEP + AGENT_H_EST / 2;
+
     nodes.push({
       id: agent.id,
       type: 'agentNode',
-      position: { x: AGENT_X - 430, y: AGENT_Y0 + i * AGENT_STEP },
+      position: { x: AUX_AGENT_X, y: AGENT_Y0 + i * AGENT_STEP },
       data: {
         label: agent.label,
         role: agent.role,
@@ -191,6 +208,46 @@ function buildGraph(data: NetworkData) {
         accentColor: '#8B5CF6',
         auxiliary: true,
       },
+    });
+
+    const toolCount = agent.tools.length;
+    const spread    = (toolCount - 1) * TOOL_STEP;
+    const startY    = auxCtrY - spread / 2 - TOOL_H_EST / 2;
+
+    agent.tools.forEach((tool, j) => {
+      const isShared = sharedToolNames.has(tool);
+      const nodeId   = `__tool__${agent.id}__${tool}`;
+      nodes.push({
+        id: nodeId,
+        type: 'toolNode',
+        position: { x: AUX_TOOL_X, y: startY + j * TOOL_STEP },
+        data: { label: tool, accentColor: '#8B5CF6', shared: isShared },
+      });
+      edges.push({
+        id: `tool-${nodeId}`,
+        source: nodeId,
+        target: agent.id,
+        targetHandle: 'left',
+        type: 'smoothstep',
+        style: { stroke: '#8B5CF6', strokeWidth: 1.5, strokeDasharray: '4 3', opacity: 0.7 },
+        animated: false,
+      });
+
+      if (isShared) {
+        const pipelineOwner = pipeline.find(a => a.tools.includes(tool));
+        if (pipelineOwner) {
+          const pipeToolNodeId = `__tool__${pipelineOwner.id}__${tool}`;
+          edges.push({
+            id: `shared-bridge-${tool}`,
+            source: nodeId,
+            target: pipeToolNodeId,
+            targetHandle: 'sharedBridge',
+            type: 'smoothstep',
+            style: { stroke: '#A78BFA', strokeWidth: 1.5, strokeDasharray: '3 3', opacity: 0.6 },
+            animated: false,
+          });
+        }
+      }
     });
   });
 
@@ -288,7 +345,6 @@ function AgentNode({ data }: NodeProps) {
   const outputs     = data.outputs     as string[];
   const accentColor = data.accentColor as string;
   const aux         = data.auxiliary   as boolean | undefined;
-  const stepIndex   = data.stepIndex   as number | undefined;
 
   return (
     <div style={{
@@ -321,23 +377,8 @@ function AgentNode({ data }: NodeProps) {
         <Handle id="right"  type="source" position={Position.Right}
           style={{ background: '#3B4F8A', border: '2px solid #0B0F1A', width: 9, height: 9 }} />
 
-        {/* Step / aux badge */}
+        {/* Aux badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          {!aux && stepIndex !== undefined && (
-            <span style={{
-              background: accentColor + '22',
-              border: `1px solid ${accentColor}55`,
-              color: accentColor,
-              borderRadius: 6,
-              padding: '1px 7px',
-              fontSize: 9, fontWeight: 700,
-              fontFamily: "'JetBrains Mono', monospace",
-              letterSpacing: '1px',
-              flexShrink: 0,
-            }}>
-              STEP {String(stepIndex + 1).padStart(2, '0')}
-            </span>
-          )}
           {aux && (
             <span style={{
               fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px',
@@ -395,23 +436,29 @@ function AgentNode({ data }: NodeProps) {
 function ToolNode({ data }: NodeProps) {
   const label       = data.label       as string;
   const accentColor = data.accentColor as string;
+  const shared      = data.shared      as boolean | undefined;
+  const borderColor = shared ? '#A78BFA' : accentColor;
   return (
     <div style={{
       width: TOOL_W,
-      background: `linear-gradient(135deg, ${accentColor}0d 0%, rgba(255,255,255,0.02) 100%)`,
-      border: `1px solid ${accentColor}44`,
+      background: `linear-gradient(135deg, ${borderColor}0d 0%, rgba(255,255,255,0.02) 100%)`,
+      border: `1px solid ${borderColor}55`,
       borderRadius: 20,
-      boxShadow: `0 0 14px ${accentColor}1a, 0 2px 8px rgba(0,0,0,0.3)`,
+      boxShadow: `0 0 14px ${borderColor}1a, 0 2px 8px rgba(0,0,0,0.3)`,
       padding: '7px 12px',
       display: 'flex', alignItems: 'center', gap: 8,
       fontFamily: "'JetBrains Mono', monospace",
     }}>
+      {/* Left handle: target for shared-bridge edges */}
+      <Handle type="target" id="sharedBridge" position={Position.Left}
+        style={{ background: '#A78BFA', border: '2px solid #0B0F1A', width: 7, height: 7,
+                 opacity: shared ? 1 : 0, pointerEvents: shared ? 'auto' : 'none' }} />
       <Handle type="source" position={Position.Right}
-        style={{ background: accentColor, border: '2px solid #0B0F1A', width: 8, height: 8 }} />
+        style={{ background: borderColor, border: '2px solid #0B0F1A', width: 8, height: 8 }} />
       <span style={{ fontSize: 15, flexShrink: 0 }}>{toolIcon(label)}</span>
       <span style={{
-        fontSize: 10.5, color: '#A5B4FC', lineHeight: 1.4,
-        wordBreak: 'break-all',
+        fontSize: 10.5, color: shared ? '#C4B5FD' : '#A5B4FC', lineHeight: 1.4,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
       }}>
         {label}
       </span>
@@ -467,16 +514,64 @@ function Pill({ color, children }: { color: string; children: React.ReactNode })
 }
 
 // ── Legend item ────────────────────────────────────────────────────────────
-function LegendItem({ color, label }: { color: string; label: string }) {
+function LegendItem({ color, label, dash, thickness = 2 }: {
+  color: string; label: string; dash?: string; thickness?: number;
+}) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{
-        width: 20, height: 2,
-        background: color,
-        display: 'inline-block',
-        borderRadius: 1,
-      }} />
-      <span style={{ fontSize: 10, color: '#5A6580' }}>{label}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      <svg width="26" height="10" style={{ flexShrink: 0, overflow: 'visible' }}>
+        <line x1="0" y1="5" x2="26" y2="5"
+          stroke={color} strokeWidth={thickness}
+          strokeDasharray={dash}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span style={{ fontSize: 10, color: '#8892A8', letterSpacing: '0.2px' }}>{label}</span>
+    </div>
+  );
+}
+
+// ── Stat pill (top bar) ────────────────────────────────────────────────────
+function StatPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{
+      background: 'rgba(90,101,128,0.15)', color: '#8892A8',
+      border: '1px solid #2A3454', borderRadius: 20,
+      padding: '2px 10px', fontSize: 11, fontWeight: 500,
+      fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.2px',
+    }}>
+      {children}
+    </span>
+  );
+}
+
+
+// ── Pipeline pulse (inside ReactFlow so useViewport is in scope) ───────────
+const PULSE_CSS = `
+  @keyframes pipelinePulse {
+    0%   { offset-distance: 0%;   opacity: 0; }
+    5%   { opacity: 1; }
+    95%  { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+`;
+
+function PipelinePulseInner({ pipelineLength }: { pipelineLength: number }) {
+  const { x: vx, y: vy, zoom } = useViewport();
+  const startX = vx + (AGENT_X + AGENT_W / 2) * zoom;
+  const startY = vy + 18 * zoom;
+  const endY   = vy + (AGENT_Y0 + pipelineLength * AGENT_STEP + 20 + 18) * zoom;
+  const path   = `M ${startX} ${startY} L ${startX} ${endY}`;
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5, overflow: 'hidden' }}>
+      <div style={{
+        width: 14, height: 14, borderRadius: '50%',
+        background: 'radial-gradient(circle at 35% 35%, #06B6D4, #3B82F6)',
+        boxShadow: '0 0 12px #06B6D4, 0 0 24px #06B6D480',
+        position: 'absolute', transform: 'translate(-50%, -50%)',
+        animation: 'pipelinePulse 3s ease-in-out infinite',
+        ...({ 'offset-path': `path('${path}')` } as React.CSSProperties),
+      } as React.CSSProperties} />
     </div>
   );
 }
@@ -492,9 +587,59 @@ const nodeTypes = {
 // ── Main component ─────────────────────────────────────────────────────────
 const AgentNetwork: React.FC = () => {
   const { nodes, edges } = useMemo(() => buildGraph(net), []);
+  const pipeline = useMemo(() => buildPipeline(net.agents, net.flow), []);
+
+  // ── Hover highlight ──────────────────────────────────────────────────────
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  const adjacency = useMemo(() => {
+    const neighbors = new Map<string, Set<string>>();
+    const edgeIds   = new Map<string, Set<string>>();
+    for (const e of edges) {
+      if (!neighbors.has(e.source)) neighbors.set(e.source, new Set());
+      if (!neighbors.has(e.target)) neighbors.set(e.target, new Set());
+      if (!edgeIds.has(e.source))   edgeIds.set(e.source, new Set());
+      if (!edgeIds.has(e.target))   edgeIds.set(e.target, new Set());
+      neighbors.get(e.source)!.add(e.target);
+      neighbors.get(e.target)!.add(e.source);
+      edgeIds.get(e.source)!.add(e.id);
+      edgeIds.get(e.target)!.add(e.id);
+    }
+    return { neighbors, edgeIds };
+  }, [edges]);
+
+  const displayNodes = useMemo(() => {
+    if (!hoveredId) return nodes;
+    const connected = adjacency.neighbors.get(hoveredId) ?? new Set<string>();
+    return nodes.map(n => ({
+      ...n,
+      style: {
+        ...n.style,
+        opacity: (n.id === hoveredId || connected.has(n.id)) ? 1 : 0.12,
+        transition: 'opacity 0.2s ease',
+      },
+    }));
+  }, [nodes, hoveredId, adjacency]);
+
+  const displayEdges = useMemo(() => {
+    if (!hoveredId) return edges;
+    const connected = adjacency.edgeIds.get(hoveredId) ?? new Set<string>();
+    return edges.map(e => ({
+      ...e,
+      style: {
+        ...e.style,
+        opacity: connected.has(e.id) ? (e.style?.opacity ?? 1) : 0.04,
+        transition: 'opacity 0.2s ease',
+      },
+    }));
+  }, [edges, hoveredId, adjacency]);
+
+  const onMouseEnter = useCallback((_: React.MouseEvent, n: Node) => setHoveredId(n.id), []);
+  const onMouseLeave = useCallback(() => setHoveredId(null), []);
 
   return (
     <div style={{ height: 'calc(100vh - 60px)', background: '#0B0F1A', position: 'relative' }}>
+      <style>{PULSE_CSS}</style>
 
       {/* Top info bar */}
       <div style={{
@@ -517,26 +662,30 @@ const AgentNetwork: React.FC = () => {
         <span style={{ fontSize: 11, color: '#5A6580', fontFamily: "'JetBrains Mono', monospace" }}>
           {net.metadata.entry_point}
         </span>
+        <span style={{ width: 1, height: 14, background: '#2A3454', display: 'inline-block', margin: '0 2px' }} />
+        <StatPill>{STATS.agents} agents</StatPill>
+        <StatPill>{STATS.tools} tools</StatPill>
+        <StatPill>{STATS.integrations} integrations</StatPill>
       </div>
 
-      {/* Bottom legend */}
+      {/* Left legend */}
       <div style={{
-        position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+        position: 'absolute', bottom: 16, left: 16,
         zIndex: 10,
-        display: 'flex', alignItems: 'center', gap: 16,
+        display: 'flex', flexDirection: 'column', gap: 10,
         background: 'rgba(13, 19, 35, 0.88)',
         border: '1px solid #2A3454',
-        borderRadius: 24, padding: '7px 22px',
+        borderRadius: 16, padding: '12px 18px',
         backdropFilter: 'blur(10px)',
       }}>
-        <LegendItem color="#3B82F6" label="Pipeline flow" />
-        <LegendItem color="#7C3AED" label="Tool call" />
-        <LegendItem color="#4B6FA8" label="Integration" />
+        <LegendItem color="#3B82F6" label="Pipeline flow" thickness={2.5} />
+        <LegendItem color="#F59E0B" label="Tool call"     dash="5 3"  thickness={1.5} />
+        <LegendItem color="#10B981" label="Integration"   dash="6 4"  thickness={1.5} />
       </div>
 
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
+<ReactFlow
+        nodes={displayNodes}
+        edges={displayEdges}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.12 }}
@@ -545,12 +694,15 @@ const AgentNetwork: React.FC = () => {
         elementsSelectable={false}
         style={{ background: '#0B0F1A' }}
         proOptions={{ hideAttribution: true }}
+        onNodeMouseEnter={onMouseEnter}
+        onNodeMouseLeave={onMouseLeave}
       >
         <Background variant={BackgroundVariant.Dots} color="#1A2035" gap={24} size={1.2} />
         <Controls style={{
           background: '#1A2035', border: '1px solid #2A3454',
           borderRadius: 10, bottom: 64, left: 16,
         }} />
+        <PipelinePulseInner pipelineLength={pipeline.length} />
       </ReactFlow>
     </div>
   );
