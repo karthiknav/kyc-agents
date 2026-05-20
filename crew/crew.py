@@ -361,7 +361,7 @@ class OverrideValidationCrew():
     agents: List[BaseAgent]
     tasks: List[Task]
 
-    _default_bedrock_model = "bedrock/openai.gpt-oss-120b-1:0"
+    _default_bedrock_model = "bedrock/us.anthropic.claude-sonnet-4-6"
 
     def get_llm(self) -> LLM:
         resolved_model = _resolve_bedrock_model_from_env(
