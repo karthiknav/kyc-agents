@@ -242,7 +242,7 @@ aws cloudformation deploy \
   --parameter-overrides \
       GitHubConnectionArn=arn:aws:codeconnections:us-east-1:926529379586:connection/ce0bf520-65e4-4687-9f8c-9d25aa9e62ef \
       GitHubRepo=karthiknav/kyc-agents \
-      GitHubBranch=main \
+      GitHubBranch=agent_network \
       RolesStackName=kyc-agent-roles \
       AgentcoreStackName=kyc-agent-agentcore-runtime \
       KycCasesTableName=kyc-agent-storage-kyc-cases-926529379586-us-east-1 \
@@ -281,9 +281,10 @@ aws cloudformation deploy \
    --parameter-overrides \
              GitHubConnectionArn=arn:aws:codeconnections:us-east-1:926529379586:connection/ce0bf520-65e4-4687-9f8c-9d25aa9e62ef \
              GitHubRepo=karthiknav/kyc-agents \
-             GitHubBranch=main \
+             GitHubBranch=agent_network \
              RolesStackName=kyc-agent-roles \
              UiStackName=kyc-agent-ui \
+             AgentPipelineStackName=kyc-agent-pipeline \
              ApiStackName=kyc-agent-api \
    --capabilities CAPABILITY_NAMED_IAM
 ```
