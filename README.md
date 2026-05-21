@@ -247,7 +247,7 @@ aws cloudformation deploy \
       AgentcoreStackName=kyc-agent-agentcore-runtime \
       KycCasesTableName=kyc-agent-storage-kyc-cases-926529379586-us-east-1 \
       KycResultsBucketName=kyc-agent-storage-926529379586-us-east-1 \
-      MockServiceUrl=https://psn49n1at6.execute-api.us-east-1.amazonaws.com/prod
+      MockServiceUrl=http://mock-service-env.eba-mbm8enda.us-east-1.elasticbeanstalk.com \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
