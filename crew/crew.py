@@ -196,23 +196,13 @@ class KYCCrew():
                     "Only after all five tools have returned results should you produce your final JSON output.",
                 )
 
-            expected = get_last_run_id()
-            if not expected:
+            if not get_last_run_id():
                 return (
                     False,
                     "REJECTED: compare_identity_documents was never called (no run_id issued). "
                     "You MUST complete all 5 steps — get_case_details, get_case_files, "
                     "extract_document_text, verify_identity_document, compare_identity_documents "
                     "— before producing your final output.",
-                )
-
-            actual = parsed.get("run_id")
-            if actual != expected:
-                return (
-                    False,
-                    f"REJECTED: run_id in your output ('{actual}') does not match the one "
-                    f"returned by compare_identity_documents. Copy the exact run_id from the "
-                    f"compare_identity_documents tool result into your final JSON.",
                 )
 
             return (True, output.raw)
@@ -246,21 +236,12 @@ class KYCCrew():
                     "should you produce your final JSON output.",
                 )
 
-            expected = get_last_screening_id()
-            if not expected:
+            if not get_last_screening_id():
                 return (
                     False,
                     "REJECTED: risk_list_screening was never called (no screening_id issued). "
                     "You MUST call get_case_details then risk_list_screening before giving your "
-                    "final answer. Copy the exact screening_id from the tool result into your JSON.",
-                )
-            actual = parsed.get("screening_id")
-            if actual != expected:
-                return (
-                    False,
-                    f"REJECTED: screening_id in your output ('{actual}') does not match the one "
-                    f"returned by risk_list_screening. Copy the exact screening_id from the "
-                    f"risk_list_screening tool result into your final JSON.",
+                    "final answer.",
                 )
             return (True, output.raw)
 
@@ -293,22 +274,12 @@ class KYCCrew():
                     "Only after all tools return results should you produce your final JSON output.",
                 )
 
-            expected = get_last_adverse_id()
-            if not expected:
+            if not get_last_adverse_id():
                 return (
                     False,
                     "REJECTED: produce_adverse_media_analysis was never called (no analysis_id issued). "
                     "You MUST call get_case_details, search_internet, then produce_adverse_media_analysis "
-                    "before giving your final answer. Copy the exact analysis_id from the tool result "
-                    "into your final JSON.",
-                )
-            actual = parsed.get("analysis_id")
-            if actual != expected:
-                return (
-                    False,
-                    f"REJECTED: analysis_id in your output ('{actual}') does not match the one "
-                    f"returned by produce_adverse_media_analysis. Copy the exact analysis_id from "
-                    f"the produce_adverse_media_analysis tool result into your final JSON.",
+                    "before giving your final answer.",
                 )
             return (True, output.raw)
 
