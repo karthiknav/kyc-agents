@@ -30,6 +30,10 @@ Parameters:
     Type: String
     Description: Name of the deployed API stack — queried at build time for ApiEndpoint (VITE_API_BASE_URL)
 
+  AgentPipelineStackName:
+    Type: String
+    Description: Agent pipeline stack name to import the published agent-network latest JSON from
+
 Resources:
 
   # ── S3 artifact bucket ───────────────────────────────────────────────────────
@@ -68,6 +72,12 @@ Resources:
         EnvironmentVariables:
           - Name: API_STACK_NAME
             Value: !Ref ApiStackName
+          - Name: AGENT_NETWORK_BUCKET
+            Value: !ImportValue
+              Fn::Sub: "${AgentPipelineStackName}-AgentNetworkLatestBucketName"
+          - Name: AGENT_NETWORK_KEY
+            Value: !ImportValue
+              Fn::Sub: "${AgentPipelineStackName}-AgentNetworkLatestObjectKey"
           - Name: AWS_DEFAULT_REGION
             Value: !Ref AWS::Region
       Source:
@@ -79,6 +89,8 @@ Resources:
               commands:
                 - export VITE_API_BASE_URL=$(aws cloudformation describe-stacks --stack-name $API_STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
                 - echo "Building frontend against $VITE_API_BASE_URL"
+                - echo "Embedding agent network from s3://$AGENT_NETWORK_BUCKET/$AGENT_NETWORK_KEY"
+                - aws s3 cp "s3://$AGENT_NETWORK_BUCKET/$AGENT_NETWORK_KEY" frontend/src/agent-network.json --region "$AWS_DEFAULT_REGION"
             build:
               commands:
                 - cd frontend

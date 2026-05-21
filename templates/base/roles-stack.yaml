@@ -213,6 +213,8 @@ Resources:
                   - !Sub "arn:aws:s3:::${BaseStackName}-*/*"
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}"
                   - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}/*"
+                  - !Sub "arn:aws:s3:::*-artifacts-${AWS::AccountId}"
+                  - !Sub "arn:aws:s3:::*-artifacts-${AWS::AccountId}/*"
         - PolicyName: CloudFrontPolicy
           PolicyDocument:
             Version: '2012-10-17'

@@ -1,0 +1,167 @@
+{
+  "agents": [
+    {
+      "id": "document_processing_agent",
+      "label": "Document Processing Agent",
+      "role": "Given a caseId, fetch case details and document file references from DynamoDB, extract text from each uploaded identity document, verify each document against the Dutch BRP government registry, and compare the extracted identity fields across all documents, government verification data, and the database record.",
+      "tools": [
+        "get_case_details",
+        "get_case_files",
+        "extract_document_text",
+        "verify_identity_document",
+        "compare_identity_documents"
+      ],
+      "outputs": [
+        "MATCH",
+        "PARTIAL_MATCH",
+        "MISMATCH"
+      ]
+    },
+    {
+      "id": "risk_list_screening_agent",
+      "label": "Risk List Screening Agent",
+      "role": "Given a caseId, run risk list screening (sanctions + PEP) and return a structured result.",
+      "tools": [
+        "risk_list_screening"
+      ],
+      "outputs": [
+        "CLEAR",
+        "HIT",
+        "ERROR"
+      ]
+    },
+    {
+      "id": "adverse_media_agent",
+      "label": "Adverse Media Screening Agent",
+      "role": "Given a caseId, produce an adverseMedia result with a single tool call.",
+      "tools": [
+        "produce_adverse_media_analysis"
+      ],
+      "outputs": [
+        "OK",
+        "NOK",
+        "PENDING_REVIEW"
+      ]
+    },
+    {
+      "id": "orchestrator_agent",
+      "label": "KYC Decision Orchestrator",
+      "role": "Review the KYC stage results provided in context and make the final decision: approve the case or escalate to human review.",
+      "tools": [
+        "escalate_to_human"
+      ],
+      "outputs": [
+        "APPROVED",
+        "ESCALATED"
+      ]
+    },
+    {
+      "id": "override_validation_agent",
+      "label": "Override Validation Agent",
+      "role": "Evaluates an analyst's override justification against persisted risk flags.",
+      "tools": [
+        "get_case_details",
+        "get_case_stage_details",
+        "analyze_override"
+      ],
+      "outputs": [
+        "VALID",
+        "INVALID"
+      ]
+    }
+  ],
+  "flow": [
+    {
+      "from": "START",
+      "to": "document_processing_agent",
+      "label": "document_processing_task"
+    },
+    {
+      "from": "document_processing_agent",
+      "to": "risk_list_screening_agent",
+      "label": "risk_list_screening_task"
+    },
+    {
+      "from": "risk_list_screening_agent",
+      "to": "adverse_media_agent",
+      "label": "adverse_media_task"
+    },
+    {
+      "from": "adverse_media_agent",
+      "to": "orchestrator_agent",
+      "label": "orchestrator_task"
+    },
+    {
+      "from": "orchestrator_agent",
+      "to": "END",
+      "label": "final decision"
+    }
+  ],
+  "integrations": [
+    {
+      "name": "DynamoDB",
+      "type": "database",
+      "used_by": [
+        "document_processing_agent",
+        "risk_list_screening_agent",
+        "adverse_media_agent",
+        "orchestrator_agent"
+      ]
+    },
+    {
+      "name": "PEP API",
+      "type": "api",
+      "used_by": [
+        "risk_list_screening_agent"
+      ]
+    },
+    {
+      "name": "SQS",
+      "type": "queue",
+      "used_by": [
+        "orchestrator_agent"
+      ]
+    },
+    {
+      "name": "Bedrock",
+      "type": "llm",
+      "used_by": [
+        "document_processing_agent",
+        "risk_list_screening_agent",
+        "adverse_media_agent"
+      ]
+    },
+    {
+      "name": "BRP government registry",
+      "type": "api",
+      "used_by": [
+        "document_processing_agent"
+      ]
+    },
+    {
+      "name": "S3",
+      "type": "storage",
+      "used_by": [
+        "document_processing_agent",
+        "risk_list_screening_agent",
+        "adverse_media_agent"
+      ]
+    },
+    {
+      "name": "Web search",
+      "type": "search",
+      "used_by": [
+        "adverse_media_agent"
+      ]
+    }
+  ],
+  "decision_logic": {
+    "APPROVED": "documentProcessing.result is MATCH AND riskListScreening.result is CLEAR AND adverseMedia.result is OK",
+    "ESCALATED": "Any other combination of documentProcessing.result, riskListScreening.result, and adverseMedia.result"
+  },
+  "metadata": {
+    "framework": "CrewAI",
+    "execution_model": "sequential",
+    "entry_point": "kyc_app.py"
+  }
+}

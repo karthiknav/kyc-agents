@@ -189,7 +189,7 @@ def _run_kyc_crew_background(*, case_id: str, job_id: str) -> None:
                     job_id, attempt, attempt + 1, restart_reason, case_id,
                 )
 
-    logger.error("[job=%s] All %d KYC kickoff attempts failed (caseId=%s)", job_id, max_attempts, case_id)
+    logger.error("[job=%s] All %d KYC kickoff attempts failed (caseId=%s), restart manually", job_id, max_attempts, case_id)
 
 
 def _run_override_validation_background(*, case_id: str, analyst_comments: str, job_id: str) -> None:
