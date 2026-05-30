@@ -23,6 +23,10 @@ Parameters:
     Type: String
     Description: Name of the roles stack to import IAM roles from
 
+  VpcStackName:
+    Type: String
+    Description: Name of the VPC stack to import networking resources from
+
   KycCasesTableName:
     Type: String
     Description: DynamoDB table name for KYC cases (passed to agent as KYC_CASES_TABLE)
@@ -37,6 +41,19 @@ Parameters:
     Description: Base URL of the mock-service (empty = tools fall back to localhost)
 
 Resources:
+
+  AgentCoreSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AgentCore runtime — egress only, no inbound
+      VpcId: !ImportValue
+        Fn::Sub: "${VpcStackName}-VpcId"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-agentcore-sg"
 
   AgentRuntime:
     Type: AWS::BedrockAgentCore::Runtime
@@ -59,7 +76,15 @@ Resources:
       RoleArn: !ImportValue
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:
-        NetworkMode: PUBLIC
+        NetworkMode: PRIVATE
+        VpcConfig:
+          SubnetIds:
+            - !ImportValue
+                Fn::Sub: "${VpcStackName}-PrivateSubnet1Id"
+            - !ImportValue
+                Fn::Sub: "${VpcStackName}-PrivateSubnet2Id"
+          SecurityGroupIds:
+            - !Ref AgentCoreSecurityGroup
       Description: !Sub "KYC agent runtime — image ${ImageTag}"
 
 Outputs:

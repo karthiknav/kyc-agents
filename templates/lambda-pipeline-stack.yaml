@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CI/CD Pipeline — GitHub → CodeBuild → Lambda API (backend/)'
+Description: 'CI/CD Pipeline — GitHub → CodeBuild → Lambda KYC Processor (lambda/)'
 
 Parameters:
   GitHubConnectionArn:
@@ -19,25 +19,34 @@ Parameters:
     Type: String
     Description: Name of the roles stack to import IAM roles from
 
-  ApiStackName:
+  LambdaStackName:
     Type: String
-    Description: Name to give the API CloudFormation stack that the pipeline deploys
+    Description: Name to give the Lambda CloudFormation stack that the pipeline deploys
 
   KycResultsBucketName:
     Type: String
-    Description: S3 bucket for storing Lambda deployment package (same bucket used by the agent)
+    Description: S3 bucket for storing Lambda deployment package
 
   KycCasesTableName:
     Type: String
     Description: DynamoDB table name for KYC cases
 
-  KycInitiatedQueueName:
+  KycInitiatedQueueArn:
     Type: String
-    Description: Name of the SQS queue for KYC-initiated events
+    Description: ARN of the SQS queue for KYC-initiated events
+
+  AgentArn:
+    Type: String
+    Description: ARN of the Bedrock AgentCore runtime for the KYC agent
 
   VpcStackName:
     Type: String
-    Description: Name of the VPC stack to import networking resources from (passed to api-stack)
+    Description: Name of the VPC stack to import networking resources from (passed to lambda-stack)
+
+  KycLambdaTimeout:
+    Type: Number
+    Default: 700
+    Description: KYC processor Lambda timeout in seconds
 
 Resources:
 
@@ -54,15 +63,15 @@ Resources:
             Status: Enabled
             ExpirationInDays: 30
 
-  # ── CodeBuild — packages backend/ as Lambda zip and uploads to S3 ─────────────
+  # ── CodeBuild — packages lambda/ as Lambda zip and uploads to S3 ─────────────
   # NOTE: The CodeBuild role (from RolesStackName) must have:
   #   - s3:PutObject on KycResultsBucketName (to upload the Lambda zip)
   #   - cloudformation:DescribeStacks (to read KycLambdaExecutionRoleArn from roles stack)
-  BackendBuildProject:
+  ProcessorBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub "${AWS::StackName}-backend-build"
-      Description: Package KYC backend API as Lambda zip and upload to S3
+      Name: !Sub "${AWS::StackName}-processor-build"
+      Description: Package KYC processor Lambda and upload to S3
       ServiceRole: !ImportValue
         Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
       Artifacts:
@@ -72,7 +81,7 @@ Resources:
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/standard:7.0
         EnvironmentVariables:
-          - Name: BACKEND_BUCKET
+          - Name: LAMBDA_BUCKET
             Value: !Ref KycResultsBucketName
           - Name: ROLES_STACK_NAME
             Value: !Ref RolesStackName
@@ -85,19 +94,19 @@ Resources:
           phases:
             pre_build:
               commands:
-                - BACKEND_ZIP="backend-api-$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8).zip"
-                - BACKEND_LAMBDA_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $ROLES_STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`KycLambdaExecutionRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
+                - LAMBDA_ZIP="kyc-processor-$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8).zip"
+                - LAMBDA_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $ROLES_STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`KycLambdaExecutionRoleArn`].OutputValue' --output text --region $AWS_DEFAULT_REGION)
             build:
               commands:
-                - mkdir -p /tmp/backend_pkg
-                - "pip install -q -r backend/requirements.txt -t /tmp/backend_pkg --platform manylinux_2_17_x86_64 --python-version 3.11 --only-binary=:all: --upgrade"
-                - cp backend/main.py /tmp/backend_pkg/
-                - cd /tmp/backend_pkg && zip -r $OLDPWD/$BACKEND_ZIP . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*"
+                - mkdir -p /tmp/lambda_pkg
+                - pip install -q -r lambda/requirements.txt -t /tmp/lambda_pkg --platform manylinux_2_17_x86_64 --python-version 3.11 --only-binary=:all: --upgrade
+                - cp lambda/kyc-processor.py /tmp/lambda_pkg/
+                - cd /tmp/lambda_pkg && zip -r $OLDPWD/$LAMBDA_ZIP . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*"
                 - cd $OLDPWD
-                - aws s3 cp $BACKEND_ZIP s3://$BACKEND_BUCKET/$BACKEND_ZIP --region $AWS_DEFAULT_REGION
+                - aws s3 cp $LAMBDA_ZIP s3://$LAMBDA_BUCKET/$LAMBDA_ZIP --region $AWS_DEFAULT_REGION
             post_build:
               commands:
-                - printf '{"BackendZipKey":"%s","BackendLambdaRoleArn":"%s"}' $BACKEND_ZIP $BACKEND_LAMBDA_ROLE_ARN > parameters.json
+                - printf '{"LambdaZipKey":"%s","LambdaRoleArn":"%s"}' $LAMBDA_ZIP $LAMBDA_ROLE_ARN > parameters.json
           artifacts:
             files:
               - parameters.json
@@ -105,7 +114,7 @@ Resources:
             discard-paths: no
 
   # ── CodePipeline ─────────────────────────────────────────────────────────────
-  ApiPipeline:
+  ProcessorPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
       Name: !Sub "${AWS::StackName}-pipeline"
@@ -125,11 +134,11 @@ Resources:
                     - !Ref GitHubBranch
                 FilePaths:
                   Includes:
-                    - backend/**
-                    - templates/api-stack.yaml
+                    - lambda/**
+                    - templates/lambda-stack.yaml
       Stages:
 
-        # Stage 1: pull source — fires only when backend/** or api-stack.yaml changes
+        # Stage 1: pull source — fires only when lambda/** or lambda-stack.yaml changes
         - Name: Source
           Actions:
             - Name: GitHubSource
@@ -148,27 +157,27 @@ Resources:
                 - Name: SourceArtifact
               RunOrder: 1
 
-        # Stage 2: package backend/ as Lambda zip, upload to S3, emit parameters.json
+        # Stage 2: package lambda/ as zip, upload to S3, emit parameters.json
         - Name: Build
           Actions:
-            - Name: BuildBackendZip
+            - Name: BuildProcessorZip
               ActionTypeId:
                 Category: Build
                 Owner: AWS
                 Provider: CodeBuild
                 Version: "1"
               Configuration:
-                ProjectName: !Ref BackendBuildProject
+                ProjectName: !Ref ProcessorBuildProject
               InputArtifacts:
                 - Name: SourceArtifact
               OutputArtifacts:
                 - Name: BuildArtifact
               RunOrder: 1
 
-        # Stage 3: deploy (or update) api-stack with the new Lambda package
+        # Stage 3: deploy (or update) lambda-stack with the new Lambda package
         - Name: Deploy
           Actions:
-            - Name: DeployApiStack
+            - Name: DeployLambdaStack
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
@@ -176,19 +185,21 @@ Resources:
                 Version: "1"
               Configuration:
                 ActionMode: CREATE_UPDATE
-                StackName: !Ref ApiStackName
-                TemplatePath: "SourceArtifact::templates/api-stack.yaml"
+                StackName: !Ref LambdaStackName
+                TemplatePath: "SourceArtifact::templates/lambda-stack.yaml"
                 Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
                 RoleArn: !ImportValue
                   Fn::Sub: "${RolesStackName}-CloudFormationDeployRoleArn"
                 ParameterOverrides: !Sub |
                   {
-                    "BackendLambdaRoleArn":  {"Fn::GetParam": ["BuildArtifact", "parameters.json", "BackendLambdaRoleArn"]},
-                    "BackendSourceBucket":   "${KycResultsBucketName}",
-                    "BackendSourceKey":      {"Fn::GetParam": ["BuildArtifact", "parameters.json", "BackendZipKey"]},
-                    "KycCasesTableName":     "${KycCasesTableName}",
-                    "KycInitiatedQueueName": "${KycInitiatedQueueName}",
-                    "VpcStackName":          "${VpcStackName}"
+                    "KycLambdaExecutionRoleArn": {"Fn::GetParam": ["BuildArtifact", "parameters.json", "LambdaRoleArn"]},
+                    "LambdaSourceBucket":        "${KycResultsBucketName}",
+                    "LambdaSourceKey":           {"Fn::GetParam": ["BuildArtifact", "parameters.json", "LambdaZipKey"]},
+                    "KycCasesTableName":         "${KycCasesTableName}",
+                    "KycInitiatedQueueArn":      "${KycInitiatedQueueArn}",
+                    "AgentArn":                  "${AgentArn}",
+                    "VpcStackName":              "${VpcStackName}",
+                    "KycLambdaTimeout":          "${KycLambdaTimeout}"
                   }
               InputArtifacts:
                 - Name: SourceArtifact
@@ -198,12 +209,12 @@ Resources:
 Outputs:
   PipelineName:
     Description: Name of the CodePipeline
-    Value: !Ref ApiPipeline
+    Value: !Ref ProcessorPipeline
     Export:
       Name: !Sub "${AWS::StackName}-PipelineName"
 
   BuildProjectName:
     Description: CodeBuild project name
-    Value: !Ref BackendBuildProject
+    Value: !Ref ProcessorBuildProject
     Export:
       Name: !Sub "${AWS::StackName}-BuildProjectName"

@@ -41,6 +41,10 @@ Parameters:
     Default: ''
     Description: Base URL of the mock-service (empty = tools fall back to localhost)
 
+  VpcStackName:
+    Type: String
+    Description: Name of the VPC stack to import networking resources from (passed to agentcore-stack)
+
   LangfuseEnabled:
     Type: String
     Default: 'false'
@@ -331,6 +335,7 @@ Resources:
                     "KycCasesTableName":    "${KycCasesTableName}",
                     "KycResultsBucketName": "${KycResultsBucketName}",
                     "MockServiceUrl":       "${MockServiceUrl}",
+                    "VpcStackName":         "${VpcStackName}",
                     "ImageTag":             {"Fn::GetParam": ["BuildArtifact", "parameters.json", "ImageTag"]},
                     "ECRRepositoryUri":     {"Fn::GetParam": ["BuildArtifact", "parameters.json", "ECRRepositoryUri"]}
                   }

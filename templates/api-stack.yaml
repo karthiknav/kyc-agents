@@ -22,7 +22,24 @@ Parameters:
     Type: String
     Description: Name of the SQS queue for KYC-initiated events (passed to Lambda as SQS_QUEUE_NAME for get_queue_url)
 
+  VpcStackName:
+    Type: String
+    Description: Name of the VPC stack to import networking resources from
+
 Resources:
+
+  BackendLambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Backend API Lambda — egress only, no inbound
+      VpcId: !ImportValue
+        Fn::Sub: "${VpcStackName}-VpcId"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-backend-lambda-sg"
   BackendApiFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -36,6 +53,14 @@ Resources:
           KYC_CASES_TABLE: !Ref KycCasesTableName
           KYC_DOCUMENTS_BUCKET: !Ref BackendSourceBucket
           SQS_QUEUE_NAME: !Ref KycInitiatedQueueName
+      VpcConfig:
+        SubnetIds:
+          - !ImportValue
+              Fn::Sub: "${VpcStackName}-PrivateSubnet1Id"
+          - !ImportValue
+              Fn::Sub: "${VpcStackName}-PrivateSubnet2Id"
+        SecurityGroupIds:
+          - !Ref BackendLambdaSecurityGroup
       Code:
         S3Bucket: !Ref BackendSourceBucket
         S3Key: !Ref BackendSourceKey

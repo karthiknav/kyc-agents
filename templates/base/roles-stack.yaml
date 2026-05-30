@@ -264,6 +264,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
         - PolicyName: CodeBuildAccess
           PolicyDocument:
@@ -388,6 +389,24 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:apigateway:${AWS::Region}::/restapis"
                   - !Sub "arn:aws:apigateway:${AWS::Region}::/restapis/*"
+        - PolicyName: EC2VpcPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SecurityGroupManagement
+                Effect: Allow
+                Action:
+                  - ec2:CreateSecurityGroup
+                  - ec2:DeleteSecurityGroup
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                Resource: '*'
 
   # ── KYC processor Lambda: SQS consume, DynamoDB table access, Bedrock Agent Core invoke
   KycLambdaExecutionRole:
@@ -403,6 +422,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
         - PolicyName: KycLambdaSqsDynamoAgentPolicy
           PolicyDocument:

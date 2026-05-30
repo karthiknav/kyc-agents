@@ -33,7 +33,24 @@ Parameters:
     Type: String
     Description: ARN of the SQS queue for KYC-initiated events
 
+  VpcStackName:
+    Type: String
+    Description: Name of the VPC stack to import networking resources from
+
 Resources:
+
+  KycLambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: KYC processor Lambda — egress only, no inbound
+      VpcId: !ImportValue
+        Fn::Sub: "${VpcStackName}-VpcId"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-kyc-lambda-sg"
   KycProcessorFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -46,6 +63,14 @@ Resources:
         Variables:
           KYC_AGENT_ARN: !Ref AgentArn
           KYC_CASES_TABLE: !Ref KycCasesTableName
+      VpcConfig:
+        SubnetIds:
+          - !ImportValue
+              Fn::Sub: "${VpcStackName}-PrivateSubnet1Id"
+          - !ImportValue
+              Fn::Sub: "${VpcStackName}-PrivateSubnet2Id"
+        SecurityGroupIds:
+          - !Ref KycLambdaSecurityGroup
       Code:
         S3Bucket: !Ref LambdaSourceBucket
         S3Key: !Ref LambdaSourceKey
