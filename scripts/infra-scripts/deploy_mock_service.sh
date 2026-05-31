@@ -12,6 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:360946915124:connection/24a1bf19-4ba9-42ee-ad2c-f37799f02447"
 
 : "${GITHUB_CONNECTION_ARN:?GITHUB_CONNECTION_ARN is required (find it in AWS Console → Developer Tools → Connections)}"
 
