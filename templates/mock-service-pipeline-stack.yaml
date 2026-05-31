@@ -141,6 +141,15 @@ Resources:
                   - iam:ListInstanceProfilesForRole
                   - iam:PassRole
                 Resource: '*'
+        - PolicyName: MockServiceEbElasticIp
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ElasticIpManagement
+                Effect: Allow
+                Action:
+                  - ec2:*
+                Resource: '*'
 
   MockServiceCodePipelineRole:
     Type: AWS::IAM::Role
