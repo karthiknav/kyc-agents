@@ -233,7 +233,6 @@ Resources:
                 - S3_KEY="mock-service/deploy-${SHA}.zip"
             build:
               commands:
-                - (command -v zip >/dev/null 2>&1) || (yum install -y zip || true)
                 - bash scripts/package_mock_service_for_eb.sh "$ZIP_ABS"
                 - aws s3 cp "$ZIP_ABS" "s3://$MOCK_BUNDLE_BUCKET/$S3_KEY" --region "$AWS_DEFAULT_REGION"
             post_build:
@@ -267,8 +266,6 @@ Resources:
                   Includes:
                     - mock-service/**
                     - templates/mock-service/**
-                    - scripts/deploy_mock_service.sh
-                    - scripts/package_mock_service_for_eb.sh
       Stages:
 
         - Name: Source
