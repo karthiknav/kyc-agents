@@ -78,6 +78,8 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${AWS::StackName}-cfn-deploy-role"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess-AWSElasticBeanstalk
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -107,53 +109,6 @@ Resources:
                   - s3:GetObjectVersion
                 Resource:
                   - !Sub "${PipelineArtifactBucket.Arn}/*"
-        - PolicyName: ElasticBeanstalkDeploy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: ElasticBeanstalkManage
-                Effect: Allow
-                Action:
-                  - elasticbeanstalk:*
-                Resource: '*'
-              - Sid: ServiceLinkedRole
-                Effect: Allow
-                Action:
-                  - iam:CreateServiceLinkedRole
-                Resource: '*'
-              - Sid: EC2Describe
-                Effect: Allow
-                Action:
-                  - ec2:DescribeAccountAttributes
-                  - ec2:DescribeAvailabilityZones
-                  - ec2:DescribeImages
-                  - ec2:DescribeInstances
-                  - ec2:DescribeKeyPairs
-                  - ec2:DescribeSecurityGroups
-                  - ec2:DescribeSubnets
-                  - ec2:DescribeVpcs
-                Resource: '*'
-              - Sid: AutoScalingDescribe
-                Effect: Allow
-                Action:
-                  - autoscaling:DescribeAutoScalingGroups
-                  - autoscaling:DescribeScalingActivities
-                  - autoscaling:DescribeLaunchConfigurations
-                Resource: '*'
-              - Sid: CloudWatchDescribe
-                Effect: Allow
-                Action:
-                  - cloudwatch:DescribeAlarms
-                Resource: '*'
-              - Sid: S3EbStorage
-                Effect: Allow
-                Action:
-                  - s3:GetBucketPolicy
-                  - s3:GetBucketLocation
-                  - s3:ListBucket
-                Resource:
-                  - !Sub "arn:aws:s3:::elasticbeanstalk-${AWS::Region}-${AWS::AccountId}"
-                  - !Sub "arn:aws:s3:::elasticbeanstalk-${AWS::Region}-${AWS::AccountId}/*"
         - PolicyName: MockServiceEbIam
           PolicyDocument:
             Version: '2012-10-17'
