@@ -56,6 +56,34 @@ Parameters:
     Description: "Set to 0 to disable startup seeding of default test cases."
 
 Resources:
+  # Service role used by the EB control plane to manage the environment (launch instances, associate EIPs, etc.)
+  EBServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ApplicationName}-eb-service-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: elasticbeanstalk.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy
+      Policies:
+        - PolicyName: EIPManagement
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:AssociateAddress
+                  - ec2:DisassociateAddress
+                  - ec2:AllocateAddress
+                  - ec2:ReleaseAddress
+                Resource: "*"
+
   # IAM role and instance profile required by Elastic Beanstalk (environment must have instance profile)
   EBInstanceProfileRole:
     Type: AWS::IAM::Role
@@ -125,6 +153,9 @@ Resources:
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: EnvironmentType
           Value: SingleInstance
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: !GetAtt EBServiceRole.Arn
         # Place the instance in the specified VPC subnet
         - Namespace: aws:ec2:vpc
           OptionName: VPCId

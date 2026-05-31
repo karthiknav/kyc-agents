@@ -2,7 +2,7 @@
 
 ## Prerequisite: Install Terraform
 
-You need [Terraform](https://www.terraform.io/downloads.html) installed to deploy Langfuse. Download and install Terraform for your OS:
+You need **Terraform >= 1.9.0** installed. The module uses cross-variable references in validation blocks, which were introduced in 1.9. Earlier versions (including the default on AWS CloudShell) will fail on `terraform init`.
 
 ### macOS (Homebrew)
 ```bash
@@ -10,19 +10,21 @@ brew tap hashicorp/tap
 brew install hashicorp/tap/terraform
 ```
 
-### Linux
+### Linux / AWS CloudShell
 ```bash
-wget https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip
-unzip terraform_1.7.5_linux_amd64.zip
-sudo mv terraform /usr/local/bin/
+wget https://releases.hashicorp.com/terraform/1.15.5/terraform_1.15.5_linux_amd64.zip
+unzip terraform_1.15.5_linux_amd64.zip
+mkdir -p ~/bin
+mv terraform ~/bin/
+export PATH="$HOME/bin:$PATH"   # add to ~/.bashrc to persist in CloudShell
 ```
 
 ### Windows
-Download the [Terraform Windows zip](https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_windows_amd64.zip), unzip, and add the executable to your PATH.
+Download the [Terraform Windows zip](https://releases.hashicorp.com/terraform/1.15.5/terraform_1.15.5_windows_amd64.zip), unzip, and add the executable to your PATH.
 
 Verify installation:
 ```bash
-terraform version
+terraform version  # must be >= 1.9.0
 ```
 
 
