@@ -34,23 +34,24 @@ roles-stack ──────────────────────�
 ## Step 0 — Set variables
 
 ```bash
-AWS_REGION=us-east-1
+BASE_NAME="${1:-kyc-agent}"
+REGION="${2:-us-east-1}"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 # Stack names — adjust to your environment/naming convention
-VPC_STACK=kyc-vpc
-STORAGE_STACK=kyc-storage
-MAIN_STACK=kyc-main
-ROLES_STACK=kyc-roles           # IMPORTANT: must equal the StackName parameter passed to roles-stack
-PIPELINE_STACK=kyc-agent-pipeline
-AGENTCORE_STACK=kyc-agentcore   # name the pipeline will give the agentcore stack
-API_PIPELINE_STACK=kyc-api-pipeline
-API_STACK=kyc-api               # name the api pipeline will give the api stack
-LAMBDA_PIPELINE_STACK=kyc-lambda-pipeline
-LAMBDA_STACK=kyc-lambda         # name the lambda pipeline will give the lambda stack
+VPC_STACK="${BASE_NAME}-vpc"
+STORAGE_STACK="${BASE_NAME}-storage"
+ROLES_STACK="${BASE_NAME}-roles"
+MAIN_STACK="${BASE_NAME}-main"
+PIPELINE_STACK="${BASE_NAME}-pipeline"
+AGENTCORE_STACK="${BASE_NAME}-agentcore"   # name the pipeline will give the agentcore stack
+API_PIPELINE_STACK="${BASE_NAME}-api-pipeline"
+API_STACK="${BASE_NAME}-api"               # name the api pipeline will give the api stack
+LAMBDA_PIPELINE_STACK="${BASE_NAME}-lambda-pipeline"
+LAMBDA_STACK="${BASE_NAME}-lambda"         # name the lambda pipeline will give the lambda stack
 
 # GitHub — used by all three pipelines
-GITHUB_CONNECTION_ARN=arn:aws:codestar-connections:$AWS_REGION:$AWS_ACCOUNT_ID:connection/<id>
+GITHUB_CONNECTION_ARN=arn:aws:codestar-connections:$REGION:$AWS_ACCOUNT_ID:connection/<id>
 GITHUB_REPO=myorg/kyc-agents
 GITHUB_BRANCH=main
 
@@ -68,53 +69,83 @@ MOCK_SERVICE_URL=               # leave empty for production
 
 No dependencies. Exports `${VPC_STACK}-VpcId`, `PrivateSubnet1Id`, `PrivateSubnet2Id`.
 
+Alternate AWS Console route:
+
+1. Open **AWS Console** → **CloudFormation** → **Create stack** → **With new resources (standard)**.
+2. Choose **Upload a template file** and upload `templates/base/vpc-stack.yaml`.
+3. Enter the stack name as `kyc-agent-vpc`.
+4. Leave parameters at their defaults unless you need environment-specific changes.
+5. Continue through the wizard, acknowledge any prompts if shown, and choose **Create stack**.
+
 ```bash
 aws cloudformation deploy \
   --template-file templates/base/vpc-stack.yaml \
   --stack-name $VPC_STACK \
-  --region $AWS_REGION
+  --region $REGION
 ```
+
 
 ### 2. Storage (S3 + DynamoDB)
 
 No dependencies. Exports bucket name and DynamoDB table name under the `StackName` prefix.
 
+Alternate AWS Console route:
+
+1. Open **AWS Console** → **CloudFormation** → **Create stack** → **With new resources (standard)**.
+2. Choose **Upload a template file** and upload `templates/base/storage-stack.yaml`.
+3. Enter the stack name as `kyc-agent-storage`.
+4. In **Parameters**, set `StackName` to `kyc-agent`.
+5. Continue through the wizard, acknowledge any prompts if shown, and choose **Create stack**.
+
 ```bash
 aws cloudformation deploy \
   --template-file templates/base/storage-stack.yaml \
   --stack-name $STORAGE_STACK \
-  --parameter-overrides StackName=$STORAGE_STACK \
-  --region $AWS_REGION
+  --parameter-overrides StackName=$BASE_NAME \
+  --region $REGION
 ```
 
 ### 3. Main stack (SQS queue + SSM model ID)
 
 No dependencies. Exports queue name, URL, and ARN.
 
+Alternate AWS Console route:
+
+1. Open **AWS Console** → **CloudFormation** → **Create stack** → **With new resources (standard)**.
+2. Choose **Upload a template file** and upload `templates/base/main-stack.yaml`.
+3. Enter the stack name as `kyc-agent-main`.
+4. In **Parameters**, set `DefaultModelId` to `us.anthropic.claude-sonnet-4-6` (or your preferred model ID).
+5. Continue through the wizard and choose **Create stack**.
+
 ```bash
 aws cloudformation deploy \
   --template-file templates/base/main-stack.yaml \
   --stack-name $MAIN_STACK \
   --parameter-overrides DefaultModelId=$DEFAULT_MODEL_ID \
-  --region $AWS_REGION
+  --region $REGION
 ```
 
 ### 4. Roles stack (IAM)
 
-Depends on storage-stack and pipeline stack names (baked into IAM policy resource patterns).
-The `StackName` parameter controls the export key prefix — it **must** equal `$ROLES_STACK`.
+No dependencies.
+This stack uses the CloudFormation stack name (`AWS::StackName`) as the export key prefix.
+
+Alternate AWS Console route:
+
+1. Open **AWS Console** → **CloudFormation** → **Create stack** → **With new resources (standard)**.
+2. Choose **Upload a template file** and upload `templates/base/roles-stack.yaml`.
+3. Enter the stack name as `kyc-agent-roles`.
+4. In **Parameters**, set `BaseStackName` to `kyc-agent`.
+5. In **Capabilities**, acknowledge `CAPABILITY_NAMED_IAM`, then continue through the wizard and choose **Create stack**.
 
 ```bash
 aws cloudformation deploy \
   --template-file templates/base/roles-stack.yaml \
   --stack-name $ROLES_STACK \
   --parameter-overrides \
-      StackName=$ROLES_STACK \
-      BaseStackName=$STORAGE_STACK \
-      PipelineStackName=$PIPELINE_STACK \
-      ApiPipelineStackName=$API_PIPELINE_STACK \
+      BaseStackName=$BASE_NAME \
   --capabilities CAPABILITY_NAMED_IAM \
-  --region $AWS_REGION
+  --region $REGION
 ```
 
 ---
@@ -127,22 +158,22 @@ Fetch the values needed from the base stacks first:
 KYC_RESULTS_BUCKET=$(aws cloudformation describe-stacks \
   --stack-name $STORAGE_STACK \
   --query 'Stacks[0].Outputs[?OutputKey==`SourceBucketName`].OutputValue' \
-  --output text --region $AWS_REGION)
+  --output text --region $REGION)
 
 KYC_CASES_TABLE=$(aws cloudformation describe-stacks \
   --stack-name $STORAGE_STACK \
   --query 'Stacks[0].Outputs[?OutputKey==`KycCasesTableName`].OutputValue' \
-  --output text --region $AWS_REGION)
+  --output text --region $REGION)
 
 KYC_QUEUE_NAME=$(aws cloudformation describe-stacks \
   --stack-name $MAIN_STACK \
   --query 'Stacks[0].Outputs[?OutputKey==`KycInitiatedQueueName`].OutputValue' \
-  --output text --region $AWS_REGION)
+  --output text --region $REGION)
 
 KYC_QUEUE_ARN=$(aws cloudformation describe-stacks \
   --stack-name $MAIN_STACK \
   --query 'Stacks[0].Outputs[?OutputKey==`KycInitiatedQueueArn`].OutputValue' \
-  --output text --region $AWS_REGION)
+  --output text --region $REGION)
 ```
 
 ### 5a. AgentCore pipeline (pipeline-stack)
@@ -165,7 +196,7 @@ aws cloudformation deploy \
       VpcStackName=$VPC_STACK \
       MockServiceUrl=$MOCK_SERVICE_URL \
   --capabilities CAPABILITY_NAMED_IAM \
-  --region $AWS_REGION
+  --region $REGION
 ```
 
 ### 5b. API pipeline (api-pipeline-stack)
@@ -187,7 +218,7 @@ aws cloudformation deploy \
       KycCasesTableName=$KYC_CASES_TABLE \
       KycInitiatedQueueName=$KYC_QUEUE_NAME \
       VpcStackName=$VPC_STACK \
-  --region $AWS_REGION
+  --region $REGION
 ```
 
 ---
@@ -204,13 +235,13 @@ the AgentCore pipeline (step 5a) has run and successfully deployed `agentcore-st
 aws cloudformation describe-stacks \
   --stack-name $AGENTCORE_STACK \
   --query 'Stacks[0].StackStatus' \
-  --output text --region $AWS_REGION
+  --output text --region $REGION
 
 # Fetch the agent runtime ARN
 AGENT_ARN=$(aws cloudformation describe-stacks \
   --stack-name $AGENTCORE_STACK \
   --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' \
-  --output text --region $AWS_REGION)
+  --output text --region $REGION)
 
 echo "AgentArn: $AGENT_ARN"
 ```
@@ -236,7 +267,7 @@ aws cloudformation deploy \
       AgentArn=$AGENT_ARN \
       VpcStackName=$VPC_STACK \
       KycLambdaTimeout=$KYC_LAMBDA_TIMEOUT \
-  --region $AWS_REGION
+  --region $REGION
 ```
 
 ---

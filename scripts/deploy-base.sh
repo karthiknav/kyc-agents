@@ -62,7 +62,7 @@ echo "[3/5] Deploying roles stack..."
 aws cloudformation deploy \
     --stack-name "$ROLES_STACK" \
     --template-file "$TEMPLATE_DIR/roles-stack.yaml" \
-    --parameter-overrides StackName="$ROLES_STACK" BaseStackName="$BASE_NAME" PipelineStackName="$PIPELINE_STACK" ApiPipelineStackName="$API_PIPELINE_STACK" \
+    --parameter-overrides BaseStackName="$BASE_NAME" PipelineStackName="$PIPELINE_STACK" ApiPipelineStackName="$API_PIPELINE_STACK" \
     --capabilities CAPABILITY_NAMED_IAM \
     --region "$REGION"
 echo "✓ Roles stack ready"

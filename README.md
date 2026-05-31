@@ -227,7 +227,6 @@ aws cloudformation deploy \
   --stack-name kyc-roles \
   --template-file templates/base/roles-stack.yaml \
   --parameter-overrides \
-      StackName=kyc-roles \
       BaseStackName=kyc-base \
       PipelineStackName=kyc-pipeline \
   --capabilities CAPABILITY_NAMED_IAM
