@@ -34,7 +34,7 @@ roles-stack ──────────────────────�
 ## Step 0 — Set variables
 
 ```bash
-AWS_REGION=eu-west-1
+AWS_REGION=us-east-1
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 # Stack names — adjust to your environment/naming convention

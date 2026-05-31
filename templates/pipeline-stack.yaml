@@ -175,52 +175,13 @@ Resources:
         Type: CODEPIPELINE
         BuildSpec: buildspec-langfuse.yml
 
-  # ── CodeBuild — generates agent-network JSON ─────────────────────────────
-  GenerateAgentNetworkCodeBuildRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "${AWS::StackName}-generate-agent-network"
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codebuild.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: GenerateAgentNetwork
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - s3:GetBucketLocation
-                  - s3:ListBucket
-                Resource: !Sub "arn:aws:s3:::${PipelineArtifactBucket}"
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:GetObjectVersion
-                  - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::${PipelineArtifactBucket}/*"
-              - Effect: Allow
-                Action:
-                  - bedrock:InvokeModel
-                  - bedrock:InvokeModelWithResponseStream
-                Resource: "*"
-
   GenerateAgentNetworkProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: !Sub "${AWS::StackName}-generate-agent-network"
       Description: Generate agent network JSON by indexing crew/ and querying via Bedrock
-      ServiceRole: !GetAtt GenerateAgentNetworkCodeBuildRole.Arn
+      ServiceRole: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodeBuildRoleArn"
       Artifacts:
         Type: CODEPIPELINE
       Environment:

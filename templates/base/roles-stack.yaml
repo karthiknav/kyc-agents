@@ -205,6 +205,7 @@ Resources:
                 Action:
                   - s3:GetObject
                   - s3:GetObjectVersion
+                  - s3:GetBucketLocation
                   - s3:PutObject
                   - s3:ListBucket
                   - s3:DeleteObject
@@ -242,6 +243,16 @@ Resources:
                 Effect: Allow
                 Action: cloudformation:DescribeStacks
                 Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*/*"
+        - PolicyName: GenerateAgentNetworkAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: BedrockModelInvoke
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: '*'
         - PolicyName: PassRolePolicy
           PolicyDocument:
             Version: '2012-10-17'
