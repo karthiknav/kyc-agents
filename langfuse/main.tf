@@ -6,14 +6,14 @@ module "langfuse" {
   source = "./langfuse-terraform-aws"
 
   name   = "langfuse"
-  domain = "langfuse.genaidesigns.net"
+  domain = "langfuse.gen-ai-designs.com"
 
   # 👇 your existing VPC
-  vpc_id             = "vpc-003d95b5660ef0ca6"
-  private_subnet_ids = ["subnet-03bfcbfcff49fbbf6", "subnet-0caf26118ad8e46b2"]
-  public_subnet_ids  = ["subnet-06b5042bc39082a02", "subnet-0d17103d87fcbc8ab"]
+  vpc_id             = "vpc-0471d506bfc76f3d9"
+  private_subnet_ids = ["subnet-093a6535e084d1b87", "subnet-0bc3915284f4d7cae"]
+  public_subnet_ids  = ["subnet-0047a37be8d0a9a6d", "subnet-0ff49bee49396da89"]
 
-  private_route_table_ids = ["rtb-0285ef08cf827becc"]
+  private_route_table_ids = ["rtb-040d1056d5cab6969"]
 }
 
 provider "kubernetes" {
