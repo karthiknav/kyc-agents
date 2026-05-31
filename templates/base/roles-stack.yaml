@@ -2,24 +2,16 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'IAM Roles Stack for Agent Core Runtime'
 
 Parameters:
-  StackName:
-    Type: String
-    Description: Name of the stack
   BaseStackName:
     Type: String
     Description: Name of the Base stack
-  PipelineStackName:
-    Type: String
-    Description: Name of the pipeline stack (determines the artifact bucket name)
-  ApiPipelineStackName:
-    Type: String
-    Description: Name of the pipeline stack (determines the artifact bucket name)
+
 
 Resources:
   AgentExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${StackName}-agent-execution-role"
+      RoleName: !Sub "${AWS::StackName}-agent-execution-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -175,7 +167,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${StackName}-codebuild-role"
+      RoleName: !Sub "${AWS::StackName}-codebuild-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -212,10 +204,6 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:s3:::${BaseStackName}-*"
                   - !Sub "arn:aws:s3:::${BaseStackName}-*/*"
-                  - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}"
-                  - !Sub "arn:aws:s3:::${PipelineStackName}-artifacts-${AWS::AccountId}/*"
-                  - !Sub "arn:aws:s3:::*-artifacts-${AWS::AccountId}"
-                  - !Sub "arn:aws:s3:::*-artifacts-${AWS::AccountId}/*"
         - PolicyName: CloudFrontPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -260,12 +248,12 @@ Resources:
               - Sid: PassAgentExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
-                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-agent-execution-role"
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}-agent-execution-role"
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${StackName}-lambda-execution-role"
+      RoleName: !Sub "${AWS::StackName}-lambda-execution-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -291,7 +279,7 @@ Resources:
   CodePipelineRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${StackName}-codepipeline-role"
+      RoleName: !Sub "${AWS::StackName}-codepipeline-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -334,7 +322,7 @@ Resources:
               - Sid: PassRoleToCfn
                 Effect: Allow
                 Action: iam:PassRole
-                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-cfn-deploy-role"
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}-cfn-deploy-role"
               - Sid: GitHubConnection
                 Effect: Allow
                 Action: codestar-connections:UseConnection
@@ -344,7 +332,7 @@ Resources:
   CloudFormationDeployRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${StackName}-cfn-deploy-role"
+      RoleName: !Sub "${AWS::StackName}-cfn-deploy-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -363,8 +351,8 @@ Resources:
                 Effect: Allow
                 Action: iam:PassRole
                 Resource: 
-                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-agent-execution-role"
-                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${StackName}-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}-agent-execution-role"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}-*"
         - PolicyName: LambdaDeployPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -423,7 +411,7 @@ Resources:
   KycLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${StackName}-kyc-lambda-role"
+      RoleName: !Sub "${AWS::StackName}-kyc-lambda-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -475,34 +463,34 @@ Outputs:
     Description: ARN of the agent execution role
     Value: !GetAtt AgentExecutionRole.Arn
     Export:
-      Name: !Sub "${StackName}-AgentExecutionRoleArn"
+      Name: !Sub "${AWS::StackName}-AgentExecutionRoleArn"
 
   CodeBuildRoleArn:
     Description: ARN of the CodeBuild role
     Value: !GetAtt CodeBuildRole.Arn
     Export:
-      Name: !Sub "${StackName}-CodeBuildRoleArn"
+      Name: !Sub "${AWS::StackName}-CodeBuildRoleArn"
 
   LambdaExecutionRoleArn:
     Description: ARN of the Lambda execution role
     Value: !GetAtt LambdaExecutionRole.Arn
     Export:
-      Name: !Sub "${StackName}-LambdaExecutionRoleArn"
+      Name: !Sub "${AWS::StackName}-LambdaExecutionRoleArn"
 
   KycLambdaExecutionRoleArn:
     Description: ARN of the KYC processor Lambda execution role (SQS, DynamoDB, Agent Core)
     Value: !GetAtt KycLambdaExecutionRole.Arn
     Export:
-      Name: !Sub "${StackName}-KycLambdaExecutionRoleArn"
+      Name: !Sub "${AWS::StackName}-KycLambdaExecutionRoleArn"
 
   CodePipelineRoleArn:
     Description: ARN of the CodePipeline execution role
     Value: !GetAtt CodePipelineRole.Arn
     Export:
-      Name: !Sub "${StackName}-CodePipelineRoleArn"
+      Name: !Sub "${AWS::StackName}-CodePipelineRoleArn"
 
   CloudFormationDeployRoleArn:
     Description: ARN of the CloudFormation deploy role (used by pipeline Deploy stage)
     Value: !GetAtt CloudFormationDeployRole.Arn
     Export:
-      Name: !Sub "${StackName}-CloudFormationDeployRoleArn"
+      Name: !Sub "${AWS::StackName}-CloudFormationDeployRoleArn"
