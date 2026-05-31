@@ -220,15 +220,14 @@ Notes:
 ### Step 1 — Deploy the roles stack
 
 The pipeline requires two new IAM roles (`CodePipelineRole`, `CloudFormationDeployRole`).
-Pass `PipelineStackName` so the roles are scoped to the correct artifact bucket:
+Pass `BaseStackName` so S3 access is scoped to buckets prefixed with that base name:
 
 ```bash
 aws cloudformation deploy \
   --stack-name kyc-roles \
   --template-file templates/base/roles-stack.yaml \
   --parameter-overrides \
-      BaseStackName=kyc-base \
-      PipelineStackName=kyc-pipeline \
+         BaseStackName=kyc-base \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 

@@ -1,5 +1,62 @@
 # Deployment Guide
 
+## Quick start (script)
+
+This repo includes a scripted version of this guide: `scripts/deploy_from_md.sh`.
+
+From repo root:
+
+```bash
+# Base stacks only
+bash scripts/deploy_from_md.sh --phase base --region us-east-1
+
+# Pipelines (requires GitHub connection details)
+bash scripts/deploy_from_md.sh \
+  --phase pipelines \
+  --region us-east-1 \
+  --github-connection-arn "arn:aws:codestar-connections:us-east-1:123456789012:connection/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" \
+  --github-repo "myorg/kyc-agents" \
+  --github-branch "main"
+
+# Lambda pipeline (waits for AgentCore pipeline to deploy agentcore stack)
+bash scripts/deploy_from_md.sh \
+  --phase lambda \
+  --region us-east-1 \
+  --github-connection-arn "..." \
+  --github-repo "..." \
+  --github-branch "..."
+
+# Print commands only
+bash scripts/deploy_from_md.sh --dry-run --phase all
+```
+
+To include the mock-service pipeline, add `--deploy-mock-service-pipeline`.
+
+## Running on AWS CloudShell
+
+CloudShell runs inside your AWS account and already has AWS CLI credentials for the signed-in console user/role.
+You do need the repo contents (templates + script) inside CloudShell.
+
+Option A — clone the repo (preferred):
+
+```bash
+git clone https://github.com/<owner>/kyc-agents.git
+cd kyc-agents
+
+# then run the script
+bash scripts/deploy_from_md.sh --help
+```
+
+Option B — upload the repo:
+
+- In the CloudShell UI: **Actions → Upload file** (upload a zip), then unzip and `cd` into it.
+
+Notes:
+
+- Make sure you’re in the intended region: pass `--region ...` to the script (or `export AWS_REGION=...`).
+- For private GitHub repos, use a GitHub token/SSH key, or upload a zip instead.
+- Your CloudShell identity must have permissions for CloudFormation + IAM (Named IAM) + CodePipeline/CodeBuild + ECR as required by these templates.
+
 ## Stack dependency overview
 
 ```
@@ -49,6 +106,8 @@ API_PIPELINE_STACK="${BASE_NAME}-api-pipeline"
 API_STACK="${BASE_NAME}-api"               # name the api pipeline will give the api stack
 LAMBDA_PIPELINE_STACK="${BASE_NAME}-lambda-pipeline"
 LAMBDA_STACK="${BASE_NAME}-lambda"         # name the lambda pipeline will give the lambda stack
+MOCK_SERVICE_PIPELINE_STACK="${BASE_NAME}-mock-service-pipeline"
+MOCK_SERVICE_STACK="${BASE_NAME}-mock-service-eb"  # name the mock-service pipeline will give the EB stack
 
 # GitHub — used by all three pipelines
 GITHUB_CONNECTION_ARN=arn:aws:codestar-connections:$REGION:$AWS_ACCOUNT_ID:connection/<id>
@@ -197,6 +256,20 @@ aws cloudformation deploy \
       MockServiceUrl=$MOCK_SERVICE_URL \
   --capabilities CAPABILITY_NAMED_IAM \
   --region $REGION
+
+aws cloudformation deploy \
+  --stack-name kyc-agent-pipeline \
+  --template-file templates/pipeline-stack.yaml \
+  --parameter-overrides \
+      GitHubConnectionArn=arn:aws:codeconnections:us-east-1:360946915124:connection/24a1bf19-4ba9-42ee-ad2c-f37799f02447 \
+      GitHubRepo=karthiknav/kyc-agents \
+      GitHubBranch=improvements \
+      RolesStackName=kyc-agent-roles \
+      AgentcoreStackName=kyc-agent-agentcore-runtime \
+      KycCasesTableName=kyc-agent-kyc-cases-360946915124-us-east-1 \
+      KycResultsBucketName=kyc-agent-360946915124-us-east-1 \
+      MockServiceUrl=http://mock-service-env.eba-mbm8enda.us-east-1.elasticbeanstalk.com \
+  --capabilities CAPABILITY_NAMED_IAM
 ```
 
 ### 5b. API pipeline (api-pipeline-stack)
@@ -219,6 +292,25 @@ aws cloudformation deploy \
       KycInitiatedQueueName=$KYC_QUEUE_NAME \
       VpcStackName=$VPC_STACK \
   --region $REGION
+
+### 5c. Mock-service pipeline (mock-service-pipeline-stack)
+
+Packages `mock-service/` as an Elastic Beanstalk source bundle and deploys `templates/mock-service/elastic-beanstalk.yaml`.
+Triggers automatically on changes to `mock-service/**`, `templates/mock-service/**`, or the two mock-service deploy scripts.
+
+```bash
+aws cloudformation deploy \
+  --template-file templates/mock-service-pipeline-stack.yaml \
+  --stack-name $MOCK_SERVICE_PIPELINE_STACK \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+      GitHubConnectionArn=$GITHUB_CONNECTION_ARN \
+      GitHubRepo=$GITHUB_REPO \
+      GitHubBranch=$GITHUB_BRANCH \
+      MockServiceStackName=$MOCK_SERVICE_STACK \
+      KycResultsBucketName=$KYC_RESULTS_BUCKET \
+  --region $REGION
+```
 ```
 
 ---

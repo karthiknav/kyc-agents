@@ -14,6 +14,12 @@ Resources:
       # Globally unique, deterministic bucket name
       BucketName: !Sub "${StackName}-${AWS::AccountId}-${AWS::Region}"
 
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Bucket for storing artifacts from different services
+      BucketName: !Sub "${StackName}-artifacts-${AWS::AccountId}-${AWS::Region}"
+
   KycCasesTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -36,6 +42,12 @@ Outputs:
     Value: !Ref SourceBucket
     Export:
       Name: !Sub "${StackName}-SourceBucketName"
+
+  ArtifactsBucketName:
+    Description: Name of the artifacts bucket for service artifacts
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub "${StackName}-ArtifactsBucketName"
 
   KycCasesTableName:
     Description: DynamoDB table name for KYC cases (CaseId primary key)

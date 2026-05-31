@@ -1,0 +1,343 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CI/CD Pipeline — GitHub → CodeBuild (package mock-service) → CloudFormation (deploy EB)'
+
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: ARN of the AWS CodeConnections connection to GitHub
+
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository in owner/repo format (e.g. myorg/kyc-agents)
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Branch to track for deployments
+
+  MockServiceStackName:
+    Type: String
+    Default: kyc-mock-service-eb
+    Description: Name to give the mock-service Elastic Beanstalk CloudFormation stack
+
+  KycResultsBucketName:
+    Type: String
+    Description: S3 bucket to upload the mock-service source bundle (used by EB ApplicationVersion)
+
+Resources:
+
+  # ── IAM roles (self-contained; does not depend on base roles stack) ──────────
+  MockServiceCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-codebuild-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: Logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+        - PolicyName: S3ArtifactsAndBundle
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: PipelineArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt PipelineArtifactBucket.Arn
+                  - !Sub "${PipelineArtifactBucket.Arn}/*"
+              - Sid: UploadBundleToResultsBucket
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${KycResultsBucketName}"
+                  - !Sub "arn:aws:s3:::${KycResultsBucketName}/*"
+
+  MockServiceCloudFormationDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-cfn-deploy-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: MockServiceBundleRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadBundleFromResultsBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${KycResultsBucketName}"
+                  - !Sub "arn:aws:s3:::${KycResultsBucketName}/*"
+        - PolicyName: ElasticBeanstalkDeploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ElasticBeanstalkManage
+                Effect: Allow
+                Action:
+                  - elasticbeanstalk:*
+                Resource: '*'
+              - Sid: ServiceLinkedRole
+                Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: '*'
+        - PolicyName: MockServiceEbIam
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: MockServiceIamCreateUpdate
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:ListInstanceProfilesForRole
+                  - iam:PassRole
+                Resource: '*'
+
+  MockServiceCodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-codepipeline-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ArtifactBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt PipelineArtifactBucket.Arn
+                  - !Sub "${PipelineArtifactBucket.Arn}/*"
+              - Sid: CodeBuild
+                Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource: !GetAtt MockServiceBuildProject.Arn
+              - Sid: CloudFormationDeploy
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*/*"
+              - Sid: PassRoleToCfn
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt MockServiceCloudFormationDeployRole.Arn
+              - Sid: GitHubConnection
+                Effect: Allow
+                Action: codestar-connections:UseConnection
+                Resource: !Ref GitHubConnectionArn
+
+  # ── S3 artifact bucket ───────────────────────────────────────────────────────
+  PipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # ── CodeBuild — package mock-service/ and upload bundle to S3 ─────────────────
+  MockServiceBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-mock-service-build"
+      Description: Build and package mock-service as an Elastic Beanstalk source bundle
+      ServiceRole: !GetAtt MockServiceCodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: MOCK_BUNDLE_BUCKET
+            Value: !Ref KycResultsBucketName
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - SHA=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
+                - ZIP_ABS="$CODEBUILD_SRC_DIR/mock-service/deploy-${SHA}.zip"
+                - S3_KEY="mock-service/deploy-${SHA}.zip"
+            build:
+              commands:
+                - (command -v zip >/dev/null 2>&1) || (yum install -y zip || true)
+                - bash scripts/package_mock_service_for_eb.sh "$ZIP_ABS"
+                - aws s3 cp "$ZIP_ABS" "s3://$MOCK_BUNDLE_BUCKET/$S3_KEY" --region "$AWS_DEFAULT_REGION"
+            post_build:
+              commands:
+                - printf '{"S3Key":"%s"}' "$S3_KEY" > parameters.json
+          artifacts:
+            files:
+              - parameters.json
+              - templates/**
+            discard-paths: no
+
+  # ── CodePipeline ─────────────────────────────────────────────────────────────
+  MockServicePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${AWS::StackName}-pipeline"
+      RoleArn: !GetAtt MockServiceCodePipelineRole.Arn
+      PipelineType: V2
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactBucket
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHubSource
+            Push:
+              - Branches:
+                  Includes:
+                    - !Ref GitHubBranch
+                FilePaths:
+                  Includes:
+                    - mock-service/**
+                    - templates/mock-service/**
+                    - scripts/deploy_mock_service.sh
+                    - scripts/package_mock_service_for_eb.sh
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Ref GitHubRepo
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+                DetectChanges: false
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: PackageMockService
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref MockServiceBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+
+        - Name: Deploy
+          Actions:
+            - Name: DeployMockServiceStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: "1"
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Ref MockServiceStackName
+                TemplatePath: "SourceArtifact::templates/mock-service/elastic-beanstalk.yaml"
+                Capabilities: CAPABILITY_NAMED_IAM
+                RoleArn: !GetAtt MockServiceCloudFormationDeployRole.Arn
+                ParameterOverrides: !Sub |
+                  {
+                    "S3Bucket": "${KycResultsBucketName}",
+                    "S3Key":    {"Fn::GetParam": ["BuildArtifact", "parameters.json", "S3Key"]}
+                  }
+              InputArtifacts:
+                - Name: SourceArtifact
+                - Name: BuildArtifact
+              RunOrder: 1
+
+Outputs:
+  PipelineName:
+    Description: Name of the CodePipeline
+    Value: !Ref MockServicePipeline
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineName"
+
+  BuildProjectName:
+    Description: CodeBuild project name
+    Value: !Ref MockServiceBuildProject
+    Export:
+      Name: !Sub "${AWS::StackName}-BuildProjectName"
