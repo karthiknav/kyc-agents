@@ -39,6 +39,14 @@ Parameters:
       - Worker
     Description: "Environment tier (WebServer for HTTP)."
 
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: "VPC in which to launch the Elastic Beanstalk environment."
+
+  Subnets:
+    Type: String
+    Description: "Comma-separated subnet ID(s) for the EB instance. Use a public subnet to keep the CNAME publicly reachable."
+
   SeedDefaultTestCases:
     Type: String
     Default: "1"
@@ -117,6 +125,16 @@ Resources:
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: EnvironmentType
           Value: SingleInstance
+        # Place the instance in the specified VPC subnet
+        - Namespace: aws:ec2:vpc
+          OptionName: VPCId
+          Value: !Ref VpcId
+        - Namespace: aws:ec2:vpc
+          OptionName: Subnets
+          Value: !Ref Subnets
+        - Namespace: aws:ec2:vpc
+          OptionName: AssociatePublicIpAddress
+          Value: "true"
         # Ensure app gets enough time to start
         - Namespace: aws:elasticbeanstalk:command
           OptionName: DeploymentPolicy

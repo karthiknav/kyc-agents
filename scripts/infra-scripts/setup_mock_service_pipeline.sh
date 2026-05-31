@@ -22,12 +22,36 @@ ARTIFACTS_BUCKET=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`ArtifactsBucketName`].OutputValue' \
     --output text)
 
+VPC_ID=$(aws cloudformation describe-stacks \
+    --stack-name kyc-agent-vpc \
+    --region "$REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' \
+    --output text)
+
+PUBLIC_SUBNET=$(aws cloudformation describe-stacks \
+    --stack-name kyc-agent-vpc \
+    --region "$REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet1Id`].OutputValue' \
+    --output text)
+
 if [ -z "$ARTIFACTS_BUCKET" ] || [ "$ARTIFACTS_BUCKET" = "None" ]; then
     echo "Error: Could not resolve ArtifactsBucketName from kyc-agent-storage stack." >&2
     exit 1
 fi
 
-echo "Using artifacts bucket: $ARTIFACTS_BUCKET"
+if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+    echo "Error: Could not resolve VpcId from kyc-agent-vpc stack." >&2
+    exit 1
+fi
+
+if [ -z "$PUBLIC_SUBNET" ] || [ "$PUBLIC_SUBNET" = "None" ]; then
+    echo "Error: Could not resolve PublicSubnet1Id from kyc-agent-vpc stack." >&2
+    exit 1
+fi
+
+echo "Using artifacts bucket : $ARTIFACTS_BUCKET"
+echo "Using VPC              : $VPC_ID"
+echo "Using public subnet    : $PUBLIC_SUBNET"
 echo "Deploying pipeline stack: kyc-agent-mock-service-pipeline ..."
 
 aws cloudformation deploy \
@@ -40,6 +64,8 @@ aws cloudformation deploy \
         GitHubBranch="improvements" \
         MockServiceStackName="kyc-mock-service-eb" \
         KycResultsBucketName="$ARTIFACTS_BUCKET" \
+        VpcId="$VPC_ID" \
+        Subnets="$PUBLIC_SUBNET" \
     --region "$REGION"
 
 echo "✓ Pipeline stack deployed: kyc-agent-mock-service-pipeline"

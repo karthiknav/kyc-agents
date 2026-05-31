@@ -24,6 +24,14 @@ Parameters:
     Type: String
     Description: S3 bucket to upload the mock-service source bundle (used by EB ApplicationVersion)
 
+  VpcId:
+    Type: String
+    Description: VPC ID to pass to the Elastic Beanstalk stack
+
+  Subnets:
+    Type: String
+    Description: Comma-separated public subnet IDs for the EB instance
+
 Resources:
 
   # ── IAM roles (self-contained; does not depend on base roles stack) ──────────
@@ -314,7 +322,9 @@ Resources:
                 ParameterOverrides: !Sub |
                   {
                     "S3Bucket": "${KycResultsBucketName}",
-                    "S3Key":    {"Fn::GetParam": ["BuildArtifact", "parameters.json", "S3Key"]}
+                    "S3Key":    {"Fn::GetParam": ["BuildArtifact", "parameters.json", "S3Key"]},
+                    "VpcId":    "${VpcId}",
+                    "Subnets":  "${Subnets}"
                   }
               InputArtifacts:
                 - Name: SourceArtifact
