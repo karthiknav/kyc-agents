@@ -62,6 +62,7 @@ aws cloudformation deploy \
         KycCasesTableName="$KYC_CASES_TABLE" \
         KycResultsBucketName="$KYC_RESULTS_BUCKET" \
         MockServiceUrl="$MOCK_SERVICE_URL" \
+        LangfuseEnabled="false" \
     --capabilities CAPABILITY_NAMED_IAM \
     --region "$REGION"
 
