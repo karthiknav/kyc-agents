@@ -45,7 +45,7 @@ Resources:
   AgentCoreSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: AgentCore runtime — egress only, no inbound
+      GroupDescription: AgentCore runtime egress only
       VpcId: !ImportValue
         Fn::Sub: "${VpcStackName}-VpcId"
       SecurityGroupEgress:
