@@ -42,7 +42,7 @@ Resources:
   KycLambdaSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: KYC processor Lambda — egress only, no inbound
+      GroupDescription: KYC processor Lambda egress only
       VpcId: !ImportValue
         Fn::Sub: "${VpcStackName}-VpcId"
       SecurityGroupEgress:
