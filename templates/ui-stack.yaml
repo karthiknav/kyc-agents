@@ -5,10 +5,15 @@ Parameters:
   AcmCertificateArn:
     Type: String
     Default: ''
-    Description: 'ARN of the ACM certificate for CloudFront (optional; omit for default *.cloudfront.net cert)'
+    Description: 'ARN of the ACM certificate for CloudFront (must be in us-east-1; optional — omit for default *.cloudfront.net cert)'
+  CustomDomainName:
+    Type: String
+    Default: ''
+    Description: 'Custom domain alias for CloudFront, e.g. kyc.gen-ai-designs.com (requires AcmCertificateArn)'
 
 Conditions:
   UseAcmCert: !Not [!Equals [!Ref AcmCertificateArn, '']]
+  UseCustomDomain: !Not [!Equals [!Ref CustomDomainName, '']]
 
 Resources:
   StaticBucket:
@@ -62,6 +67,10 @@ Resources:
       DistributionConfig:
         Enabled: true
         DefaultRootObject: index.html
+        Aliases: !If
+          - UseCustomDomain
+          - [!Ref CustomDomainName]
+          - !Ref AWS::NoValue
         Origins:
           - Id: S3Origin
             DomainName: !GetAtt StaticBucket.RegionalDomainName
@@ -120,6 +129,9 @@ Outputs:
       Name: !Sub "${AWS::StackName}-DistributionDomainName"
   WebsiteUrl:
     Description: HTTPS URL of the KYC UI
-    Value: !Sub "https://${Distribution.DomainName}"
+    Value: !If
+      - UseCustomDomain
+      - !Sub "https://${CustomDomainName}"
+      - !Sub "https://${Distribution.DomainName}"
     Export:
       Name: !Sub "${AWS::StackName}-WebsiteUrl"
