@@ -45,7 +45,7 @@ Parameters:
 
   Subnets:
     Type: String
-    Description: "Comma-separated subnet ID(s) for the EB instance. Use a public subnet to keep the CNAME publicly reachable."
+    Description: "Comma-separated public subnet IDs (at least 2 in different AZs — required by the ALB in LoadBalanced mode)."
 
   SeedDefaultTestCases:
     Type: String
@@ -56,7 +56,7 @@ Parameters:
     Description: "Set to 0 to disable startup seeding of default test cases."
 
 Resources:
-  # Service role used by the EB control plane to manage the environment (launch instances, associate EIPs, etc.)
+  # Service role used by the EB control plane (health reporting, managed updates, ALB registration)
   EBServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -71,18 +71,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
         - arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy
-      Policies:
-        - PolicyName: EIPManagement
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ec2:AssociateAddress
-                  - ec2:DisassociateAddress
-                  - ec2:AllocateAddress
-                  - ec2:ReleaseAddress
-                Resource: "*"
 
   # IAM role and instance profile required by Elastic Beanstalk (environment must have instance profile)
   EBInstanceProfileRole:
@@ -143,7 +131,7 @@ Resources:
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: SEED_DEFAULT_TEST_CASES
           Value: !Ref SeedDefaultTestCases
-        # Single instance (no load balancer) for a simple mock; instance profile required by EB
+        # Launch configuration — instance profile required by EB
         - Namespace: aws:autoscaling:launchconfiguration
           OptionName: IamInstanceProfile
           Value: !Ref EBInstanceProfile
@@ -152,16 +140,25 @@ Resources:
           Value: !Ref InstanceType
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: EnvironmentType
-          Value: SingleInstance
+          Value: LoadBalanced
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
           Value: !GetAtt EBServiceRole.Arn
-        # Place the instance in the specified VPC subnet
+        - Namespace: aws:autoscaling:asg
+          OptionName: MinSize
+          Value: "1"
+        - Namespace: aws:autoscaling:asg
+          OptionName: MaxSize
+          Value: "1"
+        # Place instances and ALB in the specified public subnets (2 AZs required by ALB)
         - Namespace: aws:ec2:vpc
           OptionName: VPCId
           Value: !Ref VpcId
         - Namespace: aws:ec2:vpc
           OptionName: Subnets
+          Value: !Ref Subnets
+        - Namespace: aws:ec2:vpc
+          OptionName: ELBSubnets
           Value: !Ref Subnets
         - Namespace: aws:ec2:vpc
           OptionName: AssociatePublicIpAddress

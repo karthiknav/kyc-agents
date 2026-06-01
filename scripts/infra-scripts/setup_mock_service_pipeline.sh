@@ -28,10 +28,16 @@ VPC_ID=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`VpcId`].OutputValue' \
     --output text)
 
-PUBLIC_SUBNET=$(aws cloudformation describe-stacks \
+PUBLIC_SUBNET_1=$(aws cloudformation describe-stacks \
     --stack-name kyc-agent-vpc \
     --region "$REGION" \
     --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet1Id`].OutputValue' \
+    --output text)
+
+PUBLIC_SUBNET_2=$(aws cloudformation describe-stacks \
+    --stack-name kyc-agent-vpc \
+    --region "$REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnet2Id`].OutputValue' \
     --output text)
 
 if [ -z "$ARTIFACTS_BUCKET" ] || [ "$ARTIFACTS_BUCKET" = "None" ]; then
@@ -44,14 +50,22 @@ if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
     exit 1
 fi
 
-if [ -z "$PUBLIC_SUBNET" ] || [ "$PUBLIC_SUBNET" = "None" ]; then
+if [ -z "$PUBLIC_SUBNET_1" ] || [ "$PUBLIC_SUBNET_1" = "None" ]; then
     echo "Error: Could not resolve PublicSubnet1Id from kyc-agent-vpc stack." >&2
     exit 1
 fi
 
+if [ -z "$PUBLIC_SUBNET_2" ] || [ "$PUBLIC_SUBNET_2" = "None" ]; then
+    echo "Error: Could not resolve PublicSubnet2Id from kyc-agent-vpc stack." >&2
+    echo "ALB requires subnets in at least 2 AZs. Ensure the kyc-agent-vpc stack exports PublicSubnet2Id." >&2
+    exit 1
+fi
+
+PUBLIC_SUBNETS="$PUBLIC_SUBNET_1,$PUBLIC_SUBNET_2"
+
 echo "Using artifacts bucket : $ARTIFACTS_BUCKET"
 echo "Using VPC              : $VPC_ID"
-echo "Using public subnet    : $PUBLIC_SUBNET"
+echo "Using public subnets   : $PUBLIC_SUBNETS"
 echo "Deploying pipeline stack: kyc-agent-mock-service-pipeline ..."
 
 aws cloudformation deploy \
@@ -65,7 +79,7 @@ aws cloudformation deploy \
         MockServiceStackName="kyc-mock-service-eb" \
         KycResultsBucketName="$ARTIFACTS_BUCKET" \
         VpcId="$VPC_ID" \
-        Subnets="$PUBLIC_SUBNET" \
+        Subnets="$PUBLIC_SUBNETS" \
     --region "$REGION"
 
 echo "✓ Pipeline stack deployed: kyc-agent-mock-service-pipeline"
