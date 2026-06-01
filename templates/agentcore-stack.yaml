@@ -76,14 +76,14 @@ Resources:
       RoleArn: !ImportValue
         Fn::Sub: "${RolesStackName}-AgentExecutionRoleArn"
       NetworkConfiguration:
-        NetworkMode: PRIVATE
-        VpcConfig:
-          SubnetIds:
+        NetworkMode: VPC
+        NetworkModeConfig:
+          Subnets:
             - !ImportValue
                 Fn::Sub: "${VpcStackName}-PrivateSubnet1Id"
             - !ImportValue
                 Fn::Sub: "${VpcStackName}-PrivateSubnet2Id"
-          SecurityGroupIds:
+          SecurityGroups:
             - !Ref AgentCoreSecurityGroup
       Description: !Sub "KYC agent runtime — image ${ImageTag}"
 
