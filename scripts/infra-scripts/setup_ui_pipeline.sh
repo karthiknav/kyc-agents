@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Deploys the UI CI/CD pipeline stack.
-# Requires ui-stack to already be deployed (S3 bucket + CloudFront are one-time infra).
-# Builds the React frontend and syncs to S3/CloudFront on every push to the configured branch.
+# Deploys the UI infra and CI/CD pipeline stacks.
+# 1. ui-stack.yaml   — S3 bucket + CloudFront distribution (idempotent)
+# 2. ui-pipeline-stack.yaml — CodePipeline that builds and syncs the React frontend on every push.
 #
 # No inputs required — all values are hardcoded or resolved from stack outputs.
 set -euo pipefail
@@ -31,20 +31,16 @@ echo "  GITHUB_BRANCH        : $GITHUB_BRANCH"
 echo "  REGION               : $REGION"
 echo ""
 
-# ── Verify ui-stack is deployed (pre-req: S3 bucket + CloudFront must exist) ──
-echo "── Checking ui-stack status ──"
-UI_STATUS=$(aws cloudformation describe-stacks \
+# ── Deploy ui-stack (S3 bucket + CloudFront) ─────────────────────────────────
+echo "── Deploying $UI_STACK ──"
+aws cloudformation deploy \
+    --template-file "$REPO_ROOT/templates/ui-stack.yaml" \
     --stack-name "$UI_STACK" \
-    --query 'Stacks[0].StackStatus' \
-    --output text --region "$REGION")
+    --capabilities CAPABILITY_NAMED_IAM \
+    --region "$REGION" \
+    --no-fail-on-empty-changeset
 
-echo "  $UI_STACK status: $UI_STATUS"
-
-if [[ "$UI_STATUS" != "CREATE_COMPLETE" && "$UI_STATUS" != "UPDATE_COMPLETE" ]]; then
-    echo "ERROR: $UI_STACK is not in a stable state ($UI_STATUS)."
-    echo "  Deploy the UI stack (ui-stack.yaml) before running this script."
-    exit 1
-fi
+echo "✓ $UI_STACK deployed"
 
 # ── Verify api-stack is deployed (needed for VITE_API_BASE_URL at build time) ──
 echo "── Checking api-stack status ──"

@@ -405,6 +405,7 @@ Resources:
                   - ec2:DescribeSubnets
                   - ec2:DescribeVpcs
                   - ec2:DescribeNetworkInterfaces
+                  - ec2:CreateTags
                 Resource: '*'
 
   # ── KYC processor Lambda: SQS consume, DynamoDB table access, Bedrock Agent Core invoke
