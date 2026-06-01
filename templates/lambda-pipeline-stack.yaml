@@ -99,7 +99,7 @@ Resources:
             build:
               commands:
                 - mkdir -p /tmp/lambda_pkg
-                - pip install -q -r lambda/requirements.txt -t /tmp/lambda_pkg --platform manylinux_2_17_x86_64 --python-version 3.11 --only-binary=:all: --upgrade
+                - "pip install -q -r lambda/requirements.txt -t /tmp/lambda_pkg --platform manylinux_2_17_x86_64 --python-version 3.11 --only-binary=:all: --upgrade"
                 - cp lambda/kyc-processor.py /tmp/lambda_pkg/
                 - cd /tmp/lambda_pkg && zip -r $OLDPWD/$LAMBDA_ZIP . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*"
                 - cd $OLDPWD

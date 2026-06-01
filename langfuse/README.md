@@ -1,5 +1,49 @@
 # Langfuse Deployment
 
+## Prerequisites: AWS Resources
+
+The following AWS resources must exist **before** running `terraform init` or `terraform apply`. They are created by the KYC CloudFormation stacks and are not managed by this Terraform module.
+
+### S3 State Bucket
+
+Terraform remote state is stored in the existing artifacts bucket:
+
+```
+kyc-agent-artifacts-360946915124-us-east-1
+```
+
+This bucket is created by `templates/base/storage-stack.yaml` (`ArtifactsBucket`). State is stored at the key `langfuse/terraform.tfstate`.
+
+### VPC & Subnets
+
+The `main.tf` references a pre-existing VPC and subnets (created outside this module):
+
+| Resource | ID |
+|---|---|
+| VPC | `vpc-0471d506bfc76f3d9` |
+| Private Subnet 1 | `subnet-093a6535e084d1b87` |
+| Private Subnet 2 | `subnet-0bc3915284f4d7cae` |
+| Public Subnet 1 | `subnet-0047a37be8d0a9a6d` |
+| Public Subnet 2 | `subnet-0ff49bee49396da89` |
+| Private Route Table | `rtb-040d1056d5cab6969` |
+
+### EC2 Instance IAM Role (for running from EC2 Instance Connect)
+
+If running Terraform from an EC2 instance, the instance's IAM role must have the following permissions on the state bucket:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+  "Resource": [
+    "arn:aws:s3:::kyc-agent-artifacts-360946915124-us-east-1",
+    "arn:aws:s3:::kyc-agent-artifacts-360946915124-us-east-1/*"
+  ]
+}
+```
+
+---
+
 ## Prerequisite: Install Terraform
 
 You need **Terraform >= 1.9.0** installed. The module uses cross-variable references in validation blocks, which were introduced in 1.9. Earlier versions (including the default on AWS CloudShell) will fail on `terraform init`.
