@@ -16,6 +16,7 @@ MOCK_SERVICE_STACK="kyc-mock-service-eb"
 PIPELINE_STACK="kyc-agent-pipeline"
 ROLES_STACK="kyc-agent-roles"
 AGENTCORE_STACK="kyc-agent-agentcore-runtime"
+VPC_STACK="kyc-agent-vpc"
 
 GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:360946915124:connection/24a1bf19-4ba9-42ee-ad2c-f37799f02447"
 GITHUB_REPO="karthiknav/kyc-agents"
@@ -62,6 +63,7 @@ aws cloudformation deploy \
         KycCasesTableName="$KYC_CASES_TABLE" \
         KycResultsBucketName="$KYC_RESULTS_BUCKET" \
         MockServiceUrl="$MOCK_SERVICE_URL" \
+        VpcStackName="$VPC_STACK" \
         LangfuseEnabled="false" \
     --capabilities CAPABILITY_NAMED_IAM \
     --region "$REGION"
