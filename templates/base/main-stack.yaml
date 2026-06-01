@@ -8,6 +8,28 @@ Parameters:
     Description: Default model id written to SSM Parameter Store at /kyc-agent/model-id
     Default: us.anthropic.claude-3-5-sonnet-20241022-v2:0
 
+  LangfuseProjectName:
+    Type: String
+    Description: Langfuse project name written to SSM at /langfuse/project_name
+    Default: kyc-agents
+
+  LangfuseHost:
+    Type: String
+    Description: Langfuse host URL written to SSM at /langfuse/host
+    Default: https://cloud.langfuse.com
+
+  LangfusePublicKey:
+    Type: String
+    Description: Langfuse public key written to SSM at /langfuse/public_key (set to your actual key after stack creation)
+    Default: placeholder
+    NoEcho: true
+
+  LangfuseSecretKey:
+    Type: String
+    Description: Langfuse secret key written to SSM at /langfuse/secret_key (set to your actual key after stack creation)
+    Default: placeholder
+    NoEcho: true
+
 
 Resources:
   # SQS queue - middleware/FastAPI publishes here when KYC is initiated
@@ -28,6 +50,38 @@ Resources:
       Type: String
       Value: !Ref DefaultModelId
       Description: Default model id for the KYC agent (read as env MODEL)
+
+  LangfuseProjectNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /langfuse/project_name
+      Type: String
+      Value: !Ref LangfuseProjectName
+      Description: Langfuse project name (read by relaunch_agent_runtime_langfuse.py)
+
+  LangfuseHostParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /langfuse/host
+      Type: String
+      Value: !Ref LangfuseHost
+      Description: Langfuse host URL (read by relaunch_agent_runtime_langfuse.py)
+
+  LangfusePublicKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /langfuse/public_key
+      Type: String
+      Value: !Ref LangfusePublicKey
+      Description: Langfuse public key — update via SSM console or aws ssm put-parameter after stack creation
+
+  LangfuseSecretKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /langfuse/secret_key
+      Type: String
+      Value: !Ref LangfuseSecretKey
+      Description: Langfuse secret key — update via SSM console or aws ssm put-parameter after stack creation
 
 Outputs:
   KycAgentModelIdParameterName:

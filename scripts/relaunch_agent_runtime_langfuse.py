@@ -105,6 +105,12 @@ def main() -> int:
         langfuse_host_raw = _get_ssm_parameter(ssm, paths["LANGFUSE_HOST"], decrypt=False)
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "")
+        if code == "ParameterNotFound":
+            print(
+                f"warning: Langfuse SSM parameters not found under '{ssm_prefix}' — skipping Langfuse configuration",
+                file=sys.stderr,
+            )
+            return 0
         print(f"error: SSM read failed ({code}): {e}", file=sys.stderr)
         return 1
 
