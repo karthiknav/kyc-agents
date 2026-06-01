@@ -31,7 +31,7 @@ Resources:
   BackendLambdaSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Backend API Lambda — egress only, no inbound
+      GroupDescription: Backend API Lambda egress only
       VpcId: !ImportValue
         Fn::Sub: "${VpcStackName}-VpcId"
       SecurityGroupEgress:
