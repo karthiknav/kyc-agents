@@ -159,6 +159,7 @@ class OverrideRequest(BaseModel):
 
 # Mock database for login
 USERS = [
+    {"user_id": "USR000", "email": "admin", "password": "password123", "role": "admin"},
     {"user_id": "USR001", "email": "analyst@bank.nl", "password": "password123", "role": "analyst"},
     {"user_id": "USR002", "email": "uploader@bank.nl", "password": "password123", "role": "uploader"},
     {"user_id": "USR003", "email": "uploader2@bank.nl", "password": "password123", "role": "uploader"},

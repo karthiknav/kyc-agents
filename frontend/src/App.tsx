@@ -69,10 +69,10 @@ function App() {
           variant="admin"
         />
 
-        {user.role === 'analyst' ? (
+        {user.role === "admin" ? (
           <AgentNetwork />
         ) : (
-          <div style={{ padding: '88px 32px 40px', color: 'var(--text-secondary)' }}>
+          <div style={{ padding: "88px 32px 40px", color: "var(--text-secondary)" }}>
             You don’t have access to this page.
           </div>
         )}

@@ -1,4 +1,4 @@
-export type Role = 'uploader' | 'analyst';
+export type Role = 'uploader' | 'analyst' | 'admin';
 
 export interface S3Location {
     bucket: string;
