@@ -64,7 +64,7 @@ aws cloudformation deploy \
         KycResultsBucketName="$KYC_RESULTS_BUCKET" \
         MockServiceUrl="$MOCK_SERVICE_URL" \
         VpcStackName="$VPC_STACK" \
-        LangfuseEnabled="false" \
+        LangfuseEnabled="true" \
     --capabilities CAPABILITY_NAMED_IAM \
     --region "$REGION"
 

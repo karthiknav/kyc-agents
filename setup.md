@@ -12,14 +12,34 @@ This guide walks through deploying the full KYC Agents stack in the correct orde
 
 ---
 
-## Step 1 — Base infrastructure
+## Step 1 — Langfuse credentials
 
-Run the base deployment script. This deploys four CloudFormation stacks in order: VPC, Storage (S3 + DynamoDB), Main (SQS + SSM model ID), and Roles (IAM).
+Langfuse provides tracing for all agent and tool calls. Retrieve your API keys before deploying infrastructure so they are written to SSM during the base stack deploy.
+
+1. Open [https://langfuse.gen-ai-designs.com](https://langfuse.gen-ai-designs.com) and sign in.
+2. Go to **Settings → API Keys**.
+3. Copy the **Public Key** (starts with `pk-lf-`) and **Secret Key** (starts with `sk-lf-`).
+4. Export them in your shell (CloudShell or local terminal):
+
+```bash
+export LANGFUSE_PUBLIC_KEY="pk-lf-..."
+export LANGFUSE_SECRET_KEY="sk-lf-..."
+```
+
+These will be picked up automatically by the base deployment script in the next step.
+
+---
+
+## Step 2 — Base infrastructure
+
+Run the base deployment script. This deploys four CloudFormation stacks in order: VPC, Storage (S3 + DynamoDB), Main (SQS + SSM parameters including Langfuse keys), and Roles (IAM).
 
 ```bash
 bash scripts/infra-scripts/deploy_base.sh [BASE_NAME] [REGION]
 # Defaults: BASE_NAME=kyc-agent, REGION=us-east-1
 ```
+
+The Langfuse public and secret keys exported in Step 1 are written to SSM at `/langfuse/public_key` and `/langfuse/secret_key`.
 
 Stacks deployed:
 - `kyc-agent-vpc`
@@ -29,7 +49,7 @@ Stacks deployed:
 
 ---
 
-## Step 2 — Mock service pipeline
+## Step 3 — Mock service pipeline
 
 Deploys the Elastic Beanstalk mock service used by the AgentCore crew during development and testing.
 
@@ -43,23 +63,6 @@ Stack deployed: `kyc-agent-mock-service-pipeline`
 This pipeline manages: `kyc-mock-service-eb`
 
 Wait for the pipeline to run and the mock service EB environment to reach a healthy state before proceeding.
-
----
-
-## Step 3 — Langfuse observability (optional)
-
-Langfuse provides tracing for all agent and tool calls. See **[langfuse/README.md](langfuse/README.md)** for full deployment instructions.
-
-The base stacks from Step 1 (VPC and storage bucket) must exist before deploying Langfuse.
-
-Once deployed, set these environment variables when deploying the AgentCore pipeline:
-
-```bash
-LANGFUSE_ENABLED=1
-LANGFUSE_BASE_URL=<your-langfuse-url>
-LANGFUSE_PUBLIC_KEY=<key>
-LANGFUSE_SECRET_KEY=<key>
-```
 
 ---
 
@@ -131,11 +134,11 @@ Stacks deployed: `kyc-agent-ui`, `kyc-agent-ui-pipeline`
 ## Deployment order summary
 
 ```
-Step 1: deploy_base.sh
+Step 1: Get Langfuse API keys → export LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY
            ↓
-Step 2: setup_mock_service_pipeline.sh   (wait for EB to be healthy)
+Step 2: deploy_base.sh              (writes keys to SSM)
            ↓
-Step 3: Langfuse (optional, see langfuse/README.md)
+Step 3: setup_mock_service_pipeline.sh   (wait for EB to be healthy)
            ↓
 Step 4: setup_agentcore_pipeline.sh      (wait for agentcore-runtime stack)
 Step 5: setup_api_pipeline.sh            (can run in parallel with Step 4)
