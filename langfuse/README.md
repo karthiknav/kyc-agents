@@ -249,12 +249,18 @@ This means the required Helm chart dependencies listed in `Chart.yaml` are missi
 
 **Resolution:**
 
-From the `langfuse/charts/langfuse` directory (where `Chart.yaml` is present), run:
+If `helm` is not installed (e.g. on an EC2 instance), install it first:
 
-```sh
-helm dependency update
+```bash
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
 
-This will download the required dependencies into the `charts/` directory. After this, you can proceed with your deployment (e.g., `terraform apply`).
+Then download the chart dependencies:
+
+```bash
+helm dependency update langfuse/charts/langfuse
+```
+
+This will download the required dependencies into the `charts/` directory. After this, re-run `terraform apply`.
 
 ---
