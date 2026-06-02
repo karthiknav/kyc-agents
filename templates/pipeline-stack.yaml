@@ -233,6 +233,19 @@ Resources:
       ArtifactStore:
         Type: S3
         Location: !Ref PipelineArtifactBucket
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHubSource
+            Push:
+              - Branches:
+                  Includes:
+                    - !Ref GitHubBranch
+                FilePaths:
+                  Includes:
+                    - crew/**
+                    - templates/agentcore-stack.yaml
+                    - templates/pipeline-stack.yaml
       Stages:
 
         # Stage 1: pull source from GitHub on every push to the tracked branch
@@ -249,7 +262,7 @@ Resources:
                 FullRepositoryId: !Ref GitHubRepo
                 BranchName: !Ref GitHubBranch
                 OutputArtifactFormat: CODE_ZIP
-                DetectChanges: true
+                DetectChanges: false
               OutputArtifacts:
                 - Name: SourceArtifact
               RunOrder: 1
