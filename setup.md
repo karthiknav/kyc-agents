@@ -12,6 +12,34 @@ This guide walks through deploying the full KYC Agents stack in the correct orde
 
 ---
 
+## Running from AWS CloudShell
+
+CloudShell already has the AWS CLI configured with your console credentials, so you only need to set up git access.
+
+1. Set your git identity and credentials (use a GitHub [personal access token](https://github.com/settings/tokens) as the password — GitHub no longer accepts account passwords over HTTPS):
+
+```bash
+git config --global user.name "<your-github-username>"
+git config --global user.email "<your-email>"
+git config --global credential.helper store
+```
+
+2. Clone the repo (first time), or pull the latest changes (if it's already cloned):
+
+```bash
+# First time
+git clone https://github.com/<org>/kyc-agents.git
+cd kyc-agents
+
+# Already cloned
+cd kyc-agents
+git pull
+```
+
+You'll be prompted for your GitHub username and the personal access token the first time you push/pull — `credential.helper store` caches them afterward so CloudShell won't ask again in the same session.
+
+---
+
 ## Step 1 — Langfuse credentials
 
 Langfuse provides tracing for all agent and tool calls. Retrieve your API keys before deploying infrastructure so they are written to SSM during the base stack deploy.

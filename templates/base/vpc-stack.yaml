@@ -221,6 +221,20 @@ Resources:
       CidrBlock: 0.0.0.0/0
       PortRange: { From: 123, To: 123 }
 
+  # ALB (public subnet) forwards directly to the Langfuse web pod IP on
+  # container port 3000 (target-type: ip) in the private subnet. See
+  # NACL-COMPLIANCE.md "Langfuse NACL gap".
+  PublicNaclOutboundLangfuseWeb:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNacl
+      RuleNumber: 150
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 3000, To: 3000 }
+
   PublicSubnet1NaclAssociation:
     Type: AWS::EC2::SubnetNetworkAclAssociation
     Properties:
@@ -306,6 +320,170 @@ Resources:
       Egress: true
       CidrBlock: !GetAtt VPC.CidrBlock
       PortRange: { From: 1024, To: 65535 }
+
+  # ── Langfuse (EKS Fargate + Aurora Postgres + ElastiCache Redis +
+  # in-cluster ClickHouse + EFS, deployed via langfuse/main.tf into these
+  # same private subnets) needs explicit NACL entries beyond the KYC
+  # workload rules above. See NACL-COMPLIANCE.md "Langfuse NACL gap".
+
+  PrivateNaclInboundPostgres:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 150
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 5432, To: 5432 }
+
+  PrivateNaclOutboundPostgres:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 150
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 5432, To: 5432 }
+
+  PrivateNaclInboundRedis:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 160
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 6379, To: 6379 }
+
+  PrivateNaclOutboundRedis:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 160
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 6379, To: 6379 }
+
+  PrivateNaclInboundClickhouseHttp:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 170
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 8123, To: 8123 }
+
+  PrivateNaclOutboundClickhouseHttp:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 170
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 8123, To: 8123 }
+
+  PrivateNaclInboundClickhouseNative:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 180
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 9000, To: 9000 }
+
+  PrivateNaclOutboundClickhouseNative:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 180
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 9000, To: 9000 }
+
+  PrivateNaclInboundEfsNfs:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 190
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 2049, To: 2049 }
+
+  PrivateNaclOutboundEfsNfs:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 190
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 2049, To: 2049 }
+
+  PrivateNaclInboundLangfuseWeb:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 200
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 3000, To: 3000 }
+
+  PrivateNaclOutboundLangfuseWeb:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 200
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 3000, To: 3000 }
+
+  # Catch-all for EKS-internal ports not pinned down by the vendored Helm
+  # chart (ZooKeeper/Keeper quorum + election ports, worker<->web, etc.).
+  # Scoped to the VPC CIDR (not 0.0.0.0/0) to avoid the policy's
+  # allow-all-from-anywhere pattern; mirrors the langfuse-eks SG's
+  # eks_vpc rule which already allows all TCP 0-65535 from VPC CIDR.
+  PrivateNaclInboundIntraVpcCatchAll:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 210
+      Protocol: 6
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 0, To: 65535 }
+
+  PrivateNaclOutboundIntraVpcCatchAll:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 210
+      Protocol: 6
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 0, To: 65535 }
 
   PrivateSubnet1NaclAssociation:
     Type: AWS::EC2::SubnetNetworkAclAssociation
