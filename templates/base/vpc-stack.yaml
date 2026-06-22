@@ -207,7 +207,7 @@ Resources:
       Protocol: 17
       RuleAction: allow
       Egress: true
-      CidrBlock: 0.0.0.0/0
+      CidrBlock: !GetAtt VPC.CidrBlock
       PortRange: { From: 53, To: 53 }
 
   PublicNaclOutboundNtpUdp:
@@ -293,7 +293,7 @@ Resources:
       Protocol: 17
       RuleAction: allow
       Egress: true
-      CidrBlock: 0.0.0.0/0
+      CidrBlock: !GetAtt VPC.CidrBlock
       PortRange: { From: 53, To: 53 }
 
   PrivateNaclOutboundEphemeral:
@@ -304,7 +304,7 @@ Resources:
       Protocol: 6
       RuleAction: allow
       Egress: true
-      CidrBlock: 0.0.0.0/0
+      CidrBlock: !GetAtt VPC.CidrBlock
       PortRange: { From: 1024, To: 65535 }
 
   PrivateSubnet1NaclAssociation:

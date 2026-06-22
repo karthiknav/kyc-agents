@@ -52,8 +52,8 @@ Two purpose-built NACLs were added in [templates/base/vpc-stack.yaml](templates/
 | 120 | Inbound | TCP | 1024–65535 | `0.0.0.0/0` | ALLOW | Return traffic for outbound requests — NACLs are stateless, so response packets need an explicit rule |
 | 100 | Outbound | TCP | 80, 443 | `0.0.0.0/0` | ALLOW | EB instance reaching the internet/AWS APIs |
 | 120 | Outbound | TCP | 1024–65535 | `0.0.0.0/0` | ALLOW | Response traffic back to clients hitting the ALB |
-| 130 | Outbound | UDP | 53 | `0.0.0.0/0` | ALLOW | DNS resolution |
-| 140 | Outbound | UDP | 123 | `0.0.0.0/0` | ALLOW | NTP time sync |
+| 130 | Outbound | UDP | 53 | VPC CIDR (`10.0.0.0/16`) | ALLOW | DNS resolution via the VPC's Route 53 Resolver (always at the VPC's base address +2) |
+| 140 | Outbound | UDP | 123 | `0.0.0.0/0` | ALLOW | NTP time sync (Amazon Time Sync Service is reached over a link-local address, not the VPC CIDR) |
 | * | both | all | all | `0.0.0.0/0` | DENY | Implicit default-deny |
 
 No SSH rule is included — the Terraform runner EC2 instance that previously needed port 22 has been removed from this repo, and there is no other workload in the public subnets that requires inbound SSH.
@@ -66,8 +66,8 @@ No SSH rule is included — the Terraform runner EC2 instance that previously ne
 | 110 | Inbound | TCP | 443 | VPC CIDR (`10.0.0.0/16`) | ALLOW | Intra-VPC HTTPS, in case Lambda/AgentCore ever call each other directly |
 | 100 | Outbound | TCP | 443 | `0.0.0.0/0` | ALLOW | HTTPS to Bedrock, S3, DynamoDB, SQS, Textract, and the BRP/PEP mock APIs |
 | 110 | Outbound | TCP | 80 | `0.0.0.0/0` | ALLOW | Plain-HTTP mock service calls, if `MOCK_SERVICE_URL` is configured without TLS |
-| 120 | Outbound | UDP | 53 | `0.0.0.0/0` | ALLOW | DNS resolution |
-| 130 | Outbound | TCP | 1024–65535 | `0.0.0.0/0` | ALLOW | Ephemeral return ports for outbound calls |
+| 120 | Outbound | UDP | 53 | VPC CIDR (`10.0.0.0/16`) | ALLOW | DNS resolution via the VPC's Route 53 Resolver |
+| 130 | Outbound | TCP | 1024–65535 | VPC CIDR (`10.0.0.0/16`) | ALLOW | Stateless return leg for rule 110 inbound — answers intra-VPC callers connecting to us on 443 |
 | * | both | all | all | `0.0.0.0/0` | DENY | Implicit default-deny |
 
 No broad inbound internet rule is needed on `PrivateNacl` — nothing outside the VPC ever initiates a connection to the Lambdas or AgentCore runtime.
