@@ -58,26 +58,6 @@ Two purpose-built NACLs were added in [templates/base/vpc-stack.yaml](templates/
 
 No SSH rule is included — the Terraform runner EC2 instance that previously needed port 22 has been removed from this repo, and there is no other workload in the public subnets that requires inbound SSH.
 
-### Manually adding SSH to PublicNacl
-
-If a workload in `PublicSubnet1`/`PublicSubnet2` later needs inbound SSH (e.g. a one-off EC2 instance), add it directly to `PublicNacl` — scoped to a specific admin CIDR, never `0.0.0.0/0`, to avoid re-tripping the admin-port finding (see [Re-flag risk](#re-flag-risk--what-would-trip-this-policy-again)). Rule numbers `110`/`115` are free in the current design (used numbers: 100, 120, 130, 140):
-
-```bash
-# Replace <ADMIN_CIDR> with the actual admin IP/CIDR, e.g. 203.0.113.4/32
-aws ec2 create-network-acl-entry \
-  --network-acl-id <PublicNaclId> --rule-number 110 \
-  --protocol tcp --port-range From=22,To=22 \
-  --cidr-block <ADMIN_CIDR> --rule-action allow --ingress \
-  --region us-east-1
-
-aws ec2 create-network-acl-entry \
-  --network-acl-id <PublicNaclId> --rule-number 115 \
-  --protocol tcp --port-range From=1024,To=65535 \
-  --cidr-block <ADMIN_CIDR> --rule-action allow --egress \
-  --region us-east-1
-```
-
-The outbound rule (115) is the stateless return leg for the SSH response — without it the inbound connection would be allowed but replies would be silently dropped. Once a permanent need exists, prefer moving these two entries into `vpc-stack.yaml` as `NetworkAclEntry` resources instead of leaving them as a manual, undocumented-in-CloudFormation change.
 
 ### PrivateNacl — associated with PrivateSubnet1, PrivateSubnet2
 
@@ -171,6 +151,14 @@ All of these are intra-VPC (source and destination both inside `10.0.0.0/16`), a
 - 150: TCP 3000, CIDR `10.0.0.0/16` — ALB forwarding to the Langfuse web pod IP in the private subnet (the ephemeral-port response back to the internet client is already covered by existing rule 120)
 
 The catch-all (210) is scoped to the VPC CIDR, not `0.0.0.0/0`, so it doesn't reproduce the "allow-all from anywhere" pattern this policy flags — see [Re-flag risk](#re-flag-risk--what-would-trip-this-policy-again).
+
+### Follow-up gap found after deploying the fix above: missing inbound DNS UDP response rule
+
+Even with the explicit ports above deployed, the database was still unreachable. Both `PrivateNacl` and `PublicNacl` only ever had an **outbound** UDP 53 rule (the DNS query leaving the subnet) — there was no **inbound** UDP rule for the response. NACLs are stateless, so the DNS response (UDP, source port 53 from the VPC's Route 53 Resolver, destined to the client's ephemeral UDP port) has no matching allow rule and falls through to the implicit deny. The TCP catch-all added for Langfuse (rule 210 on `PrivateNacl`) doesn't help either — it's `Protocol: 6` (TCP only). Net effect: DNS resolution itself can silently fail, which presents identically to "can't reach database host at 5432" even though the 5432 rule itself is correct. This gap predates Langfuse — it affected the original KYC NACL design too, just never surfaced because Lambda's networking path tolerated it differently.
+
+Fix applied to [templates/base/vpc-stack.yaml](templates/base/vpc-stack.yaml):
+- `PrivateNaclInboundDnsUdp` — rule 220, UDP 1024–65535, CIDR `10.0.0.0/16`
+- `PublicNaclInboundDnsUdp` — rule 160, UDP 1024–65535, CIDR `10.0.0.0/16`
 
 ### Verification
 

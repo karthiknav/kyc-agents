@@ -42,6 +42,30 @@ If running Terraform from an EC2 instance, the instance's IAM role must have the
 }
 ```
 
+### Optional: EC2 Instance Connect (for running kubectl/Terraform from a private-subnet EC2 instance)
+
+The VPC/subnets above are private — there's no public endpoint to reach the EKS cluster or run Terraform against it from outside the VPC. To run `kubectl`/`terraform` from a private-subnet EC2 instance, connect via [EC2 Instance Connect](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-connect.html) instead of opening SSH to the internet.
+
+1. **Launch the instance** in `Private Subnet 1`/`Private Subnet 2` above, with the IAM role from [EC2 Instance IAM Role](#ec2-instance-iam-role-for-running-from-ec2-instance-connect) attached.
+2. **Create an EC2 Instance Connect Endpoint** in the same VPC, if one doesn't already exist:
+
+   ```bash
+   aws ec2 create-instance-connect-endpoint \
+     --subnet-id subnet-093a6535e084d1b87 \
+     --security-group-ids <SecurityGroupId> \
+     --region us-east-1
+   ```
+
+3. **Connect** — no public IP, no SSH key distribution, no `0.0.0.0/0` NACL/SG rule needed:
+
+   ```bash
+   aws ec2-instance-connect ssh --instance-id <InstanceId> --region us-east-1
+   ```
+
+4. **Install Terraform/kubectl/helm** (see sections below) and run the deployment steps from there.
+
+Because the connection originates from the Instance Connect Endpoint's ENI inside the VPC, this requires no NACL changes — see [NACL-COMPLIANCE.md](../NACL-COMPLIANCE.md) for how the private-subnet NACL already permits intra-VPC traffic. Terminate the instance when you're done; it isn't part of the standing infrastructure.
+
 ---
 
 ## Prerequisite: Install Terraform
