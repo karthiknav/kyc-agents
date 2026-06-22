@@ -234,7 +234,7 @@ Resources:
       Protocol: 17
       RuleAction: allow
       Egress: false
-      CidrBlock: !GetAtt VPC.CidrBlock
+      CidrBlock: 0.0.0.0/0
       PortRange: { From: 1024, To: 65535 }
 
   # ALB (public subnet) forwards directly to the Langfuse web pod IP on
@@ -515,7 +515,7 @@ Resources:
       Protocol: 17
       RuleAction: allow
       Egress: false
-      CidrBlock: !GetAtt VPC.CidrBlock
+      CidrBlock: 0.0.0.0/0
       PortRange: { From: 1024, To: 65535 }
 
   PrivateSubnet1NaclAssociation:
