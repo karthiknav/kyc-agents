@@ -6,7 +6,8 @@
 #   4. roles-stack
 #
 # Usage:
-#   bash scripts/infra-scripts/deploy_base.sh [BASE_NAME] [REGION]
+#   bash scripts/infra-scripts/deploy_base.sh [BASE_NAME] [REGION] [--skip-main-stack]
+#   bash scripts/infra-scripts/deploy_base.sh --skip-main-stack
 #
 # Defaults: BASE_NAME=kyc-agent, REGION=us-east-1
 set -euo pipefail
@@ -14,13 +15,47 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-BASE_NAME="${1:-kyc-agent}"
-REGION="${2:-${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}}"
+BASE_NAME="kyc-agent"
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+SKIP_MAIN_STACK=false
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-main-stack)
+            SKIP_MAIN_STACK=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: bash scripts/infra-scripts/deploy_base.sh [BASE_NAME] [REGION] [--skip-main-stack]"
+            exit 0
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ ${#POSITIONAL_ARGS[@]} -ge 1 ]]; then
+    BASE_NAME="${POSITIONAL_ARGS[0]}"
+fi
+
+if [[ ${#POSITIONAL_ARGS[@]} -ge 2 ]]; then
+    REGION="${POSITIONAL_ARGS[1]}"
+fi
+
+if [[ ${#POSITIONAL_ARGS[@]} -gt 2 ]]; then
+    echo "Error: too many positional arguments"
+    echo "Usage: bash scripts/infra-scripts/deploy_base.sh [BASE_NAME] [REGION] [--skip-main-stack]"
+    exit 1
+fi
+
 DEFAULT_MODEL_ID="${DEFAULT_MODEL_ID:-us.anthropic.claude-sonnet-4-6}"
 LANGFUSE_PROJECT_NAME="${LANGFUSE_PROJECT_NAME:-kyc-agents}"
 LANGFUSE_HOST="https://langfuse.gen-ai-designs.com"
-LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}"
-LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY}"
+LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}"
+LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}"
 
 VPC_STACK="${BASE_NAME}-vpc"
 STORAGE_STACK="${BASE_NAME}-storage"
@@ -30,6 +65,7 @@ ROLES_STACK="${BASE_NAME}-roles"
 echo "=== Base infrastructure deployment ==="
 echo "  BASE_NAME : $BASE_NAME"
 echo "  REGION    : $REGION"
+echo "  SKIP_MAIN : $SKIP_MAIN_STACK"
 echo ""
 
 # ── 1. VPC ────────────────────────────────────────────────────────────────────
@@ -52,18 +88,23 @@ echo "✓ $STORAGE_STACK deployed"
 echo ""
 
 # ── 3. Main stack (SQS + SSM model ID) ───────────────────────────────────────
-echo "── Step 3: Main ($MAIN_STACK) ──"
-aws cloudformation deploy \
-    --template-file "$REPO_ROOT/templates/base/main-stack.yaml" \
-    --stack-name "$MAIN_STACK" \
-    --parameter-overrides \
-        DefaultModelId="$DEFAULT_MODEL_ID" \
-        LangfuseProjectName="$LANGFUSE_PROJECT_NAME" \
-        LangfuseHost="$LANGFUSE_HOST" \
-        LangfusePublicKey="$LANGFUSE_PUBLIC_KEY" \
-        LangfuseSecretKey="$LANGFUSE_SECRET_KEY" \
-    --region "$REGION"
-echo "✓ $MAIN_STACK deployed"
+if [[ "$SKIP_MAIN_STACK" == "true" ]]; then
+    echo "── Step 3: Main ($MAIN_STACK) ──"
+    echo "Skipping main stack deployment (--skip-main-stack)"
+else
+    echo "── Step 3: Main ($MAIN_STACK) ──"
+    aws cloudformation deploy \
+        --template-file "$REPO_ROOT/templates/base/main-stack.yaml" \
+        --stack-name "$MAIN_STACK" \
+        --parameter-overrides \
+            DefaultModelId="$DEFAULT_MODEL_ID" \
+            LangfuseProjectName="$LANGFUSE_PROJECT_NAME" \
+            LangfuseHost="$LANGFUSE_HOST" \
+            LangfusePublicKey="$LANGFUSE_PUBLIC_KEY" \
+            LangfuseSecretKey="$LANGFUSE_SECRET_KEY" \
+        --region "$REGION"
+    echo "✓ $MAIN_STACK deployed"
+fi
 echo ""
 
 # ── 4. Roles stack (IAM) ─────────────────────────────────────────────────────
