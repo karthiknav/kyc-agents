@@ -35,6 +35,7 @@ apply_bedrock_assistant_prefill_patch()
 from crew.tools.adverse_media_analysis_tool import AdverseMediaAnalysisTool, get_last_adverse_id, reset_adverse_state
 from crew.tools.compare_identity_tool import CompareIdentityDocumentsTool, get_last_run_id, reset_run_id
 from crew.tools.risk_list_screening_tool import RiskListScreeningTool, get_last_screening_id, reset_screening_state
+from crew.tools.risk_scoring_tool import RiskScoringTool, get_last_scoring_id, reset_scoring_state
 from crew.tools.dynamodb_tool import GetCaseDetailsTool
 from crew.tools.escalate_human_tool import EscalateToHumanTool
 from crew.tools.get_case_files_tool import GetCaseFilesTool
@@ -150,6 +151,7 @@ class KYCCrew():
             config=self.agents_config['orchestrator_agent'],  # type: ignore[index]
             verbose=True,
             tools=[
+                RiskScoringTool(),
                 EscalateToHumanTool(),
             ],
             llm=self.get_llm(),
@@ -292,10 +294,41 @@ class KYCCrew():
 
     @task
     def orchestrator_task(self) -> Task:
+        reset_scoring_state()
+
+        def _guardrail(output) -> tuple[bool, str]:
+            import json as _json
+            raw = output.raw if hasattr(output, "raw") else str(output)
+            try:
+                parsed = _json.loads(raw)
+            except Exception:
+                parsed = {}
+
+            if isinstance(parsed, dict) and "tool" in parsed and "tool_input" in parsed:
+                tool_name = parsed.get("tool", "unknown")
+                return (
+                    False,
+                    f"REJECTED: Your final answer IS a tool call (tool='{tool_name}'). "
+                    "You must EXECUTE tools by calling them — do not describe tool calls in your final answer. "
+                    "Call score_case_risk first, then escalate_to_human if escalating, "
+                    "then produce your final JSON output.",
+                )
+
+            if not get_last_scoring_id():
+                return (
+                    False,
+                    "REJECTED: score_case_risk was never called (no scoring_id issued). "
+                    "You MUST call score_case_risk before making the final APPROVED/ESCALATED decision.",
+                )
+
+            return (True, output.raw)
+
         return Task(
             config=self.tasks_config['orchestrator_task'],  # type: ignore[index]
             callback=update_orchestrator_result,
-            context=[self.document_processing_task(), self.risk_list_screening_task(), self.adverse_media_task()]
+            context=[self.document_processing_task(), self.risk_list_screening_task(), self.adverse_media_task()],
+            guardrail=_guardrail,
+            guardrail_max_retries=3,
         )
 
     # ------------------------------------------------------------------

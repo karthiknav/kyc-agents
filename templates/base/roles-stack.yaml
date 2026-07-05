@@ -459,6 +459,108 @@ Resources:
                   - !Sub "arn:aws:s3:::${BaseStackName}-*"
                   - !Sub "arn:aws:s3:::${BaseStackName}-*/*"
 
+  # ── SageMaker execution role (used by pipeline.py and deploy.py) ────────────
+  SageMakerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-sagemaker-execution-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SageMakerMLOpsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: MlOpsBucketAccess
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub "arn:aws:s3:::${BaseStackName}-mlops-*"
+                  - !Sub "arn:aws:s3:::${BaseStackName}-mlops-*/*"
+              - Sid: ECRAuth
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: ECRImagePull
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                Resource: '*'
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/sagemaker/*"
+              - Sid: SageMakerPipelineAndJobs
+                Effect: Allow
+                Action:
+                  - sagemaker:CreatePipeline
+                  - sagemaker:UpdatePipeline
+                  - sagemaker:DescribePipeline
+                  - sagemaker:StartPipelineExecution
+                  - sagemaker:StopPipelineExecution
+                  - sagemaker:DescribePipelineExecution
+                  - sagemaker:ListPipelineExecutionSteps
+                  - sagemaker:ListPipelineExecutions
+                  - sagemaker:CreateTrainingJob
+                  - sagemaker:DescribeTrainingJob
+                  - sagemaker:StopTrainingJob
+                  - sagemaker:CreateProcessingJob
+                  - sagemaker:DescribeProcessingJob
+                  - sagemaker:StopProcessingJob
+                  - sagemaker:CreateModel
+                  - sagemaker:DescribeModel
+                  - sagemaker:DeleteModel
+                Resource: !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:*"
+              - Sid: SageMakerModelRegistry
+                Effect: Allow
+                Action:
+                  - sagemaker:CreateModelPackageGroup
+                  - sagemaker:DescribeModelPackageGroup
+                  - sagemaker:CreateModelPackage
+                  - sagemaker:DescribeModelPackage
+                  - sagemaker:ListModelPackages
+                  - sagemaker:UpdateModelPackage
+                Resource:
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package-group/*"
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package/*"
+              - Sid: SageMakerEndpoint
+                Effect: Allow
+                Action:
+                  - sagemaker:CreateEndpoint
+                  - sagemaker:CreateEndpointConfig
+                  - sagemaker:UpdateEndpoint
+                  - sagemaker:DeleteEndpoint
+                  - sagemaker:DescribeEndpoint
+                  - sagemaker:DescribeEndpointConfig
+                Resource:
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/*"
+                  - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint-config/*"
+              - Sid: PassRoleToJobs
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}-sagemaker-execution-role"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: sagemaker.amazonaws.com
+
 Outputs:
   AgentExecutionRoleArn:
     Description: ARN of the agent execution role
@@ -495,3 +597,9 @@ Outputs:
     Value: !GetAtt CloudFormationDeployRole.Arn
     Export:
       Name: !Sub "${AWS::StackName}-CloudFormationDeployRoleArn"
+
+  SageMakerExecutionRoleArn:
+    Description: ARN of the SageMaker execution role (pass to pipeline.py --role and deploy.py --role)
+    Value: !GetAtt SageMakerExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-SageMakerExecutionRoleArn"

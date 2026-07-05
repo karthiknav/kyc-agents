@@ -20,6 +20,16 @@ Resources:
       # Bucket for storing artifacts from different services
       BucketName: !Sub "${StackName}-artifacts-${AWS::AccountId}-${AWS::Region}"
 
+  KycMlOpsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${StackName}-mlops-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-mlops"
+
   KycCasesTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -60,3 +70,9 @@ Outputs:
     Value: !GetAtt KycCasesTable.Arn
     Export:
       Name: !Sub "${StackName}-KycCasesTableArn"
+
+  KycMlOpsBucketName:
+    Description: S3 bucket name for SageMaker ML pipeline artifacts (training data, models, evaluation reports)
+    Value: !Ref KycMlOpsBucket
+    Export:
+      Name: !Sub "${StackName}-KycMlOpsBucketName"

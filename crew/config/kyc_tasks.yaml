@@ -1,26 +1,42 @@
 orchestrator_task:
   description: >
-    Given caseId {caseId}, make the final KYC decision using the stage results already
-    provided in context from the previous tasks:
+    Given caseId {caseId}, make the final KYC decision. You MUST complete both steps in order.
+
+    STEP 1 — score_case_risk (REQUIRED):
+    Call score_case_risk with case_id {caseId}. This derives an ML risk tier (low / medium / high)
+    from the earlier agents' outputs already stored in DynamoDB.
+    Note the scoring_id, risk_tier, and confidence from the result.
+
+    STEP 2 — DECIDE using stage results from context AND the ML risk tier:
+    The stage results are already in context from the previous tasks:
     - documentProcessing.result (MATCH / PARTIAL_MATCH / MISMATCH)
     - riskListScreening.result (CLEAR / HIT / ERROR)
     - adverseMedia.result (OK / NOK / PENDING_REVIEW)
 
-    DECIDE:
-    If documentProcessing.result is MATCH AND riskListScreening.result is CLEAR AND
-    adverseMedia.result is OK: the case is approved. Return JSON with action "APPROVED".
+    APPROVE only if ALL of the following are true:
+    - documentProcessing.result is MATCH
+    - riskListScreening.result is CLEAR
+    - adverseMedia.result is OK
+    - risk_tier is "low" or "medium"
 
-    For any other combination: escalate. Call escalate_to_human with the case_id,
-    a reason list summarising the stage results, and an escalation_summary.
-    Return JSON with action "ESCALATED".
+    ESCALATE for any other combination. If escalating, call escalate_to_human with the case_id,
+    a reason list summarising all stage results and the ML risk tier, and an escalation_summary.
+
+    Return JSON with action "APPROVED" or "ESCALATED".
 
   expected_output: >
     Valid JSON object with at minimum these keys:
     - "case_id": the case ID (string)
     - "action": one of "APPROVED" or "ESCALATED"
     - "decision": "APPROVE" or "ESCALATE"
-    - "reason": list of strings describing the decision factors
+    - "reason": list of strings describing the decision factors (must include risk_tier)
     - "recommendation_summary": explanation of the outcome
+    - "scoring_id": the exact scoring_id string returned by score_case_risk (string, REQUIRED)
+    - "risk_tier": one of "low", "medium", "high" (string)
+    - "risk_confidence": the confidence percentage returned by score_case_risk (number)
+
+    IMPORTANT: The scoring_id field must be copied verbatim from the score_case_risk
+    tool result. Do not invent or omit it — the output will be rejected without it.
   agent: orchestrator_agent
   
 

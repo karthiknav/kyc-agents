@@ -22,6 +22,9 @@ def update_orchestrator_result(task_output):
     decision = task_output.get("decision", "")
     reason = task_output.get("reason", [])
     recommendation_summary = task_output.get("recommendation_summary", "")
+    risk_tier = task_output.get("risk_tier", "")
+    risk_confidence = task_output.get("risk_confidence")
+    scoring_id = task_output.get("scoring_id", "")
 
     if not case_id:
         logger.error("update_orchestrator_result: no case_id in output")
@@ -44,6 +47,9 @@ def update_orchestrator_result(task_output):
         "reason": reason if isinstance(reason, list) else [str(reason)],
         "recommendation_summary": recommendation_summary,
         "decidedAt": now,
+        "mlRiskTier": risk_tier,
+        "mlRiskConfidence": risk_confidence,
+        "mlScoringId": scoring_id,
     }
 
     table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
