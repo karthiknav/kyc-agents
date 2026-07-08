@@ -309,11 +309,11 @@ You also need:
 
 ### Step 1 — Run the training pipeline
 ```bash
-python sagemaker/pipeline.py \
-  --role   $ROLE_ARN \
-  --bucket $BUCKET \
-  --region eu-west-1 \
-  --input-data-uri s3://$BUCKET/kyc-risk-raw/training/latest.csv \
+python mlops/pipeline.py \
+  --role   arn:aws:iam::926529379586:role/kyc-agent-roles-sagemaker-execution-role \
+  --bucket kyc-agent-mlops-926529379586-us-east-1 \
+  --region us-east-1 \
+  --input-data-uri s3://kyc-agent-mlops-926529379586-us-east-1/kyc-risk-raw/training/kyc_combined.csv \
   --auc-threshold 0.85 \
   --run
 ```
