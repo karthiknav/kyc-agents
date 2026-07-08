@@ -94,10 +94,11 @@ def main() -> None:
 
     os.makedirs(args.model_dir, exist_ok=True)
     model_path = os.path.join(args.model_dir, "xgboost-model")
-    model.save_model(model_path)
-    logger.info("Model saved → %s", model_path)
 
-    # Write feature names for documentation (picked up by evaluate.py)
+    # Embed metadata as model attributes before saving so the model dir
+    # contains only xgboost-model.  The SageMaker XGBoost container (algorithm
+    # mode) tries to load every file in /opt/ml/model as an XGBoost model —
+    # a separate model_meta.json would cause a RuntimeError at endpoint startup.
     meta = {
         "feature_names": [
             "pep_match_score", "sanctions_hit", "doc_authenticity_score",
@@ -108,8 +109,11 @@ def main() -> None:
         "best_iteration": model.best_iteration,
         "train_auc_macro_ovr": round(auc, 4),
     }
-    with open(os.path.join(args.model_dir, "model_meta.json"), "w") as f:
-        json.dump(meta, f, indent=2)
+    model.set_attr(model_meta=json.dumps(meta))
+
+    model.save_model(model_path)
+    logger.info("Model saved → %s", model_path)
+    logger.info("Embedded metadata: %s", json.dumps(meta))
 
 
 if __name__ == "__main__":
