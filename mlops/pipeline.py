@@ -56,7 +56,7 @@ def create_pipeline(
     region: str = "us-east-1",
     pipeline_name: str = PIPELINE_NAME,
 ) -> Pipeline:
-    session = sagemaker.Session(boto_session=boto3.Session(region_name=region))
+    session = sagemaker.Session(boto_session=boto3.Session(region_name=region), default_bucket=bucket)
 
     # ── Pipeline Parameters ──────────────────────────────────────────────────
     # These can be overridden at execution time without changing the pipeline definition.
