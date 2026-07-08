@@ -15,9 +15,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 REGION="us-east-1"
 
-ROLES_STACK="kyc-agent-roles"
-STORAGE_STACK="kyc-agent-storage"
-PIPELINE_STACK="kyc-mlops-cd-pipeline"
+BASE_NAME="kyc-agent"
+ROLES_STACK="$BASE_NAME-roles"
+STORAGE_STACK="$BASE_NAME-storage"
+PIPELINE_STACK="$BASE_NAME-mlops-cd-pipeline"
 
 GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:926529379586:connection/2cba1788-cf66-42c9-bde2-97944abf843b"
 GITHUB_REPO="karthiknav/kyc-agents"
