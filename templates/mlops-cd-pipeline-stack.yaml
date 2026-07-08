@@ -56,6 +56,77 @@ Resources:
             Status: Enabled
             ExpirationInDays: 30
 
+  # ── IAM role for bucket-emptier Lambda ──────────────────────────────────────
+  BucketEmptierRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-bucket-emptier-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EmptyBucketPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Resource:
+                  - !Sub "arn:aws:s3:::${AWS::StackName}-artifacts-${AWS::AccountId}"
+                  - !Sub "arn:aws:s3:::${AWS::StackName}-artifacts-${AWS::AccountId}/*"
+
+  # ── Lambda that empties MlopsArtifactBucket on stack deletion ───────────────
+  BucketEmptierFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-bucket-emptier"
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt BucketEmptierRole.Arn
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3, cfnresponse
+
+          def handler(event, context):
+              bucket = event['ResourceProperties']['BucketName']
+              if event['RequestType'] == 'Delete':
+                  try:
+                      s3 = boto3.client('s3')
+                      paginator = s3.get_paginator('list_object_versions')
+                      for page in paginator.paginate(Bucket=bucket):
+                          objects = [
+                              {'Key': v['Key'], 'VersionId': v['VersionId']}
+                              for v in page.get('Versions', []) + page.get('DeleteMarkers', [])
+                          ]
+                          if objects:
+                              s3.delete_objects(Bucket=bucket, Delete={'Objects': objects, 'Quiet': True})
+                  except Exception as e:
+                      print(e)
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+                      return
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+  # ── Custom resource — triggers Lambda on Delete to empty the artifact bucket ─
+  # Must run before CloudFormation attempts to delete MlopsArtifactBucket,
+  # which would otherwise fail with BucketNotEmpty when versioning is enabled.
+  BucketEmptierCustomResource:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: MlopsArtifactBucket
+    Properties:
+      ServiceToken: !GetAtt BucketEmptierFunction.Arn
+      BucketName: !Ref MlopsArtifactBucket
+
   # ── IAM role for CodeBuild (SageMaker deploy permissions) ────────────────────
   # Kept in this stack rather than roles-stack.yaml so SageMaker permissions
   # are scoped to the MLOps pipeline and don't over-privilege other CodeBuild jobs.
