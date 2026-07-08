@@ -163,6 +163,21 @@ After a human approves the model in the AWS Model Registry, `deploy.py` deploys 
 
 **What it does**: Takes the raw training CSV and prepares it for XGBoost.
 
+The script does **not** run locally — SageMaker executes it inside a managed Docker container on a separate EC2 instance. The `/opt/ml/processing/` paths below are filesystem paths *inside that container*, not on your machine or notebook:
+
+```
+Notebook                      SageMaker (ml.m5.large EC2)
+────────                      ───────────────────────────
+SDK uploads                   Spins up SKLearn Docker container
+preprocess.py ──── S3 ──────→ Downloads script from S3
+                              Downloads your CSV from S3 → /opt/ml/processing/input/
+                              Runs preprocess.py
+                              Script writes → /opt/ml/processing/output/train/
+                                            → /opt/ml/processing/output/test/
+Notebook waits ←─── S3 ─────  Uploads output dirs to your S3 bucket
+                              Container destroyed
+```
+
 Problems it solves:
 - String columns like `"verified"` and `"failed"` must become numbers — XGBoost only accepts numbers. This is called **ordinal encoding** (mapping categories to ordered integers that reflect their meaning).
 - Some values may be missing (`NaN`). The script fills these with safe defaults.

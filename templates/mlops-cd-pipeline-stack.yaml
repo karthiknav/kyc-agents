@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'MLOps CD Pipeline — SageMaker Model Approval → CodePipeline → deploy.py → endpoint updated'
+
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: ARN of the AWS CodeConnections connection to GitHub
+
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository in owner/repo format (e.g. karthiknav/kyc-agents)
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Branch to pull source from (deploy.py must exist here)
+
+  RolesStackName:
+    Type: String
+    Description: Name of the roles stack (imports CodePipelineRoleArn)
+
+  StorageStackName:
+    Type: String
+    Description: Name of the storage stack (imports KycMlOpsBucketName)
+
+  SageMakerExecutionRoleArn:
+    Type: String
+    Description: ARN of the SageMaker execution role (iam:PassRole target for CodeBuild)
+
+  KycMlOpsBucketName:
+    Type: String
+    Description: S3 bucket for MLOps artifacts and data capture output
+
+  EndpointName:
+    Type: String
+    Default: kyc-risk-scorer
+    Description: SageMaker endpoint name to create or update
+
+  InstanceType:
+    Type: String
+    Default: ml.m5.large
+    Description: SageMaker inference instance type
+
+Resources:
+
+  # ── S3 artifact bucket ───────────────────────────────────────────────────────
+  MlopsArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # ── IAM role for CodeBuild (SageMaker deploy permissions) ────────────────────
+  # Kept in this stack rather than roles-stack.yaml so SageMaker permissions
+  # are scoped to the MLOps pipeline and don't over-privilege other CodeBuild jobs.
+  MlopsDeployCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-codebuild-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: MlopsDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SageMakerDeploy
+                Effect: Allow
+                Action:
+                  - sagemaker:CreateModel
+                  - sagemaker:CreateEndpointConfig
+                  - sagemaker:CreateEndpoint
+                  - sagemaker:UpdateEndpoint
+                  - sagemaker:DescribeEndpoint
+                  - sagemaker:ListModelPackages
+                  - sagemaker:DescribeModelPackage
+                Resource: '*'
+              - Sid: PassSageMakerRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Ref SageMakerExecutionRoleArn
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${KycMlOpsBucketName}"
+                  - !Sub "arn:aws:s3:::${KycMlOpsBucketName}/*"
+                  - !Sub "arn:aws:s3:::${AWS::StackName}-artifacts-${AWS::AccountId}"
+                  - !Sub "arn:aws:s3:::${AWS::StackName}-artifacts-${AWS::AccountId}/*"
+              - Sid: EcrAccess
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: '*'
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+
+  # ── CodeBuild project — runs mlops/deploy.py ─────────────────────────────────
+  MlopsDeployBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-deploy"
+      Description: Deploy approved KYC risk scorer model to SageMaker endpoint
+      ServiceRole: !GetAtt MlopsDeployCodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: SM_ROLE_ARN
+            Value: !Ref SageMakerExecutionRoleArn
+          - Name: MLOPS_BUCKET
+            Value: !Ref KycMlOpsBucketName
+          - Name: ENDPOINT_NAME
+            Value: !Ref EndpointName
+          - Name: INSTANCE_TYPE
+            Value: !Ref InstanceType
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: "3.11"
+              commands:
+                - pip install -q sagemaker boto3
+            build:
+              commands:
+                - python mlops/deploy.py
+                    --role "$SM_ROLE_ARN"
+                    --bucket "$MLOPS_BUCKET"
+                    --region "$AWS_DEFAULT_REGION"
+                    --endpoint-name "$ENDPOINT_NAME"
+                    --instance-type "$INSTANCE_TYPE"
+                    --smoke-test
+
+  # ── IAM role allowing EventBridge to start the CodePipeline ──────────────────
+  EventBridgeCodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-eventbridge-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartPipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}-pipeline"
+
+  # ── EventBridge rule — fires when a model is Approved in the registry ─────────
+  # Keeping this rule in the same stack as the pipeline it targets so both
+  # resources share a lifecycle (deleting the stack removes both together).
+  ModelApprovalEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${AWS::StackName}-model-approved"
+      Description: Start MLOps CD pipeline when a kyc-risk-scorer model is approved
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.sagemaker
+        detail-type:
+          - SageMaker Model Package State Change
+        detail:
+          ModelPackageGroupName:
+            - kyc-risk-scorer
+          ModelApprovalStatus:
+            - Approved
+      Targets:
+        - Id: StartMlopsDeployPipeline
+          Arn: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}-pipeline"
+          RoleArn: !GetAtt EventBridgeCodePipelineRole.Arn
+
+  # ── CodePipeline V2 — Source (GitHub) → Build (deploy.py) ────────────────────
+  # No Triggers block: this pipeline is started exclusively by the EventBridge
+  # rule above, not by GitHub pushes.
+  MlopsDeployPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: ModelApprovalEventRule
+    Properties:
+      Name: !Sub "${AWS::StackName}-pipeline"
+      RoleArn: !ImportValue
+        Fn::Sub: "${RolesStackName}-CodePipelineRoleArn"
+      PipelineType: V2
+      ArtifactStore:
+        Type: S3
+        Location: !Ref MlopsArtifactBucket
+      Stages:
+
+        # Stage 1: pull source — provides mlops/ directory to CodeBuild
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Ref GitHubRepo
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+                DetectChanges: false
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        # Stage 2: run deploy.py against the latest approved model
+        - Name: Deploy
+          Actions:
+            - Name: DeployEndpoint
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref MlopsDeployBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+Outputs:
+  PipelineName:
+    Description: Name of the MLOps CD CodePipeline
+    Value: !Ref MlopsDeployPipeline
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineName"
+
+  EventRuleName:
+    Description: Name of the EventBridge rule watching for model approvals
+    Value: !Ref ModelApprovalEventRule
+    Export:
+      Name: !Sub "${AWS::StackName}-EventRuleName"
