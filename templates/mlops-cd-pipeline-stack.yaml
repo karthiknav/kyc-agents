@@ -99,23 +99,25 @@ Resources:
           import boto3, cfnresponse
 
           def handler(event, context):
-              bucket = event['ResourceProperties']['BucketName']
-              if event['RequestType'] == 'Delete':
-                  try:
-                      s3 = boto3.client('s3')
-                      paginator = s3.get_paginator('list_object_versions')
-                      for page in paginator.paginate(Bucket=bucket):
-                          objects = [
-                              {'Key': v['Key'], 'VersionId': v['VersionId']}
-                              for v in page.get('Versions', []) + page.get('DeleteMarkers', [])
-                          ]
-                          if objects:
-                              s3.delete_objects(Bucket=bucket, Delete={'Objects': objects, 'Quiet': True})
-                  except Exception as e:
-                      print(e)
-                      cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+              try:
+                  if event['RequestType'] in ('Create', 'Update'):
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
                       return
-              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  # Delete: empty the versioned bucket so CloudFormation can remove it
+                  bucket = event['ResourceProperties']['BucketName']
+                  s3 = boto3.client('s3')
+                  paginator = s3.get_paginator('list_object_versions')
+                  for page in paginator.paginate(Bucket=bucket):
+                      objects = [
+                          {'Key': v['Key'], 'VersionId': v['VersionId']}
+                          for v in page.get('Versions', []) + page.get('DeleteMarkers', [])
+                      ]
+                      if objects:
+                          s3.delete_objects(Bucket=bucket, Delete={'Objects': objects, 'Quiet': True})
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
 
   # ── Custom resource — triggers Lambda on Delete to empty the artifact bucket ─
   # Must run before CloudFormation attempts to delete MlopsArtifactBucket,
@@ -126,6 +128,7 @@ Resources:
     Properties:
       ServiceToken: !GetAtt BucketEmptierFunction.Arn
       BucketName: !Ref MlopsArtifactBucket
+      ServiceTimeout: 60
 
   # ── IAM role for CodeBuild (SageMaker deploy permissions) ────────────────────
   # Kept in this stack rather than roles-stack.yaml so SageMaker permissions
@@ -218,7 +221,7 @@ Resources:
               runtime-versions:
                 python: "3.11"
               commands:
-                - pip install -q sagemaker boto3
+                - pip install -q --upgrade -r mlops/requirements.txt
             build:
               commands:
                 - python mlops/deploy.py
