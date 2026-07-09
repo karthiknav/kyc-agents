@@ -99,36 +99,49 @@ Resources:
           import boto3, cfnresponse
 
           def handler(event, context):
+              bucket = event['ResourceProperties']['BucketName']
+              # Stable ID derived from the bucket name — must not change between
+              # Create and Update or CloudFormation will send a spurious Delete.
+              physical_id = f"bucket-emptier-{bucket}"
               try:
                   if event['RequestType'] in ('Create', 'Update'):
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
                       return
                   # Delete: empty the versioned bucket so CloudFormation can remove it
-                  bucket = event['ResourceProperties']['BucketName']
                   s3 = boto3.client('s3')
                   paginator = s3.get_paginator('list_object_versions')
                   for page in paginator.paginate(Bucket=bucket):
-                      objects = [
+                      # Bail out early if < 15 s remain to guarantee cfnresponse fires
+                      if context.get_remaining_time_in_millis() < 15000:
+                          cfnresponse.send(event, context, cfnresponse.FAILED,
+                                           {'Error': 'Lambda approaching timeout; bucket not fully emptied'},
+                                           physical_id)
+                          return
+                      entries = [
                           {'Key': v['Key'], 'VersionId': v['VersionId']}
                           for v in page.get('Versions', []) + page.get('DeleteMarkers', [])
                       ]
-                      if objects:
-                          s3.delete_objects(Bucket=bucket, Delete={'Objects': objects, 'Quiet': True})
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      # delete_objects accepts at most 1000 keys per call
+                      for i in range(0, len(entries), 1000):
+                          chunk = entries[i:i + 1000]
+                          s3.delete_objects(Bucket=bucket, Delete={'Objects': chunk, 'Quiet': True})
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
               except Exception as e:
                   print(e)
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)}, physical_id)
 
   # ── Custom resource — triggers Lambda on Delete to empty the artifact bucket ─
   # Must run before CloudFormation attempts to delete MlopsArtifactBucket,
   # which would otherwise fail with BucketNotEmpty when versioning is enabled.
+  # ServiceTimeout must be < Lambda Timeout (300 s) so CFN waits long enough for
+  # the Lambda to finish and call cfnresponse before CloudFormation gives up.
   BucketEmptierCustomResource:
     Type: AWS::CloudFormation::CustomResource
     DependsOn: MlopsArtifactBucket
     Properties:
       ServiceToken: !GetAtt BucketEmptierFunction.Arn
       BucketName: !Ref MlopsArtifactBucket
-      ServiceTimeout: 60
+      ServiceTimeout: 270
 
   # ── IAM role for CodeBuild (SageMaker deploy permissions) ────────────────────
   # Kept in this stack rather than roles-stack.yaml so SageMaker permissions

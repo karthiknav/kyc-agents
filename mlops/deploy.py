@@ -30,8 +30,8 @@ import time
 
 import boto3
 import sagemaker
-from sagemaker.model import Model
-from sagemaker.model_monitor import DataCaptureConfig
+from sagemaker.core.resources import Model
+from sagemaker.core.model_monitor import DataCaptureConfig
 from sagemaker import image_uris
 
 logging.basicConfig(level=logging.INFO)
