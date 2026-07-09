@@ -221,7 +221,7 @@ Resources:
               runtime-versions:
                 python: "3.11"
               commands:
-                - pip install -q --upgrade -r mlops/requirements.txt
+                - pip install --upgrade -r mlops/requirements.txt
             build:
               commands:
                 - python mlops/deploy.py
