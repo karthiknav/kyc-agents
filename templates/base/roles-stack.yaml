@@ -528,6 +528,7 @@ Resources:
                   - sagemaker:CreateModel
                   - sagemaker:DescribeModel
                   - sagemaker:DeleteModel
+                  - sagemaker:AddTags
                 Resource: !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:*"
               - Sid: SageMakerModelRegistry
                 Effect: Allow

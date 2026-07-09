@@ -307,10 +307,24 @@ You also need:
 - A training CSV uploaded to the bucket (see [Input CSV Format](#input-csv-format) below)
 - Python with `sagemaker` and `boto3` installed (`pip install sagemaker boto3`)
 
-### Step 1 — Run the training pipeline
-```bash
-python mlops/pipeline.py \
-  --role   arn:aws:iam::926529379586:role/kyc-agent-roles-sagemaker-execution-role \
+### Step 1 — Open in SageMaker Studio JupyterLab
+
+In SageMaker Studio, open JupyterLab and make sure the `mlops/` folder is available in your workspace (clone the repo or upload it once).
+
+### Step 2 — Install dependencies in the active notebook kernel
+Run this in a notebook cell from inside `mlops/`:
+
+```python
+%pip install --upgrade pip setuptools wheel
+%pip install -r requirements.txt
+```
+
+### Step 3 — Run the training pipeline
+Run this in a notebook cell:
+
+```python
+!python pipeline.py \
+  --role arn:aws:iam::926529379586:role/kyc-agent-roles-sagemaker-execution-role \
   --bucket kyc-agent-mlops-926529379586-us-east-1 \
   --region us-east-1 \
   --input-data-uri s3://kyc-agent-mlops-926529379586-us-east-1/kyc-risk-raw/training/kyc_combined.csv \
@@ -318,12 +332,12 @@ python mlops/pipeline.py \
   --run
 ```
 
-This takes ~20–30 minutes on first run. You can monitor progress in the SageMaker console under **Pipelines**.
+This takes ~20-30 minutes on first run. You can monitor progress in the SageMaker console under **Pipelines**.
 
-### Step 2 — Approve the model (manual)
+### Step 4 — Approve the model (manual)
 After the pipeline succeeds, go to **SageMaker → Model Registry → kyc-risk-scorer** in the AWS console. Review the evaluation metrics attached to the model version (AUC, per-class F1) and click **Approve**. Nothing is deployed until you do this.
 
-### Step 3 — Deploy the endpoint
+### Step 5 — Deploy the endpoint
 ```bash
 python sagemaker/deploy.py \
   --role   $ROLE_ARN \
@@ -332,7 +346,7 @@ python sagemaker/deploy.py \
   --smoke-test
 ```
 
-### Step 4 — Wire up the Lambda
+### Step 6 — Wire up the Lambda
 Set `RISK_SCORER_ENDPOINT_NAME=kyc-risk-scorer` in the Lambda environment. The `score_case_risk` tool in `crew/tools/risk_scoring_tool.py` will then call the endpoint automatically.
 
 ---
