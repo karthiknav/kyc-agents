@@ -29,7 +29,7 @@ import logging
 import time
 
 import boto3
-import sagemaker
+from sagemaker.core.helper.session_helper import Session
 from sagemaker.core.resources import Model
 from sagemaker.core.model_monitor import DataCaptureConfig
 from sagemaker.core import image_uris
@@ -79,7 +79,7 @@ def deploy(
     instance_type: str = "ml.m5.large",
     model_package_arn: str | None = None,
 ) -> str:
-    session = sagemaker.Session(boto_session=boto3.Session(region_name=region))
+    session = Session(boto_session=boto3.Session(region_name=region))
     sm_client = boto3.client("sagemaker", region_name=region)
 
     arn = model_package_arn or _latest_approved_arn(sm_client, MODEL_PACKAGE_GROUP)
