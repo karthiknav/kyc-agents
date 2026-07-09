@@ -29,9 +29,6 @@ import logging
 import time
 
 import boto3
-from sagemaker.core.helper.session_helper import Session
-from sagemaker.core.resources import Model
-from sagemaker.core.model_monitor import DataCaptureConfig
 from sagemaker.core import image_uris
 
 logging.basicConfig(level=logging.INFO)
@@ -61,15 +58,6 @@ def _latest_approved_arn(sm_client, group_name: str) -> str:
     return arn
 
 
-def _data_capture_config(bucket: str, endpoint_name: str) -> DataCaptureConfig:
-    return DataCaptureConfig(
-        enable_capture=True,
-        sampling_percentage=100,
-        destination_s3_uri=f"s3://{bucket}/kyc-risk-capture/{endpoint_name}",
-        capture_options=["INPUT", "OUTPUT"],
-    )
-
-
 def deploy(
     *,
     role: str,
@@ -79,12 +67,10 @@ def deploy(
     instance_type: str = "ml.m5.large",
     model_package_arn: str | None = None,
 ) -> str:
-    session = Session(boto_session=boto3.Session(region_name=region))
     sm_client = boto3.client("sagemaker", region_name=region)
 
     arn = model_package_arn or _latest_approved_arn(sm_client, MODEL_PACKAGE_GROUP)
 
-    # Retrieve the XGBoost inference image for the target region
     xgb_image = image_uris.retrieve(
         framework="xgboost",
         region=region,
@@ -93,22 +79,44 @@ def deploy(
         image_scope="inference",
     )
 
-    model = Model(
-        image_uri=xgb_image,
-        model_data=_model_data_from_package(sm_client, arn),
-        role=role,
-        sagemaker_session=session,
-        name=f"kyc-risk-scorer-{int(time.time())}",
+    model_name = f"kyc-risk-scorer-{int(time.time())}"
+    sm_client.create_model(
+        ModelName=model_name,
+        PrimaryContainer={
+            "Image": xgb_image,
+            "ModelDataUrl": _model_data_from_package(sm_client, arn),
+        },
+        ExecutionRoleArn=role,
+    )
+
+    config_name = f"{endpoint_name}-config-{int(time.time())}"
+    sm_client.create_endpoint_config(
+        EndpointConfigName=config_name,
+        ProductionVariants=[{
+            "VariantName": "AllTraffic",
+            "ModelName": model_name,
+            "InitialInstanceCount": 1,
+            "InstanceType": instance_type,
+            "InitialVariantWeight": 1.0,
+        }],
+        DataCaptureConfig={
+            "EnableCapture": True,
+            "InitialSamplingPercentage": 100,
+            "DestinationS3Uri": f"s3://{bucket}/kyc-risk-capture/{endpoint_name}",
+            "CaptureOptions": [
+                {"CaptureMode": "Input"},
+                {"CaptureMode": "Output"},
+            ],
+        },
     )
 
     logger.info("Deploying to endpoint '%s' on %s …", endpoint_name, instance_type)
-    model.deploy(
-        initial_instance_count=1,
-        instance_type=instance_type,
-        endpoint_name=endpoint_name,
-        data_capture_config=_data_capture_config(bucket, endpoint_name),
-        wait=True,
-    )
+    try:
+        sm_client.create_endpoint(EndpointName=endpoint_name, EndpointConfigName=config_name)
+    except sm_client.exceptions.from_code("ValidationException"):
+        sm_client.update_endpoint(EndpointName=endpoint_name, EndpointConfigName=config_name)
+
+    sm_client.get_waiter("endpoint_in_service").wait(EndpointName=endpoint_name)
 
     logger.info("Endpoint '%s' is InService.", endpoint_name)
     logger.info("Set  RISK_SCORER_ENDPOINT_NAME=%s  in your Lambda environment.", endpoint_name)
