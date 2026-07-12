@@ -17,10 +17,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BASE_NAME="${1:-kyc-agent}"
 REGION="${2:-${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}}"
 DEFAULT_MODEL_ID="${DEFAULT_MODEL_ID:-us.anthropic.claude-sonnet-4-6}"
-LANGFUSE_PROJECT_NAME="${LANGFUSE_PROJECT_NAME:-kyc-agents}"
-LANGFUSE_HOST="https://langfuse.gen-ai-designs.com"
-LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}"
-LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY}"
+LANGFUSE_PROJECT_NAME="${LANGFUSE_PROJECT_NAME:-}"
+LANGFUSE_HOST="${LANGFUSE_HOST:-}"
+LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}"
+LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}"
 
 VPC_STACK="${BASE_NAME}-vpc"
 STORAGE_STACK="${BASE_NAME}-storage"
@@ -53,15 +53,27 @@ echo ""
 
 # ── 3. Main stack (SQS + SSM model ID) ───────────────────────────────────────
 echo "── Step 3: Main ($MAIN_STACK) ──"
+main_stack_parameters=(
+    "DefaultModelId=$DEFAULT_MODEL_ID"
+)
+
+if [[ -n "$LANGFUSE_PROJECT_NAME" ]]; then
+    main_stack_parameters+=("LangfuseProjectName=$LANGFUSE_PROJECT_NAME")
+fi
+if [[ -n "$LANGFUSE_HOST" ]]; then
+    main_stack_parameters+=("LangfuseHost=$LANGFUSE_HOST")
+fi
+if [[ -n "$LANGFUSE_PUBLIC_KEY" ]]; then
+    main_stack_parameters+=("LangfusePublicKey=$LANGFUSE_PUBLIC_KEY")
+fi
+if [[ -n "$LANGFUSE_SECRET_KEY" ]]; then
+    main_stack_parameters+=("LangfuseSecretKey=$LANGFUSE_SECRET_KEY")
+fi
+
 aws cloudformation deploy \
     --template-file "$REPO_ROOT/templates/base/main-stack.yaml" \
     --stack-name "$MAIN_STACK" \
-    --parameter-overrides \
-        DefaultModelId="$DEFAULT_MODEL_ID" \
-        LangfuseProjectName="$LANGFUSE_PROJECT_NAME" \
-        LangfuseHost="$LANGFUSE_HOST" \
-        LangfusePublicKey="$LANGFUSE_PUBLIC_KEY" \
-        LangfuseSecretKey="$LANGFUSE_SECRET_KEY" \
+    --parameter-overrides "${main_stack_parameters[@]}" \
     --region "$REGION"
 echo "✓ $MAIN_STACK deployed"
 echo ""
