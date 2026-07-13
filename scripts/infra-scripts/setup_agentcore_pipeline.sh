@@ -41,10 +41,11 @@ KYC_CASES_TABLE=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`KycCasesTableName`].OutputValue' \
     --output text --region "$REGION")
 
-MOCK_SERVICE_URL=$(aws cloudformation describe-stacks \
-    --stack-name "$MOCK_SERVICE_STACK" \
-    --query 'Stacks[0].Outputs[?OutputKey==`EnvironmentURL`].OutputValue' \
-    --output text --region "$REGION")
+MOCK_SERVICE_URL="http://$(aws elasticbeanstalk describe-environments \
+    --environment-names mock-service-env \
+    --region "$REGION" \
+    --query 'Environments[0].CNAME' \
+    --output text)"
 
 echo "  KYC_RESULTS_BUCKET : $KYC_RESULTS_BUCKET"
 echo "  KYC_CASES_TABLE    : $KYC_CASES_TABLE"
