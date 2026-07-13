@@ -8,6 +8,17 @@ phases:
   build:
     commands:
       - |
+        if [ "$LANGFUSE_ENABLED" != "true" ]; then
+          echo "Langfuse disabled -- skipping runtime env update."
+          exit 0
+        fi
+
+        if [ -z "$AGENTCORE_STACK_NAME" ]; then
+          echo "Error: AGENTCORE_STACK_NAME environment variable is not set"
+          exit 1
+        fi
+
+        echo "Looking up AgentRuntimeArn from CloudFormation stack: $AGENTCORE_STACK_NAME"
         KYC_AGENT_ARN=$(python3 -c "
         import boto3, os, sys
         cf = boto3.client('cloudformation')
@@ -15,11 +26,26 @@ phases:
         outputs = {o['OutputKey']: o['OutputValue'] for o in stacks[0].get('Outputs', [])}
         arn = outputs.get('AgentRuntimeArn', '')
         print(arn)
-        ")
+        " 2>/tmp/cfn_err.txt)
+        PYTHON_EXIT=$?
 
-        if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" = "None" ]; then
-          echo "Error: AgentRuntimeArn not found in stack $AGENTCORE_STACK_NAME"
+        if [ $PYTHON_EXIT -ne 0 ]; then
+          echo "Error: CloudFormation lookup failed:"
+          cat /tmp/cfn_err.txt
           exit 1
         fi
 
+        if [ -z "$KYC_AGENT_ARN" ] || [ "$KYC_AGENT_ARN" = "None" ]; then
+          echo "Error: AgentRuntimeArn output not found in stack '$AGENTCORE_STACK_NAME'"
+          echo "Available outputs:"
+          python3 -c "
+        import boto3, os
+        cf = boto3.client('cloudformation')
+        stacks = cf.describe_stacks(StackName=os.environ['AGENTCORE_STACK_NAME'])['Stacks']
+        for o in stacks[0].get('Outputs', []):
+            print(f\"  {o['OutputKey']}: {o['OutputValue']}\")" 2>&1 || true
+          exit 1
+        fi
+
+        echo "Found AgentRuntimeArn: $KYC_AGENT_ARN"
         python scripts/relaunch_agent_runtime_langfuse.py --agent-runtime-arn "$KYC_AGENT_ARN" --region "$AWS_DEFAULT_REGION"
