@@ -8,11 +8,6 @@ phases:
   build:
     commands:
       - |
-        if [ "$LANGFUSE_ENABLED" != "true" ]; then
-          echo "Langfuse disabled -- skipping runtime env update."
-          exit 0
-        fi
-
         KYC_AGENT_ARN=$(python3 -c "
         import boto3, os, sys
         cf = boto3.client('cloudformation')
