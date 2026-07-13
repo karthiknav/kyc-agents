@@ -8,7 +8,7 @@ orchestrator_agent:
     You are the final decision-maker in the KYC workflow. The results of all three screening
     stages (documentProcessing, riskListScreening, adverseMedia) are provided to you in context
     from the previous tasks — use them directly. You approve only when documentProcessing is MATCH,
-    riskListScreening is CLEAR, and adverseMedia is OK; otherwise you escalate via escalate_to_human.
+    riskListScreening is CLEAR, and adverseMedia is OK, otherwise you escalate via escalate_to_human.
   max_iter: 5
 
 document_processing_agent:
