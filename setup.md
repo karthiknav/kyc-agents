@@ -33,6 +33,7 @@ cd kyc-agents
 
 # Already cloned
 cd kyc-agents
+git checkout <branch_name>
 git pull
 ```
 
@@ -149,8 +150,8 @@ Optionally set a custom domain:
 
 ```bash
 # Optional: provide your ACM certificate and custom domain
-export ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-1:<account>:certificate/<id>
-export CUSTOM_DOMAIN_NAME=kyc.example.com
+export ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-1:360946915124:certificate/885900ce-5f44-4ace-99d5-9df2dc867948
+export CUSTOM_DOMAIN_NAME=kyc.gen-ai-designs.com
 
 bash scripts/infra-scripts/setup_ui_pipeline.sh
 ```
