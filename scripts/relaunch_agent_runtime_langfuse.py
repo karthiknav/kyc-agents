@@ -99,8 +99,10 @@ def main() -> int:
 
     ssm = session.client("ssm", region_name=region)
     try:
+        langfuse_project_name = _get_ssm_parameter(ssm, paths["LANGFUSE_PROJECT_NAME"], decrypt=False)
         langfuse_secret_key = _get_ssm_parameter(ssm, paths["LANGFUSE_SECRET_KEY"], decrypt=True)
         langfuse_public_key = _get_ssm_parameter(ssm, paths["LANGFUSE_PUBLIC_KEY"], decrypt=True)
+        langfuse_host_raw = _get_ssm_parameter(ssm, paths["LANGFUSE_HOST"], decrypt=False)
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "")
         if code == "ParameterNotFound":
