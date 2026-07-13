@@ -68,6 +68,56 @@ Because the connection originates from the Instance Connect Endpoint's ENI insid
 
 ---
 
+## Prerequisite: Install Helm
+
+Helm is required to download the chart dependencies (postgresql, clickhouse, valkey, minio, common) before Terraform can deploy Langfuse.
+
+### macOS (Homebrew)
+```bash
+brew install helm
+```
+
+### Linux / AWS CloudShell
+```bash
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+### Windows
+Download the latest release from the [Helm releases page](https://github.com/helm/helm/releases/latest), unzip, and add `helm.exe` to your PATH.
+
+Verify installation:
+```bash
+helm version
+```
+
+---
+
+## Prerequisite: Install kubectl
+
+### Linux
+```bash
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin/
+```
+
+### macOS (Homebrew)
+```bash
+brew install kubectl
+```
+
+### Windows
+```powershell
+winget install -e --id Kubernetes.kubectl
+```
+
+Verify installation:
+```bash
+kubectl version --client
+```
+
+---
+
 ## Prerequisite: Install Terraform
 
 You need **Terraform >= 1.9.0** installed. The module uses cross-variable references in validation blocks, which were introduced in 1.9. Earlier versions (including the default on AWS CloudShell) will fail on `terraform init`.
@@ -80,15 +130,16 @@ brew install hashicorp/tap/terraform
 
 ### Linux / AWS CloudShell
 ```bash
-wget https://releases.hashicorp.com/terraform/1.15.5/terraform_1.15.5_linux_amd64.zip
-unzip terraform_1.15.5_linux_amd64.zip
+LATEST=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/terraform | python3 -c "import sys,json; print(json.load(sys.stdin)['current_version'])")
+wget https://releases.hashicorp.com/terraform/${LATEST}/terraform_${LATEST}_linux_amd64.zip
+unzip terraform_${LATEST}_linux_amd64.zip
 mkdir -p ~/bin
 mv terraform ~/bin/
 export PATH="$HOME/bin:$PATH"   # add to ~/.bashrc to persist in CloudShell
 ```
 
 ### Windows
-Download the [Terraform Windows zip](https://releases.hashicorp.com/terraform/1.15.5/terraform_1.15.5_windows_amd64.zip), unzip, and add the executable to your PATH.
+Download the latest Terraform release from the [official downloads page](https://developer.hashicorp.com/terraform/install#windows), unzip, and add the executable to your PATH.
 
 Verify installation:
 ```bash
@@ -129,7 +180,15 @@ Add these as NS records in your parent domain's DNS provider. See [DOMAIN.md](DO
 
 Before applying the full stack, open `main.tf` and update the domain name, VPC ID, and subnet IDs as required for your environment.
 
-### 4. Apply the full stack
+### 4. Pull Helm chart dependencies
+
+Download the required sub-charts (postgresql, clickhouse, valkey, minio, common) into the `charts/` directory. This must be done before `terraform apply` — Terraform's `helm_release` resource expects the dependencies to already be present locally.
+
+```bash
+helm dependency update langfuse/charts/langfuse
+```
+
+### 5. Apply the full stack
 
 ```bash
 terraform apply
@@ -260,6 +319,57 @@ kubectl rollout restart deployment langfuse-web -n langfuse
 ```
 
 # Troubleshooting
+
+## Restart worker or web without Terraform
+
+If the worker or web pod needs to be restarted (e.g. after a NACL change, config update, or connection failure) without running `terraform apply`:
+
+```bash
+kubectl --namespace langfuse rollout restart deployment langfuse-worker
+kubectl --namespace langfuse rollout restart deployment langfuse-web
+```
+
+Watch the new pod come up and stream its logs:
+
+```bash
+# Watch pod status until Running
+kubectl --namespace langfuse get pods -w
+
+# Stream logs from the worker (replace <pod-name> with the new pod name from above)
+kubectl --namespace langfuse logs -f <pod-name>
+
+# Or follow logs without knowing the pod name yet
+kubectl --namespace langfuse logs -f -l app.kubernetes.io/component=worker --since=1m
+```
+
+## Ingress not created / ALB not provisioned
+
+Check whether the ingress resource exists and whether the ALB Controller has provisioned it:
+
+```bash
+# Check if the ingress resource exists and has an ALB address assigned
+kubectl --namespace langfuse get ingress
+
+# If ADDRESS is empty, the ALB hasn't been provisioned yet — describe to see events
+kubectl --namespace langfuse describe ingress langfuse
+
+# Check the ALB controller logs for errors
+kubectl --namespace kube-system logs -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50
+```
+
+If the ingress resource is missing entirely (e.g. after a Helm timeout), apply it manually from the repo:
+
+```bash
+kubectl apply -f langfuse/ingress.yaml
+```
+
+After applying, watch the `ADDRESS` field populate as the ALB is provisioned (takes ~1-2 minutes):
+
+```bash
+kubectl --namespace langfuse get ingress -w
+```
+
+Once the address appears, that's the ALB DNS name. Your domain (`langfuse.gen-ai-designs.com`) should already point to it via Route 53.
 
 ## Helm dependency error
 

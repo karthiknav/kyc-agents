@@ -12,7 +12,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-  - host: langfuse.noonehasthisdomain.click
+  - host: langfuse.gen-ai-designs.com
     http:
       paths:
       - path: /
