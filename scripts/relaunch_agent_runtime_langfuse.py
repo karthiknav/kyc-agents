@@ -160,7 +160,10 @@ def main() -> int:
 
     artifact = cur.get("agentRuntimeArtifact")
     network = dict(cur.get("networkConfiguration") or {})
-    network.pop("requireServiceS3Endpoint", None)
+    # requireServiceS3Endpoint is nested inside networkModeConfig (VpcConfig), not top-level
+    if "networkModeConfig" in network:
+        network["networkModeConfig"] = dict(network["networkModeConfig"])
+        network["networkModeConfig"].pop("requireServiceS3Endpoint", None)
     role_arn = cur.get("roleArn")
     if not artifact or not network or not role_arn:
         print("error: runtime response missing artifact, networkConfiguration, or roleArn", file=sys.stderr)
