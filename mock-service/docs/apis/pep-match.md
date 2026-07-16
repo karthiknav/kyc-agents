@@ -131,8 +131,8 @@ The mock uses persistence key `{{queries.q1.properties.lastName.0}}_{{queries.q1
 |--------------------------|----------|---------|
 | `de Vries_Jan` | Clean — no match | `[]` |
 | `Bakker_Maria` | Clean — no match | `[]` |
-| `Al-Rashid_Ahmed` | Sanctions hit | One sanctions entity |
-| `Berg_Willem` | PEP hit — former official | One PEP entity |
+| `Al-Rashid_Ahmed` | Sanctions hit, matched entity has no nationality on file (ambiguous corroboration) | One sanctions entity |
+| `Berg_Willem` | PEP hit — former official, name/nationality corroborate once normalized | One PEP entity |
 
 Send `queries.q1` with matching `firstName` and `lastName` (e.g. `lastName: ["Berg"]`, `firstName: ["Willem"]`) to get the seeded response. Any other combination gets a freshly generated response (one faker PEP result).
 

@@ -609,7 +609,7 @@ export const pepTestCases: PepTestCase[] = [
   },
   {
     key: 'Al-Rashid_Ahmed',
-    description: 'PEP Case 3: Sanctions hit — Ahmed Al-Rashid',
+    description: 'PEP Case 3: Ambiguous sanctions hit — Ahmed Al-Rashid, matched entity has no nationality on file, requires clarification',
     data: {
       responses: {
         q1: {
@@ -636,7 +636,8 @@ export const pepTestCases: PepTestCase[] = [
                 firstName: ['Ahmed'],
                 lastName: ['Al-Rashid'],
                 birthDate: ['1978'],
-                nationality: ['sy'],
+                // nationality intentionally omitted — this watchlist entry has none on file,
+                // so it cannot be compared against the customer's nationality either way.
                 position: ['Designated under sanctions program'],
               },
             },
