@@ -89,7 +89,7 @@ if LANGFUSE_ENABLED:
 else:
     logger.info("Langfuse disabled (set LANGFUSE_ENABLED=1 to enable)")
 
-from crew.crew import KYCCrew, OverrideValidationCrew
+from crew.crew import KYCCrew, OverrideValidationCrew, ClarificationResolutionCrew
 
 
 app = BedrockAgentCoreApp()
@@ -192,6 +192,30 @@ def _run_kyc_crew_background(*, case_id: str, job_id: str) -> None:
     logger.error("[job=%s] All %d KYC kickoff attempts failed (caseId=%s), restart manually", job_id, max_attempts, case_id)
 
 
+def _run_clarification_resolution_background(*, case_id: str, clarification_answer: str, job_id: str) -> None:
+    try:
+        logger.info("[job=%s] Clarification resolution starting (caseId=%s)", job_id, case_id)
+        ensure_model_env_from_ssm(max_age_seconds=int(os.getenv("MODEL_SSM_REFRESH_SECONDS", "300")))
+        with _langfuse_span("clarification-resolution-trace"):
+            result = ClarificationResolutionCrew().crew().kickoff(inputs={
+                "caseId": case_id,
+                "clarificationAnswer": clarification_answer,
+            })
+            logger.info("[job=%s] Clarification resolution finished (caseId=%s)", job_id, case_id)
+            try:
+                logger.info("[job=%s] Result: %s", job_id, result.raw)
+            except Exception:
+                logger.info("[job=%s] Result produced (raw unavailable)", job_id)
+
+        if langfuse:
+            try:
+                langfuse.flush()
+            except Exception:
+                logger.exception("[job=%s] Langfuse flush failed; continuing", job_id)
+    except Exception:
+        logger.exception("[job=%s] Clarification resolution failed (caseId=%s)", job_id, case_id)
+
+
 def _run_override_validation_background(*, case_id: str, analyst_comments: str, job_id: str) -> None:
     try:
         logger.info("[job=%s] Override validation starting (caseId=%s)", job_id, case_id)
@@ -235,8 +259,20 @@ def agent_invocation(payload, context):
             return {"error": "Missing 'caseId' in payload"}
 
         analyst_comments = payload.get("analystComments", "").strip()
+        clarification_answer = payload.get("clarificationAnswer", "").strip()
 
         job_id = str(uuid.uuid4())
+
+        if clarification_answer:
+            logger.info("Clarification resolution request for caseId: %s", case_id)
+            thread = threading.Thread(
+                target=_run_clarification_resolution_background,
+                kwargs={"case_id": case_id, "clarification_answer": clarification_answer, "job_id": job_id},
+                name=f"kyc-clarification-{job_id}",
+                daemon=True,
+            )
+            thread.start()
+            return {"status": "clarification_resolution_started", "caseId": case_id, "jobId": job_id}
 
         if analyst_comments:
             logger.info("Override validation request for caseId: %s", case_id)
@@ -283,6 +319,18 @@ def test_override_flow(case_id: str, analyst_comments: str) -> None:
             "analystComments": analyst_comments,
         })
     logger.info("test_override_flow result: %s", result.raw)
+
+
+def test_clarification_flow(case_id: str, clarification_answer: str) -> None:
+    """Run clarification resolution crew synchronously — for local testing only."""
+    logger.info("test_clarification_flow: caseId=%s answer=%r", case_id, clarification_answer)
+    ensure_model_env_from_ssm(max_age_seconds=0, force=True)
+    with _langfuse_span("clarification-resolution-trace"):
+        result = ClarificationResolutionCrew().crew().kickoff(inputs={
+            "caseId": case_id,
+            "clarificationAnswer": clarification_answer,
+        })
+    logger.info("test_clarification_flow result: %s", result.raw)
 
 
 if __name__ == "__main__":

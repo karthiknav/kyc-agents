@@ -25,10 +25,37 @@ export interface AdverseMediaResult extends ScreeningSubStage {
     searchQueries?: string[];
 }
 
+export interface MatchedEntitySummary {
+    id?: string;
+    name?: string;
+    birthDate?: string;
+    nationality?: string;
+    position?: string;
+    datasets?: string[];
+    dobComparability?: 'COMPARABLE' | 'INCOMPARABLE';
+    nationalityComparability?: 'COMPARABLE' | 'INCOMPARABLE';
+}
+
+export interface ClarificationRequest {
+    question: string;
+    matchedEntity: MatchedEntitySummary;
+    discrepancyFields: string[];
+    requestedAt: string;
+}
+
+export interface ClarificationResolution {
+    verdict: 'FALSE_POSITIVE' | 'CONFIRMED_MATCH';
+    reasoning: string;
+    resolvedAt: string;
+}
+
 export interface RiskListResult extends ScreeningSubStage {
     datasetsMatched?: string[];
     pepStatus?: string;
     sanctionsStatus?: string;
+    clarificationRequested?: boolean;
+    clarificationRequest?: ClarificationRequest;
+    clarificationResolution?: ClarificationResolution;
 }
 
 export interface ScreeningStage {

@@ -19,7 +19,7 @@ This plan adds government identity document verification to the KYC document pro
 |---|--------|----------|----------|----------|
 | 1 | Jan de Vries | NL123456789 | Clean — all match, no sanctions | APPROVED |
 | 2 | Maria Jansen | NL987654321 | BRP returns "Maria Bakker" | ESCALATED (mismatch) |
-| 3 | Ahmed Al-Rashid | NL555666777 | Doc matches, sanctions hit | ESCALATED (screening NOK) |
+| 3 | Ahmed Al-Rashid | NL555666777 | Doc matches, sanctions hit with no nationality on the watchlist entry (genuinely ambiguous corroboration) | PENDING_QUICK_CONFIRM (clarification requested) → ESCALATED once a reviewer confirms the match |
 | 4 | Willem van den Berg | NL111222333 | Doc matches, PEP flag | ESCALATED (PEP) |
 
 ## Future Work

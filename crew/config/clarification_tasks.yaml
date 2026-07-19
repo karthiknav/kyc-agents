@@ -1,0 +1,42 @@
+clarification_resolution_task:
+  description: >
+    A human reviewer has answered a pending risk-list clarification question for case {caseId}.
+    Their answer is:
+
+    "{clarificationAnswer}"
+
+    Call resolve_clarification with case_id {caseId} and analyst_answer "{clarificationAnswer}".
+    It fetches the pending question and matched watchlist entity itself and returns a structured
+    verdict. Do not reason about the answer yourself — that is resolve_clarification's job. Your
+    final answer must echo its output exactly.
+  expected_output: >
+    Valid JSON object with exactly these keys, copied verbatim from the resolve_clarification result:
+    - "case_id": the case ID (string)
+    - "verdict": one of "FALSE_POSITIVE" or "CONFIRMED_MATCH" (string)
+    - "reasoning": explanation of the verdict (string)
+    - "question": the original clarification question (string)
+    - "analyst_answer": the reviewer's answer echoed back (string)
+  agent: clarification_resolution_agent
+
+resolution_decision_task:
+  description: >
+    Given caseId {caseId}, the pending risk-list clarification has just been resolved. Call
+    get_case_stage_details with the caseId to get the current stage results, which now reflect
+    the corrected riskListScreening.result (CLEAR if the hit was a false positive, HIT if confirmed)
+    alongside the already-completed documentProcessing and adverseMedia results.
+
+    DECIDE:
+    If documentProcessing.result is MATCH AND riskListScreening.result is CLEAR AND
+    adverseMedia.result is OK: the case is approved. Return JSON with action "APPROVED".
+
+    For any other combination: escalate. Call escalate_to_human with the case_id, a reason list
+    summarising the current stage results, and an escalation_summary. Return JSON with action
+    "ESCALATED".
+  expected_output: >
+    Valid JSON object with at minimum these keys:
+    - "case_id": the case ID (string)
+    - "action": one of "APPROVED" or "ESCALATED"
+    - "decision": "APPROVE" or "ESCALATE"
+    - "reason": list of strings describing the decision factors
+    - "recommendation_summary": explanation of the outcome
+  agent: resolution_decision_agent

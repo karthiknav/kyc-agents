@@ -157,6 +157,9 @@ class StatusUpdateRequest(BaseModel):
 class OverrideRequest(BaseModel):
     analystComments: str
 
+class ClarificationRequest(BaseModel):
+    clarificationAnswer: str
+
 # Mock database for login
 USERS = [
     {"user_id": "USR000", "email": "admin@bank.nl", "password": "password123", "role": "admin"},
@@ -620,6 +623,48 @@ async def request_override(caseId: str, request: OverrideRequest):
         raise
     except Exception as e:
         logger.exception("Error requesting override for case %s", caseId)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/submissions/{caseId}/clarification")
+async def request_clarification_resolution(caseId: str, request: ClarificationRequest):
+    if not request.clarificationAnswer or not request.clarificationAnswer.strip():
+        raise HTTPException(status_code=400, detail="clarificationAnswer is required")
+    try:
+        table = get_submissions_table()
+        response = table.get_item(Key={"CaseId": caseId})
+        item = response.get("Item")
+        if not item:
+            raise HTTPException(status_code=404, detail="Case not found")
+        current_status = item.get("status", "")
+        if current_status != "PENDING_QUICK_CONFIRM":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Clarification can only be answered for cases in PENDING_QUICK_CONFIRM. Current: {current_status}",
+            )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        table.update_item(
+            Key={"CaseId": caseId},
+            UpdateExpression="SET #s = :s, statusUpdatedAt = :t",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":s": "CLARIFICATION_PENDING_AI_REVIEW", ":t": timestamp},
+        )
+        queue_url = _get_sqs_queue_url()
+        sqs_client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({
+                "caseId": caseId,
+                "clarificationAnswer": request.clarificationAnswer.strip(),
+                "status": "CLARIFICATION_INITIATED",
+                "timestamp": timestamp,
+            }),
+        )
+        logger.info("SQS clarification message sent for caseId=%s", caseId)
+        return {"status": "clarification_review_started", "caseId": caseId}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error requesting clarification resolution for case %s", caseId)
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -7,6 +7,12 @@ orchestrator_task:
     - adverseMedia.result (OK / NOK / PENDING_REVIEW)
 
     DECIDE:
+    If riskListScreening.result is HIT_NEEDS_CONFIRMATION: a targeted clarification question has
+    already been sent to a human reviewer (via request_clarification) and the case is already set
+    to PENDING_QUICK_CONFIRM. Do NOT call escalate_to_human — that would overwrite the narrower
+    pending-confirmation state with a full case escalation. Return JSON with action
+    "PENDING_CONFIRMATION" and a recommendation_summary noting that a clarification is pending.
+
     If documentProcessing.result is MATCH AND riskListScreening.result is CLEAR AND
     adverseMedia.result is OK: the case is approved. Return JSON with action "APPROVED".
 
@@ -17,8 +23,8 @@ orchestrator_task:
   expected_output: >
     Valid JSON object with at minimum these keys:
     - "case_id": the case ID (string)
-    - "action": one of "APPROVED" or "ESCALATED"
-    - "decision": "APPROVE" or "ESCALATE"
+    - "action": one of "APPROVED", "ESCALATED", or "PENDING_CONFIRMATION"
+    - "decision": "APPROVE", "ESCALATE", or "AWAIT_CONFIRMATION"
     - "reason": list of strings describing the decision factors
     - "recommendation_summary": explanation of the outcome
   agent: orchestrator_agent
@@ -82,17 +88,31 @@ risk_list_screening_task:
     Given caseId {caseId}:
     Call risk_list_screening with case_id {caseId}. The tool fetches identity data from
     DynamoDB and calls the PEP/sanctions API internally — do not call get_case_details separately.
-    Return a JSON object with result (CLEAR/HIT/ERROR), pepStatus, sanctionsStatus, datasetsMatched, summary, and rawResponse.
+
+    If datasetsMatched is empty, report result CLEAR.
+
+    If there is a hit, examine matchedEntitySummary's dobComparability and nationalityComparability
+    for each matched entity, and judge the name against the customer's fullName (EXACT /
+    PLAUSIBLE_VARIANT / UNRELATED) per your backstory. If any field is INCOMPARABLE or the name
+    can't be confidently judged, call request_clarification with a specific question, a
+    matched_entity_json for the entity in question, and discrepancy_fields_json listing which
+    field(s) are incomparable — then report result HIT_NEEDS_CONFIRMATION and set
+    clarificationRequested to true. Otherwise report result HIT (clarificationRequested false),
+    stating any agreement/disagreement found in summary.
+
+    Return a JSON object with result, pepStatus, sanctionsStatus, datasetsMatched, summary,
+    clarificationRequested, and rawResponse.
   expected_output: >
     Valid JSON object with exactly these keys:
     - "screening_id": the exact screening_id string returned by risk_list_screening (string, REQUIRED)
     - "case_id": the case ID from the case (string)
     - "name": the full name from identity.fullName (string)
-    - "result": one of "CLEAR", "HIT", "ERROR" (string)
+    - "result": one of "CLEAR", "HIT", "HIT_NEEDS_CONFIRMATION", "ERROR" (string)
     - "pepStatus": one of "NOT_PEP", "PEP", "UNKNOWN" (string)
     - "sanctionsStatus": one of "NOT_SANCTIONED", "SANCTIONED", "UNKNOWN" (string)
     - "datasetsMatched": list of dataset ids (array)
-    - "summary": short summary (string)
+    - "summary": short summary, including any DOB/nationality/name agreement or disagreement found (string)
+    - "clarificationRequested": true if request_clarification was called, false otherwise (boolean)
     - "rawResponse": raw API response JSON (object)
 
     IMPORTANT: The screening_id field must be copied verbatim from the risk_list_screening

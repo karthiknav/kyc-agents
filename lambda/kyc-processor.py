@@ -279,20 +279,25 @@ def handler(event, context):
                 failed += 1
                 continue
             analyst_comments = (body.get("analystComments") or "").strip()
+            clarification_answer = (body.get("clarificationAnswer") or "").strip()
             is_override = bool(analyst_comments)
+            is_clarification = bool(clarification_answer)
+            is_followup = is_override or is_clarification
 
-            if not is_override and not _mark_case_processing_or_skip(cases_table, case_id):
+            if not is_followup and not _mark_case_processing_or_skip(cases_table, case_id):
                 logger.info("Skipping agent invocation for caseId=%s as it is duplicate", case_id)
                 continue
 
             message_id = record.get("messageId")
-            prefix = "kyc-override" if is_override else "kyc-case"
+            prefix = "kyc-override" if is_override else "kyc-clarification" if is_clarification else "kyc-case"
             stable_session_id = (
                 f"{prefix}-{case_id}-{message_id}" if isinstance(message_id, str) and message_id else None
             )
             payload = {"caseId": case_id}
             if is_override:
                 payload["analystComments"] = analyst_comments
+            elif is_clarification:
+                payload["clarificationAnswer"] = clarification_answer
             _invoke_agent_fire_and_forget(
                 agentcore_client,
                 agent_arn,

@@ -25,7 +25,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
     const [overrideFormOpen, setOverrideFormOpen] = useState(false);
     const [overrideComments, setOverrideComments] = useState('');
     const [overrideSubmitting, setOverrideSubmitting] = useState(false);
+
+    // Clarification flow state (targeted risk-list disambiguation question)
+    const [clarificationAnswer, setClarificationAnswer] = useState('');
+    const [clarificationSubmitting, setClarificationSubmitting] = useState(false);
+
     const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const isAiReviewPending = (status?: string) =>
+        status === 'OVERRIDE_PENDING_AI_REVIEW' || status === 'CLARIFICATION_PENDING_AI_REVIEW';
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -67,28 +75,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
         fetchData();
     }, []);
 
-    // Reset override form when selected submission changes
+    // Reset override/clarification forms when selected submission changes
     useEffect(() => {
         setOverrideFormOpen(false);
         setOverrideComments('');
+        setClarificationAnswer('');
     }, [selectedSubmission?.caseId]);
 
-    // Poll for override result when case is OVERRIDE_PENDING_AI_REVIEW
+    // Poll for a result while case is OVERRIDE_PENDING_AI_REVIEW or CLARIFICATION_PENDING_AI_REVIEW
     useEffect(() => {
         if (pollingRef.current) {
             clearInterval(pollingRef.current);
             pollingRef.current = null;
         }
-        if (selectedSubmission?.status !== 'OVERRIDE_PENDING_AI_REVIEW') return;
+        if (!isAiReviewPending(selectedSubmission?.status)) return;
 
-        const caseId = selectedSubmission.caseId || (selectedSubmission as any).CaseId;
+        const wasClarification = selectedSubmission?.status === 'CLARIFICATION_PENDING_AI_REVIEW';
+        const caseId = selectedSubmission!.caseId || (selectedSubmission as any).CaseId;
         pollingRef.current = setInterval(async () => {
             try {
                 const res = await fetch(`${API_BASE_URL}/submissions/${caseId}`);
                 if (!res.ok) return;
                 const updated = await res.json();
                 const newStatus = (updated.status || '');
-                if (newStatus === 'OVERRIDE_PENDING_AI_REVIEW') return;
+                if (isAiReviewPending(newStatus)) return;
 
                 const normalizedId = updated.caseId || updated.CaseId;
                 const merged = { ...updated, caseId: normalizedId };
@@ -98,13 +108,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                 }));
                 setSelectedSubmission(merged);
 
-                if (newStatus === 'APPROVED') {
-                    showToast('Override approved by AI review', 'success');
-                } else if (newStatus === 'PENDING_HUMAN_REVIEW') {
-                    showToast('AI rejected the override justification. See reasoning below.', 'error');
+                if (wasClarification) {
+                    if (newStatus === 'APPROVED') {
+                        showToast('Clarification resolved — case approved', 'success');
+                    } else if (newStatus === 'PENDING_HUMAN_REVIEW') {
+                        showToast('Clarification resolved — escalated for full review', 'info');
+                    }
+                } else {
+                    if (newStatus === 'APPROVED') {
+                        showToast('Override approved by AI review', 'success');
+                    } else if (newStatus === 'PENDING_HUMAN_REVIEW') {
+                        showToast('AI rejected the override justification. See reasoning below.', 'error');
+                    }
                 }
             } catch (e) {
-                console.error('Override polling error:', e);
+                console.error('AI review polling error:', e);
             }
         }, 5000);
 
@@ -133,7 +151,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
     const filteredSubmissions = submissions.filter(sub => {
         const s = sub.status.toUpperCase();
         if (filter === 'ALL') return true;
-        if (filter === 'PENDING') return ['INITIATED', 'PROCESSING', 'PENDING', 'PENDING_HUMAN_REVIEW', 'OVERRIDE_PENDING_AI_REVIEW'].includes(s);
+        if (filter === 'PENDING') return ['INITIATED', 'PROCESSING', 'PENDING', 'PENDING_HUMAN_REVIEW', 'OVERRIDE_PENDING_AI_REVIEW', 'PENDING_QUICK_CONFIRM', 'CLARIFICATION_PENDING_AI_REVIEW'].includes(s);
         return s === filter;
     });
 
@@ -197,6 +215,37 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
         }
     };
 
+    const handleClarificationSubmit = async () => {
+        if (!selectedSubmission || !clarificationAnswer.trim()) return;
+        const caseId = selectedSubmission.caseId || (selectedSubmission as any).CaseId;
+        setClarificationSubmitting(true);
+        try {
+            const response = await fetch(`${API_BASE_URL}/submissions/${caseId}/clarification`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clarificationAnswer: clarificationAnswer.trim() })
+            });
+            if (response.ok) {
+                const updatedSubmissions = submissions.map((sub: any) => {
+                    const subId = sub.caseId || (sub as any).CaseId;
+                    return subId === caseId ? { ...sub, status: 'CLARIFICATION_PENDING_AI_REVIEW' } : sub;
+                });
+                setSubmissions(updatedSubmissions);
+                setSelectedSubmission({ ...selectedSubmission, status: 'CLARIFICATION_PENDING_AI_REVIEW' });
+                setClarificationAnswer('');
+                showToast('Answer submitted — resolving...', 'info');
+            } else {
+                const error = await response.json();
+                showToast(`Clarification failed: ${error.detail || 'Unknown error'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error submitting clarification answer:', error);
+            showToast('Failed to submit clarification answer', 'error');
+        } finally {
+            setClarificationSubmitting(false);
+        }
+    };
+
     const renderActionButtons = (sub: KycSubmission) => {
         const status = sub.status;
         const overrideReview = sub.stages?.overrideReview;
@@ -211,6 +260,56 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                     <div style={{ fontSize: '28px', marginBottom: '8px', animation: 'spin 2s linear infinite' }}>⟳</div>
                     <div style={{ fontWeight: 600 }}>AI is reviewing your override request...</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>This usually takes 30–60 seconds</div>
+                </div>
+            );
+        }
+
+        if (status === 'CLARIFICATION_PENDING_AI_REVIEW') {
+            return (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--accent-cyan)' }}>
+                    <div style={{ fontSize: '28px', marginBottom: '8px', animation: 'spin 2s linear infinite' }}>⟳</div>
+                    <div style={{ fontWeight: 600 }}>Resolving your answer...</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>This usually takes 30–60 seconds</div>
+                </div>
+            );
+        }
+
+        if (status === 'PENDING_QUICK_CONFIRM') {
+            const clarificationRequest = sub.stages?.screening?.riskListScreening?.clarificationRequest;
+            return (
+                <div>
+                    <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-blue)', fontWeight: 600, fontSize: '12px', marginBottom: '6px' }}>
+                            <span>?</span> Risk List — Clarification Needed
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                            {clarificationRequest?.question || 'A watchlist hit could not be automatically corroborated — please review.'}
+                        </div>
+                        {clarificationRequest?.matchedEntity && (
+                            <div style={{ fontSize: '11px', marginTop: '8px', color: 'var(--text-muted)' }}>
+                                Matched entity: {clarificationRequest.matchedEntity.name || 'Unknown'}
+                                {clarificationRequest.matchedEntity.birthDate ? ` · DOB ${clarificationRequest.matchedEntity.birthDate}` : ''}
+                                {clarificationRequest.matchedEntity.nationality ? ` · Nationality ${clarificationRequest.matchedEntity.nationality}` : ''}
+                            </div>
+                        )}
+                    </div>
+                    <textarea
+                        value={clarificationAnswer}
+                        onChange={e => setClarificationAnswer(e.target.value)}
+                        placeholder="Answer the question above (e.g. confirm whether DOB/nationality match, or that this is a different individual)."
+                        style={{ width: '100%', minHeight: '70px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-primary)', padding: '10px', fontSize: '12px', resize: 'vertical', boxSizing: 'border-box' }}
+                    />
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button
+                            className="action-btn approve"
+                            style={{ flex: 1 }}
+                            onClick={handleClarificationSubmit}
+                            disabled={clarificationSubmitting || !clarificationAnswer.trim()}
+                        >
+                            {clarificationSubmitting ? '⟳ Submitting...' : '↑ Submit Answer'}
+                        </button>
+                        <button className="action-btn escalate-btn" onClick={() => handleStatusUpdate('ESCALATED')}>↑ Escalate Instead</button>
+                    </div>
                 </div>
             );
         }
@@ -476,6 +575,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onEscalate }) => {
                                                         )}
                                                         {selectedSubmission.stages.screening.riskListScreening.pepStatus && (
                                                             <div style={{ fontSize: '10px', marginTop: '2px', color: 'var(--accent-blue)' }}>Status: {selectedSubmission.stages.screening.riskListScreening.pepStatus}</div>
+                                                        )}
+                                                        {selectedSubmission.stages.screening.riskListScreening.clarificationRequest && !selectedSubmission.stages.screening.riskListScreening.clarificationResolution && (
+                                                            <div style={{ fontSize: '10px', marginTop: '4px', color: 'var(--accent-blue)' }}>
+                                                                ? Pending clarification: {selectedSubmission.stages.screening.riskListScreening.clarificationRequest.question}
+                                                            </div>
+                                                        )}
+                                                        {selectedSubmission.stages.screening.riskListScreening.clarificationResolution && (
+                                                            <div style={{ fontSize: '10px', marginTop: '4px', color: selectedSubmission.stages.screening.riskListScreening.clarificationResolution.verdict === 'FALSE_POSITIVE' ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                                                Clarification resolved — {selectedSubmission.stages.screening.riskListScreening.clarificationResolution.verdict}: {selectedSubmission.stages.screening.riskListScreening.clarificationResolution.reasoning}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 )}

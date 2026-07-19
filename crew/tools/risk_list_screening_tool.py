@@ -75,6 +75,49 @@ def _extract_birth_year(date_str: Optional[str]) -> Optional[str]:
     return match.group(0) if match else None
 
 
+# Small alpha-2 <-> country-name lookup covering the countries this system deals with
+# (mock PEP hits use lowercase ISO codes; customer identity records use full names or
+# codes depending on how they were captured — see mock-service/src/data/default-test-cases.ts).
+# Not a general-purpose gazetteer: an unrecognized value is reported INCOMPARABLE rather than guessed.
+_COUNTRY_CODE_BY_NAME = {
+    "netherlands": "nl",
+    "united states": "us",
+    "united kingdom": "gb",
+    "germany": "de",
+    "russia": "ru",
+    "syria": "sy",
+}
+_KNOWN_CODES = set(_COUNTRY_CODE_BY_NAME.values())
+
+
+def _normalize_country(value: Optional[str]) -> Optional[str]:
+    """Normalize a country name or ISO alpha-2 code to lowercase alpha-2. None if unrecognized/missing."""
+    if not value:
+        return None
+    v = str(value).strip().lower()
+    if v in _KNOWN_CODES:
+        return v
+    return _COUNTRY_CODE_BY_NAME.get(v)
+
+
+def _compare_nationality(customer_value: Optional[str], matched_value: Optional[str]) -> str:
+    """Return COMPARABLE or INCOMPARABLE — both sides must normalize to a known alpha-2 code."""
+    customer_code = _normalize_country(customer_value)
+    matched_code = _normalize_country(matched_value)
+    if customer_code and matched_code:
+        return "COMPARABLE"
+    return "INCOMPARABLE"
+
+
+def _compare_dob(customer_value: Optional[str], matched_value: Optional[str]) -> str:
+    """Return COMPARABLE or INCOMPARABLE — both sides must yield a parseable year."""
+    customer_year = _extract_birth_year(customer_value)
+    matched_year = _extract_birth_year(matched_value)
+    if customer_year and matched_year:
+        return "COMPARABLE"
+    return "INCOMPARABLE"
+
+
 class RiskListScreeningTool(BaseTool):
     """Run risk list screening against PEP/sanctions API and return normalized statuses."""
 
@@ -183,6 +226,33 @@ class RiskListScreeningTool(BaseTool):
             result = "CLEAR"
             summary = "No matches found across sanctions, PEP, or high-risk watchlists."
 
+        customer_dob = identity.get("dateOfBirth")
+        customer_nationality = nationality
+
+        # Surface the matched entity's own identifying fields (already present in the raw API
+        # response but previously discarded) plus a deterministic comparability pre-check, so the
+        # agent can judge corroboration instead of treating every dataset match identically.
+        matched_entity_summary = []
+        for r in results:
+            props = r.get("properties") or {}
+
+            def _first(key: str) -> Optional[str]:
+                vals = props.get(key)
+                return vals[0] if isinstance(vals, list) and vals else None
+
+            matched_dob = _first("birthDate")
+            matched_nationality = _first("nationality")
+            matched_entity_summary.append({
+                "id": r.get("id"),
+                "name": _first("name") or r.get("caption"),
+                "birthDate": matched_dob,
+                "nationality": matched_nationality,
+                "position": _first("position"),
+                "datasets": r.get("datasets") or [],
+                "dobComparability": _compare_dob(customer_dob, matched_dob),
+                "nationalityComparability": _compare_nationality(customer_nationality, matched_nationality),
+            })
+
         out = {
             "screening_id": screening_id,
             "case_id": identity.get("caseId", case_id),
@@ -192,6 +262,8 @@ class RiskListScreeningTool(BaseTool):
             "sanctionsStatus": sanctions_status,
             "datasetsMatched": datasets_norm,
             "summary": summary,
+            "customerIdentity": {"dateOfBirth": customer_dob, "nationality": customer_nationality},
+            "matchedEntitySummary": matched_entity_summary,
             "rawResponse": raw,
         }
         _screening_state.last_result = out

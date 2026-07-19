@@ -102,6 +102,7 @@ def update_risk_list_screening_result(task_output):
     sanctions_status = task_output.get("sanctionsStatus")
     datasets_matched = task_output.get("datasetsMatched", [])
     summary = task_output.get("summary", "")
+    clarification_requested = bool(task_output.get("clarificationRequested", False))
     raw = task_output.get("rawResponse", {})
     if not case_id or not result:
         logger.info("Risk-list results incomplete: case_id=%s, result=%s", case_id, result)
@@ -132,6 +133,7 @@ def update_risk_list_screening_result(task_output):
         "sanctionsStatus": sanctions_status or "UNKNOWN",
         "datasetsMatched": datasets_matched if isinstance(datasets_matched, list) else [],
         "summary": summary or "",
+        "clarificationRequested": clarification_requested,
         "updatedAt": now,
     }
     if raw_s3:
@@ -141,6 +143,20 @@ def update_risk_list_screening_result(task_output):
     try:
         dynamodb = boto3.resource("dynamodb")
         table = dynamodb.Table(table_name)
+
+        # If request_clarification already ran earlier in this same task (it writes
+        # clarificationRequest directly), carry it forward — the SET below replaces the whole
+        # riskListScreening map and would otherwise clobber it.
+        try:
+            existing = table.get_item(Key={"CaseId": case_id}).get("Item") or {}
+            existing_clarification = (
+                (existing.get("stages") or {}).get("screening", {}).get("riskListScreening", {}).get("clarificationRequest")
+            )
+            if existing_clarification:
+                risk_list["clarificationRequest"] = existing_clarification
+        except Exception:
+            logger.exception("update_risk_list_screening_result: failed to read existing clarificationRequest")
+
         # ensure stages and screening maps exist
         table.update_item(
             Key={"CaseId": case_id},

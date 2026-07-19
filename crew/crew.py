@@ -41,6 +41,8 @@ from crew.tools.get_case_files_tool import GetCaseFilesTool
 
 from crew.tools.get_case_stage_details_tool import GetCaseStageDetailsTool
 from crew.tools.analyze_override_tool import AnalyzeOverrideTool
+from crew.tools.request_clarification_tool import RequestClarificationTool
+from crew.tools.resolve_clarification_tool import ResolveClarificationTool, get_last_resolution_id, reset_resolution_state
 
 from crew.tools.textract_tool import ExtractDocumentTextTool
 from crew.tools.verify_identity_tool import VerifyIdentityDocumentTool
@@ -48,6 +50,7 @@ from crew.update_case import update_adverse_media_result, update_risk_list_scree
 from crew.update_document_result import update_document_result
 from crew.update_orchestrator_result import update_orchestrator_result
 from crew.update_override_result import update_override_result
+from crew.update_clarification_result import update_clarification_result
 
 
 
@@ -121,6 +124,7 @@ class KYCCrew():
             verbose=True,
             tools=[
                 RiskListScreeningTool(),
+                RequestClarificationTool(),
             ],
             llm=self.get_llm(),
         )
@@ -370,6 +374,103 @@ class OverrideValidationCrew():
         return Crew(
             agents=[self.override_validation_agent()],
             tasks=[self.override_validation_task()],
+            process=Process.sequential,
+            verbose=True,
+        )
+
+
+@CrewBase
+class ClarificationResolutionCrew():
+    """Resumes a case after a human resolves a risk-list clarification question.
+
+    Two tasks: (1) resolve the clarification against the reviewer's answer and update
+    riskListScreening.result, (2) re-apply the same approve/escalate rule as the primary
+    orchestrator using the now-corrected stage results — without re-running document OCR
+    or adverse-media search, both already persisted from the original KYCCrew run.
+    """
+
+    agents_config = 'config/clarification_agents.yaml'
+    tasks_config = 'config/clarification_tasks.yaml'
+
+    agents: List[BaseAgent]
+    tasks: List[Task]
+
+    _default_bedrock_model = "bedrock/us.anthropic.claude-sonnet-4-6"
+
+    def get_llm(self) -> LLM:
+        resolved_model = _resolve_bedrock_model_from_env(
+            default_model=self._default_bedrock_model
+        )
+        logger.info(
+            "ClarificationResolutionCrew using Bedrock model: %s (MODEL env=%r)",
+            resolved_model,
+            (os.getenv("MODEL") or "").strip(),
+        )
+        return LLM(model=resolved_model, temperature=0)
+
+    @agent
+    def clarification_resolution_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['clarification_resolution_agent'],  # type: ignore[index]
+            verbose=True,
+            tools=[
+                ResolveClarificationTool(),
+            ],
+            llm=self.get_llm(),
+        )
+
+    @agent
+    def resolution_decision_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['resolution_decision_agent'],  # type: ignore[index]
+            verbose=True,
+            tools=[
+                GetCaseStageDetailsTool(),
+                EscalateToHumanTool(),
+            ],
+            llm=self.get_llm(),
+        )
+
+    @task
+    def clarification_resolution_task(self) -> Task:
+        reset_resolution_state()
+
+        def _guardrail(output) -> tuple[bool, str]:
+            raw = output.raw if hasattr(output, "raw") else str(output)
+            if not get_last_resolution_id():
+                return (
+                    False,
+                    "REJECTED: resolve_clarification was never called (no resolution_id issued). "
+                    "You MUST call resolve_clarification before producing your final answer.",
+                )
+            return (True, raw)
+
+        return Task(
+            config=self.tasks_config['clarification_resolution_task'],  # type: ignore[index]
+            callback=update_clarification_result,
+            guardrail=_guardrail,
+            guardrail_max_retries=3,
+        )
+
+    @task
+    def resolution_decision_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['resolution_decision_task'],  # type: ignore[index]
+            callback=update_orchestrator_result,
+            context=[self.clarification_resolution_task()],
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        return Crew(
+            agents=[
+                self.clarification_resolution_agent(),
+                self.resolution_decision_agent(),
+            ],
+            tasks=[
+                self.clarification_resolution_task(),
+                self.resolution_decision_task(),
+            ],
             process=Process.sequential,
             verbose=True,
         )
