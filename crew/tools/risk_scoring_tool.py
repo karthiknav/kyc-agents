@@ -141,6 +141,43 @@ def _extract_features(case: dict) -> dict:
     }
 
 
+# ── Heuristic fallback (used when the SageMaker endpoint is unset/unavailable) ─
+# Fixed, illustrative probability splits per tier — not calibrated, just enough
+# to give the orchestrator a usable confidence figure when there is no model.
+_HEURISTIC_TIER_PROBABILITIES = {
+    "low": {"low": 70.0, "medium": 25.0, "high": 5.0},
+    "medium": {"low": 20.0, "medium": 55.0, "high": 25.0},
+    "high": {"low": 5.0, "medium": 25.0, "high": 70.0},
+}
+
+
+def _heuristic_risk_score(features: dict) -> tuple[str, dict]:
+    """
+    Rule-based approximation used only when the ML endpoint can't be called —
+    not a substitute for the trained model. Escalation-biased to match the
+    orchestrator's overall decision policy: a sanctions hit always resolves
+    to 'high' regardless of the other features.
+    """
+    if features["sanctions_hit"] == 1:
+        return "high", _HEURISTIC_TIER_PROBABILITIES["high"]
+
+    weighted = (
+        features["pep_match_score"] * 0.30
+        + (100 - features["doc_authenticity_score"]) * 0.25
+        + (features["adverse_media_severity"] / 4 * 100) * 0.25
+        + (features["country_risk_tier"] / 5 * 100) * 0.20
+    )
+
+    if weighted >= 55:
+        risk_tier = "high"
+    elif weighted >= 25:
+        risk_tier = "medium"
+    else:
+        risk_tier = "low"
+
+    return risk_tier, _HEURISTIC_TIER_PROBABILITIES[risk_tier]
+
+
 # ── Tool ─────────────────────────────────────────────────────────────────────
 
 class RiskScoringInput(BaseModel):
@@ -156,7 +193,10 @@ class RiskScoringTool(BaseTool):
     risk_tier (low/medium/high), a confidence score (0–100), and the per-class
     probabilities.
 
-    Requires env var: RISK_SCORER_ENDPOINT_NAME
+    If RISK_SCORER_ENDPOINT_NAME is unset, or the endpoint call fails, falls
+    back to a conservative rule-based heuristic (see _heuristic_risk_score)
+    instead of failing the task — the result's "method" field indicates which
+    path was used ("ml_endpoint" or "heuristic_fallback").
     """
 
     name: str = "score_case_risk"
@@ -172,13 +212,6 @@ class RiskScoringTool(BaseTool):
         if not case_id or not case_id.strip():
             return json.dumps({"error": "case_id is required"})
 
-        endpoint_name = os.environ.get("RISK_SCORER_ENDPOINT_NAME", "").strip()
-        if not endpoint_name:
-            return json.dumps({
-                "error": "RISK_SCORER_ENDPOINT_NAME env var is not set — endpoint not deployed yet",
-                "case_id": case_id,
-            })
-
         # Issue nonce so the guardrail can confirm this tool ran
         scoring_id = str(uuid.uuid4())
         _scoring_state.scoring_id = scoring_id
@@ -190,32 +223,48 @@ class RiskScoringTool(BaseTool):
             return json.dumps({"error": f"DynamoDB fetch failed: {e}", "case_id": case_id})
 
         features = _extract_features(case)
-        csv_row = ",".join(str(features[f]) for f in FEATURE_ORDER)
+        endpoint_name = os.environ.get("RISK_SCORER_ENDPOINT_NAME", "").strip()
 
-        try:
-            probabilities = self._invoke_endpoint(endpoint_name, csv_row)
-        except Exception as e:
-            logger.exception("risk_scoring: endpoint invocation failed for case %s", case_id)
-            return json.dumps({"error": f"Endpoint call failed: {e}", "case_id": case_id})
+        probabilities = None
+        method = "ml_endpoint"
+        if endpoint_name:
+            csv_row = ",".join(str(features[f]) for f in FEATURE_ORDER)
+            try:
+                raw_probabilities = self._invoke_endpoint(endpoint_name, csv_row)
+                probabilities = {
+                    LABEL_NAMES[i]: round(raw_probabilities[i] * 100, 1) for i in range(3)
+                }
+            except Exception:
+                logger.exception(
+                    "risk_scoring: endpoint invocation failed for case %s — falling back to heuristic",
+                    case_id,
+                )
 
-        predicted_idx = probabilities.index(max(probabilities))
-        risk_tier = LABEL_NAMES[predicted_idx]
-        confidence = round(probabilities[predicted_idx] * 100, 1)
+        if probabilities is None:
+            method = "heuristic_fallback"
+            logger.warning(
+                "risk_scoring: %s for case %s — using heuristic fallback",
+                "RISK_SCORER_ENDPOINT_NAME not set" if not endpoint_name else "endpoint call failed",
+                case_id,
+            )
+            risk_tier, probabilities = _heuristic_risk_score(features)
+        else:
+            risk_tier = max(probabilities, key=probabilities.get)
+
+        confidence = probabilities[risk_tier]
 
         result = {
             "scoring_id": scoring_id,
             "case_id": case_id,
             "risk_tier": risk_tier,
             "confidence": confidence,
-            "probabilities": {
-                LABEL_NAMES[i]: round(probabilities[i] * 100, 1)
-                for i in range(3)
-            },
+            "probabilities": probabilities,
+            "method": method,
             "features_used": features,
         }
         logger.info(
-            "risk_scoring: case=%s  tier=%s  confidence=%.1f%%",
-            case_id, risk_tier, confidence,
+            "risk_scoring: case=%s  tier=%s  confidence=%.1f%%  method=%s",
+            case_id, risk_tier, confidence, method,
         )
         return json.dumps(result, indent=2, default=str)
 

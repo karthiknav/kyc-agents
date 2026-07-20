@@ -1,35 +1,59 @@
 # Plan: SageMaker MLOps — CD Pipeline + Monitoring + Auto-Retraining
 
-## The Full Loop
+## Status
+
+| Piece | Status |
+|---|---|
+| Stack 1 — CD pipeline (approval → deploy) | **Built** — `templates/mlops-cd-pipeline-stack.yaml` |
+| Baseline job (feeds the monitor) | **Built** — `GenerateDataQualityBaseline` step in `pipeline.py`, runs alongside `RegisterRiskScorer` |
+| Stack 2 — Data Quality monitoring + drift alarm | **Built, alert-only** — `templates/mlops-monitoring-stack.yaml` |
+| Auto-retrain on drift (EventBridge → StartPipelineExecution) | **Deliberately not built.** See "Why not auto-retrain on drift?" below. |
+| Labeling/feedback loop (confirmed case outcomes → training CSV) | **Not built** — prerequisite for auto-retrain ever being meaningful |
+
+## The Full Loop (as actually implemented)
 
 ```
 [MONITOR]
-Deployed endpoint → data captured to S3 (already wired in deploy.py)
-SageMaker Data Quality Monitor (daily schedule)
+Deployed endpoint → data captured to S3 (deploy.py, DataCaptureConfig)
+SageMaker Data Quality Monitor (daily schedule, mlops-monitoring-stack.yaml)
   compares live input features to training baseline stats
   violations → S3 report + CloudWatch metric
         ↓
-CloudWatch Alarm (violation rate > threshold)
+CloudWatch Alarm (drift % > threshold)
         ↓
-[RETRAIN TRIGGER]
-EventBridge rule (Alarm state → ALARM)
+[ALERT — not auto-retrain]
+SNS topic → ML/compliance team investigates
+  - pipeline/schema bug (e.g. upstream API changed)? → fix the code
+  - genuine population shift? → needs fresh labeled data before retraining helps
+  - in the meantime: risk_scoring_tool.py's existing heuristic_fallback path
+    can be forced on to stop trusting a drifted model
         ↓
-StartPipelineExecution on existing SageMaker training pipeline
-        ↓
-[TRAINING PIPELINE] (pipeline.py — unchanged)
+[TRAINING PIPELINE] (pipeline.py) — run manually, or automatically once a
+labeling loop exists to refresh InputDataUri with confirmed outcomes
 Preprocess → Train → Evaluate → CheckAUC ≥ 0.85
         ↓
-RegisterModel (PendingManualApproval) + notify team
+RegisterModel (PendingManualApproval) + GenerateDataQualityBaseline
         ↓
 [HUMAN GATE]
 Compliance officer reviews AUC + per-class F1 in Model Registry
 Clicks Approve
         ↓
-[CD PIPELINE]
+[CD PIPELINE] (Stack 1 — built)
 EventBridge (model approved) → CodePipeline → deploy.py → endpoint updated
         ↓
 Loop back to monitoring ↑
 ```
+
+### Why not auto-retrain on drift?
+
+`pipeline.py`'s `InputDataUri` parameter defaults to a fixed `latest.csv`. Wiring
+the drift alarm straight to `StartPipelineExecution` would retrain against that
+same static file every time — same distribution in, same model out, drift
+unaddressed. Auto-retrain only becomes useful once something refreshes the
+training CSV with recently-confirmed case outcomes before each run (e.g. a
+Lambda that queries DynamoDB for confirmed decisions and appends them). Until
+that exists, the alarm is wired to SNS only. See `mlops/README.md` → "Drift
+Monitoring — Design Notes" for the full reasoning.
 
 ---
 
@@ -72,63 +96,39 @@ EventBridge rule pattern:
 
 ---
 
-### Stack 2 — `templates/mlops-monitoring-stack.yaml`
-Handles data drift detection and automatic retraining trigger.
+### Stack 2 — `templates/mlops-monitoring-stack.yaml` (built)
+Handles data drift detection and alerting. **Deliberately alert-only — no auto-retrain trigger** (see "Why not auto-retrain on drift?" above).
 
-**Parameters**: `RoleStackName`, `StorageStackName`, `EndpointName` (default: kyc-risk-scorer), `TrainingPipelineName` (default: kyc-risk-scorer), `BaselineS3Uri` (output of one-time baseline job), `MonitoringScheduleExpression` (default: `cron(0 6 * * ? *)` — daily 6am UTC)
+**Parameters**: `SageMakerExecutionRoleArn`, `KycMlOpsBucketName`, `EndpointName` (default: kyc-risk-scorer), `MonitorImageUri` (region-specific model-monitor analyzer image — retrieve via the SageMaker SDK, see template description), `BaselineS3Uri` (output of the `GenerateDataQualityBaseline` pipeline step), `MonitoringScheduleExpression` (default: `cron(0 6 * * ? *)` — daily 6am UTC), `DriftThresholdPercentage` (default: 20), `MetricNamespace`/`MetricName` (verify exact values in CloudWatch after the first schedule run), `NotificationEmail` (optional)
 
-**Resources** (5):
+**Resources** (6):
 
 | Resource | Type | Purpose |
 |----------|------|---------|
 | `DataQualityJobDefinition` | `AWS::SageMaker::DataQualityJobDefinition` | Defines what to compare (live vs baseline) and where to write violations |
 | `MonitoringSchedule` | `AWS::SageMaker::MonitoringSchedule` | Runs the job on schedule, references `DataQualityJobDefinition` |
-| `DriftViolationAlarm` | CloudWatch Alarm | Triggers when `feature_baseline_drift_percentage > 20` for 1 evaluation period |
-| `EventBridgeSageMakerPipelineRole` | IAM Role | Allows EventBridge to call `sagemaker:StartPipelineExecution` |
-| `DriftRetrainingRule` | EventBridge Rule | Watches alarm state change → ALARM; starts training pipeline |
+| `DriftAlertTopic` | `AWS::SNS::Topic` | Where drift alerts go — subscribe the ML/compliance team |
+| `DriftAlertTopicPolicy` | `AWS::SNS::TopicPolicy` | Allows CloudWatch alarms to publish to the topic |
+| `DriftAlertSubscription` | `AWS::SNS::Subscription` | Optional email subscription (only if `NotificationEmail` is set) |
+| `DriftViolationAlarm` | CloudWatch Alarm | Triggers when the drift metric exceeds `DriftThresholdPercentage`; action = publish to `DriftAlertTopic` (not `StartPipelineExecution`) |
 
 `DataQualityJobDefinition` config:
 - `EndpointName`: the live endpoint (`kyc-risk-scorer`)
-- `BaselineConstraintsS3Uri` / `BaselineStatisticsS3Uri`: from the baseline job (see below)
+- `DataQualityBaselineConfig`: `{BaselineS3Uri}constraints.json` / `{BaselineS3Uri}statistics.json`
 - Output violations S3: `s3://{KycMlOpsBucket}/kyc-risk-monitoring/violations/`
-- Role: imported `SageMakerExecutionRoleArn` (already has required permissions)
+- Role: `SageMakerExecutionRoleArn` (already has required permissions)
 
-CloudWatch alarm metric: `aws/sagemaker/Endpoints/data-metrics`, dimension `EndpointName=kyc-risk-scorer`
+CloudWatch alarm metric: `aws/sagemaker/Endpoints/data-metrics` (namespace/metric name are parameters — the exact per-feature metric name SageMaker publishes should be confirmed in the CloudWatch console after the first `MonitoringSchedule` execution, then set via stack update if it differs from the default).
 
-EventBridge retraining rule pattern:
-```json
-{
-  "source": ["aws.cloudwatch"],
-  "detail-type": ["CloudWatch Alarm State Change"],
-  "detail": {
-    "alarmName": ["kyc-risk-drift-alarm"],
-    "state": { "value": ["ALARM"] }
-  }
-}
-```
-Target: `sagemaker:StartPipelineExecution` on the training pipeline ARN.
+**If/when the labeling loop is built**, extending this stack to auto-retrain means adding an `EventBridgeSageMakerPipelineRole` (IAM) + an EventBridge rule watching `DriftViolationAlarm` state → `ALARM`, targeting `sagemaker:StartPipelineExecution` — but only once something also refreshes `InputDataUri` with fresh confirmed-label data first.
 
 ---
 
-## One-Time Baseline Job (prerequisite for Stack 2)
+## One-Time Baseline Job (prerequisite for Stack 2) — built
 
-Before deploying the monitoring stack, run a baseline computation job once against the training data. This generates the statistics and constraints files the monitor compares against.
+`mlops/pipeline.py` now has a `GenerateDataQualityBaseline` step (`QualityCheckStep`, using `DataQualityCheckConfig`) that runs alongside `RegisterRiskScorer` — i.e. only when a model passes the AUC gate and gets registered, so the baseline always matches the training data behind the most recently approved model. It reads the same `train` split `TrainRiskScorer` uses and writes to `BaselineOutputUri` (pipeline parameter, defaults to `s3://{bucket}/kyc-risk-monitoring/baseline/`).
 
-Add a step to `mlops/pipeline.py` (optional final step) **or** run it as a standalone script after first training:
-
-```python
-from sagemaker.model_monitor import DefaultModelMonitor
-monitor = DefaultModelMonitor(role=role, ...)
-monitor.suggest_baseline(
-    baseline_dataset=f"s3://{bucket}/kyc-risk-processed/train/train.csv",
-    dataset_format=DatasetFormat.csv(header=False),
-    output_s3_uri=f"s3://{bucket}/kyc-risk-monitoring/baseline/",
-)
-```
-
-Output S3 URI (`s3://{bucket}/kyc-risk-monitoring/baseline/`) is the `BaselineS3Uri` parameter for Stack 2.
-
-**Recommended**: add this as a final step in `pipeline.py` so the baseline always matches the model that was just trained (baseline drift against stale training data is a common pitfall).
+That S3 URI is the `BaselineS3Uri` parameter for Stack 2.
 
 ---
 
@@ -136,11 +136,12 @@ Output S3 URI (`s3://{bucket}/kyc-risk-monitoring/baseline/`) is the `BaselineS3
 
 | File | Action |
 |------|--------|
-| `templates/mlops-cd-pipeline-stack.yaml` | **Create** — Stack 1 (6 resources) |
-| `templates/mlops-monitoring-stack.yaml` | **Create** — Stack 2 (5 resources) |
-| `mlops/pipeline.py` | **Modify** — add optional baseline job step at end of pipeline |
-| `templates/roles-stack.yaml` | **No change** — SageMakerExecutionRole already sufficient |
-| `mlops/deploy.py` | **No change** — works as-is |
+| `templates/mlops-cd-pipeline-stack.yaml` | **Done** — Stack 1 (6 resources) |
+| `templates/mlops-monitoring-stack.yaml` | **Done** — Stack 2, alert-only (6 resources) |
+| `mlops/pipeline.py` | **Done** — added `GenerateDataQualityBaseline` step |
+| `templates/roles-stack.yaml` | No change — SageMakerExecutionRole already sufficient |
+| `mlops/deploy.py` | No change — works as-is |
+| Labeling/feedback loop (DynamoDB confirmed outcomes → training CSV) | **Not started** — needed before auto-retrain is worth building |
 
 ---
 
@@ -152,21 +153,29 @@ aws cloudformation deploy \
   --template-file templates/mlops-cd-pipeline-stack.yaml \
   --stack-name kyc-mlops-cd-pipeline \
   --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides RoleStackName=<...> StorageStackName=<...> \
-    GitHubConnectionArn=<...> GitHubOwner=<...> GitHubRepo=<...>
+  --parameter-overrides RolesStackName=<...> StorageStackName=<...> \
+    SageMakerExecutionRoleArn=<...> KycMlOpsBucketName=<...> \
+    GitHubConnectionArn=<...> GitHubRepo=<...>
 
-# 2. Run training pipeline once (to have a model + generate baseline)
+# 2. Run training pipeline once (registers a model + generates the baseline)
 python mlops/pipeline.py --role $ROLE_ARN --bucket $BUCKET --run
 
 # 3. Approve model in Model Registry → CD pipeline auto-deploys endpoint
 
-# 4. Deploy monitoring stack (endpoint must exist first)
+# 4. Retrieve the region's model-monitor analyzer image URI
+python -c "from sagemaker import image_uris; print(image_uris.retrieve(framework='model-monitor', region='$REGION'))"
+
+# 5. Deploy monitoring stack (endpoint must exist first)
 aws cloudformation deploy \
   --template-file templates/mlops-monitoring-stack.yaml \
   --stack-name kyc-mlops-monitoring \
   --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides RoleStackName=<...> StorageStackName=<...> \
-    BaselineS3Uri=s3://$BUCKET/kyc-risk-monitoring/baseline/
+  --parameter-overrides \
+    SageMakerExecutionRoleArn=$ROLE_ARN \
+    KycMlOpsBucketName=$BUCKET \
+    MonitorImageUri=<from step 4> \
+    BaselineS3Uri=s3://$BUCKET/kyc-risk-monitoring/baseline/ \
+    NotificationEmail=<optional>
 ```
 
 ---
@@ -175,5 +184,6 @@ aws cloudformation deploy \
 
 1. **CD pipeline**: Approve a model → verify CodePipeline execution starts → endpoint `InService`
 2. **Monitor**: Check SageMaker console → Endpoints → kyc-risk-scorer → Data Quality tab — schedule shows next run time
-3. **Drift alarm**: Manually publish a test CloudWatch metric exceeding threshold → verify EventBridge fires → verify SageMaker Pipeline execution starts
-4. **End-to-end**: Send intentionally skewed feature data to the endpoint → wait for daily monitor run → verify alarm → verify retraining pipeline kicks off
+3. **Drift alarm**: Manually publish a test CloudWatch metric exceeding threshold → verify `DriftAlertTopic` receives a notification (not a pipeline execution)
+4. **End-to-end**: Send intentionally skewed feature data to the endpoint → wait for daily monitor run → verify alarm fires → verify SNS notification arrives
+5. **Auto-retrain (future)**: not applicable until the labeling loop and the EventBridge extension described above are built

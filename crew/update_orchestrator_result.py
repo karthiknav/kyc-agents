@@ -23,7 +23,7 @@ def update_orchestrator_result(task_output):
     reason = task_output.get("reason", [])
     recommendation_summary = task_output.get("recommendation_summary", "")
     risk_tier = task_output.get("risk_tier", "")
-    risk_confidence = task_output.get("risk_confidence")
+    risk_confidence = task_output.get("confidence")
     scoring_id = task_output.get("scoring_id", "")
 
     if not case_id:

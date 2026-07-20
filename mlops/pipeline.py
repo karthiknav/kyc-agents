@@ -7,8 +7,15 @@ Steps
 2. TrainRiskScorer     - XGBoost custom script (multi:softprob, 3 classes)
 3. EvaluateRiskScorer  - SKLearnProcessor: AUC + per-class metrics
 4. CheckModelQuality   - ConditionStep: AUC >= threshold?
-   ├─ pass → RegisterRiskScorer  (PendingManualApproval)
+   ├─ pass → RegisterRiskScorer          (PendingManualApproval)
+   │        → GenerateDataQualityBaseline (statistics/constraints for Stage 2 monitoring)
    └─ fail → ModelQualityCheckFailed (FailStep)
+
+GenerateDataQualityBaseline only runs alongside a successful registration, so
+the baseline always reflects the data the most recently *approved* model was
+trained on — baselining against stale training data is a common drift-monitor
+pitfall. Its output feeds the `BaselineS3Uri` parameter of the Stage 2
+monitoring stack (templates/mlops-monitoring-stack.yaml).
 
 Usage
 -----
@@ -31,8 +38,10 @@ import boto3
 import sagemaker
 from sagemaker.inputs import TrainingInput
 from sagemaker.model_metrics import MetricsSource, ModelMetrics
+from sagemaker.model_monitor.dataset_format import DatasetFormat
 from sagemaker.processing import ProcessingInput, ProcessingOutput
 from sagemaker.sklearn.processing import SKLearnProcessor
+from sagemaker.workflow.check_job_config import CheckJobConfig
 from sagemaker.workflow.conditions import ConditionGreaterThanOrEqualTo
 from sagemaker.workflow.condition_step import ConditionStep
 from sagemaker.workflow.fail_step import FailStep
@@ -40,6 +49,7 @@ from sagemaker.workflow.functions import JsonGet
 from sagemaker.workflow.parameters import ParameterFloat, ParameterString
 from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.workflow.properties import PropertyFile
+from sagemaker.workflow.quality_check_step import DataQualityCheckConfig, QualityCheckStep
 from sagemaker.workflow.step_collections import RegisterModel
 from sagemaker.workflow.steps import ProcessingStep, TrainingStep
 from sagemaker.xgboost.estimator import XGBoost
@@ -68,6 +78,10 @@ def create_pipeline(
     p_approval_status = ParameterString(
         name="ModelApprovalStatus",
         default_value="PendingManualApproval",
+    )
+    p_baseline_uri = ParameterString(
+        name="BaselineOutputUri",
+        default_value=f"s3://{bucket}/kyc-risk-monitoring/baseline/",
     )
 
     # ── Step 1 · Preprocess ──────────────────────────────────────────────────
@@ -200,6 +214,31 @@ def create_pipeline(
         approval_status=p_approval_status,
         model_metrics=model_metrics,
     )
+    # ── Step 4b · Data quality baseline (feeds Stage 2 drift monitoring) ───────
+    # Runs only alongside a successful registration (see if_steps below), so the
+    # baseline always matches the training data behind the model that was just
+    # approved — the whole point being to avoid comparing live traffic against a
+    # stale baseline from an earlier training run.
+    check_job_config = CheckJobConfig(
+        role=role,
+        instance_count=1,
+        instance_type="ml.m5.large",
+        sagemaker_session=session,
+    )
+    data_quality_check_config = DataQualityCheckConfig(
+        baseline_dataset=step_preprocess.properties.ProcessingOutputConfig.Outputs[0].S3Output.S3Uri,
+        dataset_format=DatasetFormat.csv(header=False),
+        output_s3_uri=p_baseline_uri,
+    )
+    step_baseline = QualityCheckStep(
+        name="GenerateDataQualityBaseline",
+        skip_check=True,          # nothing to compare against on a fresh baseline run
+        register_new_baseline=True,
+        quality_check_config=data_quality_check_config,
+        check_job_config=check_job_config,
+        model_package_group_name=MODEL_PACKAGE_GROUP,
+    )
+
     step_fail = FailStep(
         name="ModelQualityCheckFailed",
         error_message="AUC below threshold — model not registered. Review evaluation report.",
@@ -216,13 +255,13 @@ def create_pipeline(
                 right=p_auc_threshold,
             )
         ],
-        if_steps=[step_register],
+        if_steps=[step_register, step_baseline],
         else_steps=[step_fail],
     )
 
     return Pipeline(
         name=pipeline_name,
-        parameters=[p_input_uri, p_auc_threshold, p_approval_status],
+        parameters=[p_input_uri, p_auc_threshold, p_approval_status, p_baseline_uri],
         steps=[step_preprocess, step_train, step_evaluate, step_condition],
         sagemaker_session=session,
     )
@@ -271,3 +310,9 @@ if __name__ == "__main__":
             status = step["StepStatus"]
             name = step["StepName"]
             print(f"  {'✓' if status == 'Succeeded' else '✗'}  {name:<45}  {status}")
+
+        print(
+            f"\nIf GenerateDataQualityBaseline succeeded, baseline statistics/constraints are at:\n"
+            f"  s3://{args.bucket}/kyc-risk-monitoring/baseline/\n"
+            f"Use that as the BaselineS3Uri parameter for templates/mlops-monitoring-stack.yaml."
+        )

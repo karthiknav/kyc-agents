@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  MLOps Monitoring — SageMaker Data Quality Monitor on the kyc-risk-scorer
+  endpoint. Daily job compares live captured inputs (enabled via
+  DataCaptureConfig in mlops/deploy.py) against a training-data baseline and
+  raises a CloudWatch alarm on drift.
+
+  Design note: this stack intentionally does NOT auto-trigger retraining.
+  Calling sagemaker:StartPipelineExecution on drift would retrain against the
+  same static InputDataUri every time, which is a no-op until a labeling loop
+  exists to refresh the training data with confirmed case outcomes. Until then,
+  a drift alarm should be a human alert (SNS), not an automated action. See
+  the "Drift Monitoring — Design Notes" section in mlops/README.md.
+
+Parameters:
+  SageMakerExecutionRoleArn:
+    Type: String
+    Description: ARN of the SageMaker execution role (runs the monitoring job; same role used by deploy.py)
+
+  KycMlOpsBucketName:
+    Type: String
+    Description: S3 bucket for MLOps artifacts, data capture, and monitoring output
+
+  EndpointName:
+    Type: String
+    Default: kyc-risk-scorer
+    Description: Live SageMaker endpoint to monitor (must already exist and have DataCaptureConfig enabled)
+
+  MonitorImageUri:
+    Type: String
+    Description: >
+      SageMaker Model Monitor analyzer container image URI for the target region.
+      Retrieve it with:
+      python -c "from sagemaker import image_uris; print(image_uris.retrieve(framework='model-monitor', region='<region>'))"
+
+  BaselineS3Uri:
+    Type: String
+    Description: >
+      S3 prefix (must end with /) produced by the GenerateDataQualityBaseline
+      pipeline step, e.g. s3://<bucket>/kyc-risk-monitoring/baseline/. Must
+      contain constraints.json and statistics.json.
+
+  MonitoringScheduleExpression:
+    Type: String
+    Default: cron(0 6 * * ? *)
+    Description: When the daily data quality job runs (default 6am UTC)
+
+  DriftThresholdPercentage:
+    Type: Number
+    Default: 20
+    Description: Alarm fires when the drift metric exceeds this value
+
+  MetricNamespace:
+    Type: String
+    Default: aws/sagemaker/Endpoints/data-metrics
+    Description: CloudWatch namespace SageMaker Model Monitor publishes to
+
+  MetricName:
+    Type: String
+    Default: feature_baseline_drift_check_violations
+    Description: >
+      CloudWatch metric name to alarm on. SageMaker publishes per-feature drift
+      metrics — verify the exact metric name/dimensions in the CloudWatch
+      console after the first MonitoringSchedule execution and update this
+      parameter (via stack update) if it differs.
+
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Optional email address to subscribe to the drift alert SNS topic
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+
+Resources:
+
+  # ── SNS topic — where drift alerts go instead of an auto-retrain trigger ────
+  DriftAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-drift-alerts"
+      DisplayName: KYC risk scorer — data drift alert
+
+  DriftAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref DriftAlertTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudWatchAlarmPublish
+            Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref DriftAlertTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  DriftAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref DriftAlertTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ── Data Quality Job Definition — what to compare and where to write output ─
+  DataQualityJobDefinition:
+    Type: AWS::SageMaker::DataQualityJobDefinition
+    Properties:
+      JobDefinitionName: !Sub "${AWS::StackName}-data-quality-job-def"
+      DataQualityAppSpecification:
+        ImageUri: !Ref MonitorImageUri
+      DataQualityBaselineConfig:
+        ConstraintsResource:
+          S3Uri: !Sub "${BaselineS3Uri}constraints.json"
+        StatisticsResource:
+          S3Uri: !Sub "${BaselineS3Uri}statistics.json"
+      DataQualityJobInput:
+        EndpointInput:
+          EndpointName: !Ref EndpointName
+          LocalPath: /opt/ml/processing/input/endpoint
+      DataQualityJobOutputConfig:
+        MonitoringOutputs:
+          - S3Output:
+              S3Uri: !Sub "s3://${KycMlOpsBucketName}/kyc-risk-monitoring/violations/"
+              LocalPath: /opt/ml/processing/output
+      JobResources:
+        ClusterConfig:
+          InstanceCount: 1
+          InstanceType: ml.m5.large
+          VolumeSizeInGB: 20
+      RoleArn: !Ref SageMakerExecutionRoleArn
+      StoppingCondition:
+        MaxRuntimeInSeconds: 3600
+
+  # ── Monitoring Schedule — runs the job definition on a cron ─────────────────
+  MonitoringSchedule:
+    Type: AWS::SageMaker::MonitoringSchedule
+    DependsOn: DataQualityJobDefinition
+    Properties:
+      MonitoringScheduleName: !Sub "${AWS::StackName}-data-quality-schedule"
+      EndpointName: !Ref EndpointName
+      MonitoringScheduleConfig:
+        MonitoringJobDefinitionName: !Sub "${AWS::StackName}-data-quality-job-def"
+        MonitoringType: DataQuality
+        ScheduleConfig:
+          ScheduleExpression: !Ref MonitoringScheduleExpression
+
+  # ── Alarm — human alert only, no auto-retrain (see stack Description) ───────
+  DriftViolationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-drift-alarm"
+      AlarmDescription: Data Quality Monitor detected feature drift above threshold — notifies the ML/compliance team via SNS; does not auto-retrain.
+      Namespace: !Ref MetricNamespace
+      MetricName: !Ref MetricName
+      Dimensions:
+        - Name: Endpoint
+          Value: !Ref EndpointName
+        - Name: MonitoringSchedule
+          Value: !Sub "${AWS::StackName}-data-quality-schedule"
+      Statistic: Average
+      Period: 86400
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: !Ref DriftThresholdPercentage
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref DriftAlertTopic
+
+Outputs:
+  DriftAlertTopicArn:
+    Description: SNS topic drift alarms publish to — subscribe the ML/compliance team here
+    Value: !Ref DriftAlertTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-DriftAlertTopicArn"
+
+  MonitoringScheduleName:
+    Description: Name of the SageMaker Monitoring Schedule
+    Value: !Sub "${AWS::StackName}-data-quality-schedule"
+    Export:
+      Name: !Sub "${AWS::StackName}-MonitoringScheduleName"
+
+  JobDefinitionName:
+    Description: Name of the Data Quality Job Definition
+    Value: !Sub "${AWS::StackName}-data-quality-job-def"
+    Export:
+      Name: !Sub "${AWS::StackName}-JobDefinitionName"
