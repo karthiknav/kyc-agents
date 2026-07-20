@@ -78,13 +78,7 @@ Resources:
               - Sid: SageMakerDeploy
                 Effect: Allow
                 Action:
-                  - sagemaker:CreateModel
-                  - sagemaker:CreateEndpointConfig
-                  - sagemaker:CreateEndpoint
-                  - sagemaker:UpdateEndpoint
-                  - sagemaker:DescribeEndpoint
-                  - sagemaker:ListModelPackages
-                  - sagemaker:DescribeModelPackage
+                  - sagemaker:*
                 Resource: '*'
               - Sid: PassSageMakerRole
                 Effect: Allow

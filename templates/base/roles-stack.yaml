@@ -163,6 +163,10 @@ Resources:
                 Action:
                   - textract:*
                 Resource: '*'
+              - Sid: InvokeRiskScoringEndpoint
+                Effect: Allow
+                Action: sagemaker:InvokeEndpoint
+                Resource: !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/kyc-risk-scorer"
 
   CodeBuildRole:
     Type: AWS::IAM::Role
