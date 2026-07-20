@@ -22,6 +22,12 @@ GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:360946915124:connection
 GITHUB_REPO="karthiknav/kyc-agents"
 GITHUB_BRANCH="improvements"
 
+# SageMaker endpoint name for the ML risk scorer (mlops/deploy.py DEFAULT_ENDPOINT_NAME).
+# Not a CloudFormation-managed resource, so it's hardcoded here rather than fetched via
+# describe-stacks. Leave empty if the endpoint hasn't been deployed yet — score_case_risk
+# falls back to the heuristic scorer when RISK_SCORER_ENDPOINT_NAME is unset.
+RISK_SCORER_ENDPOINT_NAME="kyc-risk-scorer"
+
 echo "=== AgentCore pipeline deployment ==="
 echo "  PIPELINE_STACK   : $PIPELINE_STACK"
 echo "  AGENTCORE_STACK  : $AGENTCORE_STACK"
@@ -46,9 +52,10 @@ MOCK_SERVICE_URL=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`EnvironmentURL`].OutputValue' \
     --output text --region "$REGION")
 
-echo "  KYC_RESULTS_BUCKET : $KYC_RESULTS_BUCKET"
-echo "  KYC_CASES_TABLE    : $KYC_CASES_TABLE"
-echo "  MOCK_SERVICE_URL   : $MOCK_SERVICE_URL"
+echo "  KYC_RESULTS_BUCKET       : $KYC_RESULTS_BUCKET"
+echo "  KYC_CASES_TABLE          : $KYC_CASES_TABLE"
+echo "  MOCK_SERVICE_URL         : $MOCK_SERVICE_URL"
+echo "  RISK_SCORER_ENDPOINT_NAME: $RISK_SCORER_ENDPOINT_NAME"
 echo ""
 
 aws cloudformation deploy \
@@ -63,6 +70,7 @@ aws cloudformation deploy \
         KycCasesTableName="$KYC_CASES_TABLE" \
         KycResultsBucketName="$KYC_RESULTS_BUCKET" \
         MockServiceUrl="$MOCK_SERVICE_URL" \
+        RiskScorerEndpointName="$RISK_SCORER_ENDPOINT_NAME" \
         VpcStackName="$VPC_STACK" \
         LangfuseEnabled="true" \
     --capabilities CAPABILITY_NAMED_IAM \

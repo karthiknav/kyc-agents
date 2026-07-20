@@ -41,6 +41,11 @@ Parameters:
     Default: ''
     Description: Base URL of the mock-service (empty = tools fall back to localhost)
 
+  RiskScorerEndpointName:
+    Type: String
+    Default: ''
+    Description: SageMaker endpoint name for the ML risk scorer, passed through to agentcore-stack (empty = falls back to the heuristic scorer)
+
   VpcStackName:
     Type: String
     Description: Name of the VPC stack to import networking resources from (passed to agentcore-stack)
@@ -309,6 +314,7 @@ Resources:
                     "KycCasesTableName":    "${KycCasesTableName}",
                     "KycResultsBucketName": "${KycResultsBucketName}",
                     "MockServiceUrl":       "${MockServiceUrl}",
+                    "RiskScorerEndpointName": "${RiskScorerEndpointName}",
                     "VpcStackName":         "${VpcStackName}",
                     "ImageTag":             {"Fn::GetParam": ["BuildArtifact", "parameters.json", "ImageTag"]},
                     "ECRRepositoryUri":     {"Fn::GetParam": ["BuildArtifact", "parameters.json", "ECRRepositoryUri"]}

@@ -40,6 +40,11 @@ Parameters:
     Default: ''
     Description: Base URL of the mock-service (empty = tools fall back to localhost)
 
+  RiskScorerEndpointName:
+    Type: String
+    Default: ''
+    Description: SageMaker endpoint name for the ML risk scorer (empty = score_case_risk falls back to the heuristic scorer)
+
 Resources:
 
   AgentCoreSecurityGroup:
@@ -68,6 +73,7 @@ Resources:
         KYC_CASES_TABLE: !Ref KycCasesTableName
         KYC_RESULTS_BUCKET: !Ref KycResultsBucketName
         MOCK_SERVICE_URL: !Ref MockServiceUrl
+        RISK_SCORER_ENDPOINT_NAME: !Ref RiskScorerEndpointName
         # Changing ImageTag forces AgentCore to redeploy with the new container
         DEPLOYED_IMAGE_TAG: !Ref ImageTag
         CREWAI_DISABLE_TELEMETRY: "true"
