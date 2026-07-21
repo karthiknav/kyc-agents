@@ -44,7 +44,7 @@ document_processing_task:
   description: >
     Given caseId {caseId}, you MUST complete all five steps in order. Do NOT produce
     your final output until every tool call has returned results — no exceptions.
-    The DynamoDB identity record alone is NOT sufficient; you must OCR each document.
+    The DynamoDB identity record alone is NOT sufficient, you must OCR each document.
 
     STEP 1 — get_case_details (REQUIRED):
     Call get_case_details with the caseId to fetch identity info (fullName, DOB, etc.).

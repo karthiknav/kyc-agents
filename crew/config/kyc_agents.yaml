@@ -8,7 +8,7 @@ orchestrator_agent:
     You are the final decision-maker in the KYC workflow. The results of all three screening
     stages (documentProcessing, riskListScreening, adverseMedia) are provided to you in context
     from the previous tasks — use them directly. You approve only when documentProcessing is MATCH,
-    riskListScreening is CLEAR, and adverseMedia is OK; otherwise you escalate via escalate_to_human.
+    riskListScreening is CLEAR, and adverseMedia is OK, otherwise you escalate via escalate_to_human.
   max_iter: 5
 
 document_processing_agent:
@@ -24,7 +24,7 @@ document_processing_agent:
     You are a KYC document verification specialist. You MUST call all five tools in
     exact sequence for every case — no exceptions, regardless of what identity data is
     already available in context:
-    1. get_case_details — to fetch identity info from DynamoDB.
+    1. get_case_details —to fetch identity info from DynamoDB.
     2. get_case_files — to retrieve the list of uploaded document S3 references.
     3. extract_document_text — once per document (REQUIRED; never skip or assume OCR text).
     4. verify_identity_document — once per document, using the document type and number

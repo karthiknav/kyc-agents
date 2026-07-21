@@ -105,6 +105,30 @@ else
         --region "$REGION"
     echo "✓ $MAIN_STACK deployed"
 fi
+echo "── Step 3: Main ($MAIN_STACK) ──"
+main_stack_parameters=(
+    "DefaultModelId=$DEFAULT_MODEL_ID"
+)
+
+if [[ -n "$LANGFUSE_PROJECT_NAME" ]]; then
+    main_stack_parameters+=("LangfuseProjectName=$LANGFUSE_PROJECT_NAME")
+fi
+if [[ -n "$LANGFUSE_HOST" ]]; then
+    main_stack_parameters+=("LangfuseHost=$LANGFUSE_HOST")
+fi
+if [[ -n "$LANGFUSE_PUBLIC_KEY" ]]; then
+    main_stack_parameters+=("LangfusePublicKey=$LANGFUSE_PUBLIC_KEY")
+fi
+if [[ -n "$LANGFUSE_SECRET_KEY" ]]; then
+    main_stack_parameters+=("LangfuseSecretKey=$LANGFUSE_SECRET_KEY")
+fi
+
+aws cloudformation deploy \
+    --template-file "$REPO_ROOT/templates/base/main-stack.yaml" \
+    --stack-name "$MAIN_STACK" \
+    --parameter-overrides "${main_stack_parameters[@]}" \
+    --region "$REGION"
+echo "✓ $MAIN_STACK deployed"
 echo ""
 
 # ── 4. Roles stack (IAM) ─────────────────────────────────────────────────────

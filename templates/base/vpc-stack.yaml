@@ -518,6 +518,38 @@ Resources:
       CidrBlock: 0.0.0.0/0
       PortRange: { From: 1024, To: 65535 }
 
+  # EKS Fargate distributes CoreDNS pods across both private subnets.
+  # When a pod in Subnet1 queries CoreDNS in Subnet2, the query crosses the
+  # NACL boundary: inbound UDP dst:53 to the CoreDNS subnet has no matching
+  # rule (rule 210 is TCP-only, rule 220 covers ephemeral ports only).
+  # This silently drops all cross-subnet DNS queries, breaking .cluster.local
+  # resolution (ClickHouse/ZooKeeper headless services) AND external names
+  # (RDS/ElastiCache endpoints forwarded upstream through CoreDNS).
+  PrivateNaclInboundCoreDnsUdp:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 225
+      Protocol: 17
+      RuleAction: allow
+      Egress: false
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 53, To: 53 }
+
+  # Outbound counterpart: CoreDNS responses leave with src:53 dst:ephemeral.
+  # Rule 120 only matches dst:53 (queries going out), and rule 130 is TCP-only,
+  # so cross-subnet DNS responses are also dropped without this rule.
+  PrivateNaclOutboundDnsResponseUdp:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNacl
+      RuleNumber: 125
+      Protocol: 17
+      RuleAction: allow
+      Egress: true
+      CidrBlock: !GetAtt VPC.CidrBlock
+      PortRange: { From: 1024, To: 65535 }
+
   PrivateSubnet1NaclAssociation:
     Type: AWS::EC2::SubnetNetworkAclAssociation
     Properties:

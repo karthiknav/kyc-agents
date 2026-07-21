@@ -159,7 +159,11 @@ def main() -> int:
         return 1
 
     artifact = cur.get("agentRuntimeArtifact")
-    network = cur.get("networkConfiguration")
+    network = dict(cur.get("networkConfiguration") or {})
+    # requireServiceS3Endpoint is nested inside networkModeConfig (VpcConfig), not top-level
+    if "networkModeConfig" in network:
+        network["networkModeConfig"] = dict(network["networkModeConfig"])
+        network["networkModeConfig"].pop("requireServiceS3Endpoint", None)
     role_arn = cur.get("roleArn")
     if not artifact or not network or not role_arn:
         print("error: runtime response missing artifact, networkConfiguration, or roleArn", file=sys.stderr)
@@ -191,7 +195,11 @@ def main() -> int:
         return 1
 
     print(f"Updated runtime {runtime_id} with Langfuse / OTEL env; waiting for endpoint...")
-    wait_result = ac.wait_for_agent_endpoint_ready(runtime_id, max_wait=args.max_wait_endpoint)
+    try:
+        wait_result = ac.wait_for_agent_endpoint_ready(runtime_id, max_wait=args.max_wait_endpoint)
+    except Exception as e:
+        print(f"error: endpoint failed after update: {e}", file=sys.stderr)
+        return 1
     if wait_result.startswith("Endpoint is taking longer"):
         print(f"warning: {wait_result}", file=sys.stderr)
         return 0

@@ -11,24 +11,31 @@ Parameters:
   LangfuseProjectName:
     Type: String
     Description: Langfuse project name written to SSM at /langfuse/project_name
-    Default: kyc-agents
+    Default: ""
 
   LangfuseHost:
     Type: String
     Description: Langfuse host URL written to SSM at /langfuse/host
-    Default: https://cloud.langfuse.com
+    Default: ""
 
   LangfusePublicKey:
     Type: String
     Description: Langfuse public key written to SSM at /langfuse/public_key (set to your actual key after stack creation)
-    Default: placeholder
+    Default: ""
     NoEcho: true
 
   LangfuseSecretKey:
     Type: String
     Description: Langfuse secret key written to SSM at /langfuse/secret_key (set to your actual key after stack creation)
-    Default: placeholder
+    Default: ""
     NoEcho: true
+
+
+Conditions:
+  HasLangfuseProjectName: !Not [!Equals [!Ref LangfuseProjectName, ""]]
+  HasLangfuseHost: !Not [!Equals [!Ref LangfuseHost, ""]]
+  HasLangfusePublicKey: !Not [!Equals [!Ref LangfusePublicKey, ""]]
+  HasLangfuseSecretKey: !Not [!Equals [!Ref LangfuseSecretKey, ""]]
 
 
 Resources:
@@ -53,6 +60,7 @@ Resources:
 
   LangfuseProjectNameParameter:
     Type: AWS::SSM::Parameter
+    Condition: HasLangfuseProjectName
     Properties:
       Name: /langfuse/project_name
       Type: String
@@ -61,6 +69,7 @@ Resources:
 
   LangfuseHostParameter:
     Type: AWS::SSM::Parameter
+    Condition: HasLangfuseHost
     Properties:
       Name: /langfuse/host
       Type: String
@@ -69,6 +78,7 @@ Resources:
 
   LangfusePublicKeyParameter:
     Type: AWS::SSM::Parameter
+    Condition: HasLangfusePublicKey
     Properties:
       Name: /langfuse/public_key
       Type: String
@@ -77,6 +87,7 @@ Resources:
 
   LangfuseSecretKeyParameter:
     Type: AWS::SSM::Parameter
+    Condition: HasLangfuseSecretKey
     Properties:
       Name: /langfuse/secret_key
       Type: String
