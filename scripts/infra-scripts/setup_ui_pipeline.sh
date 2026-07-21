@@ -21,7 +21,7 @@ API_STACK="kyc-agent-api"
 AGENT_PIPELINE_STACK="kyc-agent-pipeline"
 UI_PIPELINE_STACK="kyc-agent-ui-pipeline"
 
-GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:360946915124:connection/24a1bf19-4ba9-42ee-ad2c-f37799f02447"
+GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:926529379586:connection/6ac4ec4b-58b4-4270-8a1b-80acae253b39"
 GITHUB_REPO="karthiknav/kyc-agents"
 GITHUB_BRANCH="improvements"
 ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-1:360946915124:certificate/885900ce-5f44-4ace-99d5-9df2dc867948

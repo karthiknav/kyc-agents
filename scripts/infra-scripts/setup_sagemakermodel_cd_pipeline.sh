@@ -20,7 +20,7 @@ ROLES_STACK="$BASE_NAME-roles"
 STORAGE_STACK="$BASE_NAME-storage"
 PIPELINE_STACK="$BASE_NAME-mlops-cd-pipeline"
 
-GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:926529379586:connection/2cba1788-cf66-42c9-bde2-97944abf843b"
+GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:926529379586:connection/6ac4ec4b-58b4-4270-8a1b-80acae253b39"
 GITHUB_REPO="karthiknav/kyc-agents"
 GITHUB_BRANCH="kyc_risk_engine"
 

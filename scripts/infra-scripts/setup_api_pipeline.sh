@@ -18,7 +18,7 @@ ROLES_STACK="kyc-agent-roles"
 API_STACK="kyc-agent-api"
 VPC_STACK="kyc-agent-vpc"
 
-GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:360946915124:connection/24a1bf19-4ba9-42ee-ad2c-f37799f02447"
+GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:926529379586:connection/6ac4ec4b-58b4-4270-8a1b-80acae253b39"
 GITHUB_REPO="karthiknav/kyc-agents"
 GITHUB_BRANCH="improvements"
 
