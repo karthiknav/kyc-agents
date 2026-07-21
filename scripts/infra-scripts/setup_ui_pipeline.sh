@@ -23,9 +23,10 @@ UI_PIPELINE_STACK="kyc-agent-ui-pipeline"
 
 GITHUB_CONNECTION_ARN="arn:aws:codeconnections:us-east-1:926529379586:connection/6ac4ec4b-58b4-4270-8a1b-80acae253b39"
 GITHUB_REPO="karthiknav/kyc-agents"
-GITHUB_BRANCH="improvements"
-ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-1:360946915124:certificate/885900ce-5f44-4ace-99d5-9df2dc867948
-CUSTOM_DOMAIN_NAME=kyc.gen-ai-designs.com
+GITHUB_BRANCH="kyc_risk_engine"
+ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-1:926529379586:certificate/c3381313-277f-4265-b43f-57d0b2c78db2
+#CUSTOM_DOMAIN_NAME=kyc.gen-ai-designs.com
+CUSTOM_DOMAIN_NAME=kyc.genaidesigns.net
 
 
 # Validate: both must be set or both empty
