@@ -8,6 +8,14 @@ Parameters:
     Description: Default model id written to SSM Parameter Store at /kyc-agent/model-id
     Default: us.anthropic.claude-3-5-sonnet-20241022-v2:0
 
+  CreateLangfuseSsmParameters:
+    Type: String
+    Description: Set to true to create /langfuse/* SSM parameters in this stack. Keep false if parameters are pre-provisioned.
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+
   LangfuseProjectName:
     Type: String
     Description: Langfuse project name written to SSM at /langfuse/project_name
@@ -32,10 +40,15 @@ Parameters:
 
 
 Conditions:
+  CreateLangfuseSsmParametersEnabled: !Equals [!Ref CreateLangfuseSsmParameters, "true"]
   HasLangfuseProjectName: !Not [!Equals [!Ref LangfuseProjectName, ""]]
   HasLangfuseHost: !Not [!Equals [!Ref LangfuseHost, ""]]
   HasLangfusePublicKey: !Not [!Equals [!Ref LangfusePublicKey, ""]]
   HasLangfuseSecretKey: !Not [!Equals [!Ref LangfuseSecretKey, ""]]
+  CreateLangfuseProjectNameParameter: !And [!Condition CreateLangfuseSsmParametersEnabled, !Condition HasLangfuseProjectName]
+  CreateLangfuseHostParameter: !And [!Condition CreateLangfuseSsmParametersEnabled, !Condition HasLangfuseHost]
+  CreateLangfusePublicKeyParameter: !And [!Condition CreateLangfuseSsmParametersEnabled, !Condition HasLangfusePublicKey]
+  CreateLangfuseSecretKeyParameter: !And [!Condition CreateLangfuseSsmParametersEnabled, !Condition HasLangfuseSecretKey]
 
 
 Resources:
@@ -60,7 +73,7 @@ Resources:
 
   LangfuseProjectNameParameter:
     Type: AWS::SSM::Parameter
-    Condition: HasLangfuseProjectName
+    Condition: CreateLangfuseProjectNameParameter
     Properties:
       Name: /langfuse/project_name
       Type: String
@@ -69,7 +82,7 @@ Resources:
 
   LangfuseHostParameter:
     Type: AWS::SSM::Parameter
-    Condition: HasLangfuseHost
+    Condition: CreateLangfuseHostParameter
     Properties:
       Name: /langfuse/host
       Type: String
@@ -78,7 +91,7 @@ Resources:
 
   LangfusePublicKeyParameter:
     Type: AWS::SSM::Parameter
-    Condition: HasLangfusePublicKey
+    Condition: CreateLangfusePublicKeyParameter
     Properties:
       Name: /langfuse/public_key
       Type: String
@@ -87,7 +100,7 @@ Resources:
 
   LangfuseSecretKeyParameter:
     Type: AWS::SSM::Parameter
-    Condition: HasLangfuseSecretKey
+    Condition: CreateLangfuseSecretKeyParameter
     Properties:
       Name: /langfuse/secret_key
       Type: String
