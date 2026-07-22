@@ -229,8 +229,16 @@ class RiskScoringTool(BaseTool):
         method = "ml_endpoint"
         if endpoint_name:
             csv_row = ",".join(str(features[f]) for f in FEATURE_ORDER)
+            logger.info(
+                "risk_scoring: invoking endpoint=%s case=%s features=%s csv_row=%s",
+                endpoint_name, case_id, features, csv_row,
+            )
             try:
                 raw_probabilities = self._invoke_endpoint(endpoint_name, csv_row)
+                logger.info(
+                    "risk_scoring: raw endpoint response case=%s raw_probabilities=%s",
+                    case_id, raw_probabilities,
+                )
                 probabilities = {
                     LABEL_NAMES[i]: round(raw_probabilities[i] * 100, 1) for i in range(3)
                 }

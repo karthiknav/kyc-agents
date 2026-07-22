@@ -1,12 +1,24 @@
 import logging
 import os
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import boto3
 
 from crew.utils import parse_task_output
 
 logger = logging.getLogger(__name__)
+
+
+def _floats_to_decimal(value):
+    """Recursively convert float values to Decimal for DynamoDB compatibility."""
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: _floats_to_decimal(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_floats_to_decimal(v) for v in value]
+    return value
 
 
 def update_orchestrator_result(task_output):
@@ -51,6 +63,7 @@ def update_orchestrator_result(task_output):
         "mlRiskConfidence": risk_confidence,
         "mlScoringId": scoring_id,
     }
+    orchestrator_stage = _floats_to_decimal(orchestrator_stage)
 
     table_name = os.environ.get("KYC_CASES_TABLE", "kyc-cases")
     try:
