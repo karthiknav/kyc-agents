@@ -120,6 +120,20 @@ Handles data drift detection and alerting. **Deliberately alert-only — no auto
 
 CloudWatch alarm metric: `aws/sagemaker/Endpoints/data-metrics` (namespace/metric name are parameters — the exact per-feature metric name SageMaker publishes should be confirmed in the CloudWatch console after the first `MonitoringSchedule` execution, then set via stack update if it differs from the default).
 
+### What happens in Stack 2, step by step
+
+1. **A model is already deployed to the live SageMaker endpoint.** The monitoring stack does not deploy the model; it assumes `deploy.py` has already updated `EndpointName` and that the endpoint is serving inference traffic.
+2. **Inference requests are captured.** Because the endpoint is deployed with `DataCaptureConfig`, SageMaker writes a sample of live request payloads to S3. Those captured inputs are what the monitor later inspects.
+3. **The monitoring schedule wakes up on its cron.** `MonitoringSchedule` starts a SageMaker monitoring job at `MonitoringScheduleExpression` intervals, using the region-specific analyzer image from `MonitorImageUri`.
+4. **The monitoring job reads the approved baseline.** `DataQualityJobDefinition` points the job at `constraints.json` and `statistics.json` under `BaselineS3Uri`, which were generated from the training data by `GenerateDataQualityBaseline`.
+5. **The job compares live feature distributions against the baseline.** SageMaker checks the captured endpoint inputs for schema and distribution drift relative to the baseline stats and constraints.
+6. **Violation artifacts are written to S3.** Any detected issues are stored under `s3://{KycMlOpsBucket}/kyc-risk-monitoring/violations/`, giving the team a durable report of what drifted.
+7. **SageMaker emits monitoring metrics to CloudWatch.** The monitoring run publishes drift-related metrics in the configured `MetricNamespace`/`MetricName`, which is what the alarm watches.
+8. **The CloudWatch alarm evaluates the drift threshold.** If the reported drift percentage stays below `DriftThresholdPercentage`, nothing else happens beyond recording the run.
+9. **If the threshold is exceeded, the alarm moves to `ALARM`.** `DriftViolationAlarm` then publishes to `DriftAlertTopic` using the attached SNS topic policy.
+10. **The team gets alerted, but retraining does not start automatically.** Any optional `NotificationEmail` subscription receives the alert, and the ML/compliance team investigates whether the cause is a schema bug, upstream pipeline change, or real population shift.
+11. **Remediation is manual by design.** The team can fix the pipeline, force the heuristic fallback path, refresh labeled training data, or run `pipeline.py` again when retraining is actually justified.
+
 **If/when the labeling loop is built**, extending this stack to auto-retrain means adding an `EventBridgeSageMakerPipelineRole` (IAM) + an EventBridge rule watching `DriftViolationAlarm` state → `ALARM`, targeting `sagemaker:StartPipelineExecution` — but only once something also refreshes `InputDataUri` with fresh confirmed-label data first.
 
 ---
