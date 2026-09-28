@@ -2,6 +2,8 @@
 
 End-to-end pipeline evaluation using real AI output, LLM-as-judge, and Langfuse dataset experiments.
 
+For step-by-step instructions on configuring the online LLM-as-judge evaluators directly in Langfuse, and a consolidated walkthrough of running the offline evals below, see [LANGFUSE_SETUP.md](LANGFUSE_SETUP.md).
+
 ```
 eval/
   experiments/          online eval — run the crew, score, post to Langfuse

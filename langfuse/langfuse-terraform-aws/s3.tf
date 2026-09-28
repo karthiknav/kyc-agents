@@ -107,7 +107,11 @@ resource "aws_iam_role_policy" "langfuse_s3_access" {
   })
 }
 
-# Bedrock access policy for the IRSA role (used by Langfuse LLM connections)
+# Bedrock access policy for the IRSA role (used by Langfuse LLM connections).
+# Covers both direct foundation-model invocation and cross-region inference
+# profiles (e.g. "us.anthropic.*"), which are a separate, account-scoped
+# resource type — invoking one also requires InvokeModel on the underlying
+# foundation-model ARNs in every region the profile can route to.
 resource "aws_iam_role_policy" "langfuse_bedrock_access" {
   name = "bedrock-access"
   role = aws_iam_role.langfuse_irsa.id
@@ -121,7 +125,12 @@ resource "aws_iam_role_policy" "langfuse_bedrock_access" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
-        Resource = "arn:aws:bedrock:us-east-1::foundation-model/*"
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/*",
+          "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+          "arn:aws:bedrock:us-east-2:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+          "arn:aws:bedrock:us-west-2:${data.aws_caller_identity.current.account_id}:inference-profile/*"
+        ]
       }
     ]
   })
