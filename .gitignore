@@ -23,6 +23,9 @@ langfuse/charts/langfuse/charts/*.tgz
 langfuse/terraform.tfstate
 langfuse/terraform.tfstate.backup
 
+# scale-down.sh / scale-up.sh replica-state snapshot (per-environment, ephemeral)
+langfuse/.demo-state/
+
 # mock-service build artifacts
 mock-service/deploy.zip
 
