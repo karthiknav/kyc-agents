@@ -18,11 +18,11 @@ module "langfuse" {
   domain = "langfuse.gen-ai-designs.com"
 
   # 👇 your existing VPC
-  vpc_id             = "vpc-0471d506bfc76f3d9"
-  private_subnet_ids = ["subnet-093a6535e084d1b87", "subnet-0bc3915284f4d7cae"]
-  public_subnet_ids  = ["subnet-0047a37be8d0a9a6d", "subnet-0ff49bee49396da89"]
+  vpc_id             = "vpc-047cc3057ce1bf76f"
+  private_subnet_ids = ["subnet-07ca4afcf672d8520", "subnet-03fec9b5914db68ff"]
+  public_subnet_ids  = ["subnet-0d1fb58fd1f9c49dc", "subnet-0a16166ebd67199fb"]
 
-  private_route_table_ids = ["rtb-040d1056d5cab6969"]
+  private_route_table_ids = ["rtb-0a6f230d58b1d860c"]
 }
 
 provider "kubernetes" {
