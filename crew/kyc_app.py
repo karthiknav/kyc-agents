@@ -27,6 +27,16 @@ LANGFUSE_ENABLED = _env_flag("LANGFUSE_ENABLED", "0")
 langfuse = None
 if LANGFUSE_ENABLED:
     try:
+        # Must run before Langfuse's get_client(): importing crewai (directly, or
+        # transitively via an earlier import elsewhere in the process) replaces
+        # warnings.warn with a wrapper that doesn't accept the `skip_file_prefixes`
+        # kwarg (Python 3.12+). opentelemetry's `deprecated`-package-based
+        # InstrumentationInfo passes that kwarg during get_client(), which otherwise
+        # crashes with TypeError before Langfuse ever finishes initializing.
+        from crew.crewai_warnings_patch import apply_crewai_warnings_patch
+
+        apply_crewai_warnings_patch()
+
         from langfuse import get_client
 
         langfuse = get_client()

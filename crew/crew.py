@@ -26,7 +26,9 @@ from crew.bedrock_tool_args_patch import (
 from crew.crewai_tool_observation_patch import apply_slim_tool_observations_patch
 from crew.crewai_guardrail_scratchpad_patch import apply_guardrail_scratchpad_patch
 from crew.bedrock_assistant_prefill_patch import apply_bedrock_assistant_prefill_patch
+from crew.crewai_warnings_patch import apply_crewai_warnings_patch
 
+apply_crewai_warnings_patch()
 apply_bedrock_tool_args_patch()
 apply_slim_tool_observations_patch()
 apply_guardrail_scratchpad_patch()
