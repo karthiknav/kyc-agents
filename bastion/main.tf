@@ -107,11 +107,17 @@ resource "aws_instance" "rdp_bastion" {
 
   # Sets the local Administrator password on first boot; runs via EC2Launch.
   # No key pair needed since we're not relying on the encrypted
-  # get-password-data flow.
+  # get-password-data flow. Uses <powershell> with a single-quoted literal
+  # (not <script>/cmd.exe) because override_special below includes %, ^, &,
+  # !, (, ) - all cmd.exe metacharacters that a batch "net user" command
+  # would misparse (e.g. & splits it into multiple commands). PowerShell
+  # single-quoted strings are verbatim, so this is safe regardless of which
+  # special characters the generated password contains.
   user_data = <<-EOF
-    <script>
-    net user Administrator "${random_password.admin.result}"
-    </script>
+    <powershell>
+    $password = ConvertTo-SecureString '${random_password.admin.result}' -AsPlainText -Force
+    Set-LocalUser -Name "Administrator" -Password $password
+    </powershell>
   EOF
 
   # Private subnet, no public IP - reached only via SSM tunnel/VPN, never

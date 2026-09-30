@@ -35,6 +35,23 @@ terraform apply
 
 ## Connect
 
+### Option A — Fleet Manager (recommended, no local tooling)
+
+1. Get the password: `terraform output -raw admin_password`
+2. AWS Console → **Systems Manager → Fleet Manager → Managed nodes** → select this instance (`terraform output -raw instance_id`) → **Node actions → Connect → Remote Desktop**.
+3. Enter user `Administrator` and the password from step 1 → **Connect**.
+
+That's it — it's an in-browser RDP session over the same SSM agent, no plugin
+install, no port-forward command, no separate RDP client. Whoever connects
+just needs IAM permission for `ssm:StartSession`, `ssm:DescribeInstanceInformation`,
+`ssm:GetConnectionStatus`, and the `ssm-guiconnect:*` actions (Fleet Manager's
+RDP feature) — ask if that's not already covered by your role.
+
+### Option B — native RDP client via SSM port-forward
+
+Use this if you want actual clipboard/drive redirection, which the Fleet
+Manager browser session doesn't fully support.
+
 ```bash
 # 1. Open the tunnel (needs the Session Manager plugin installed locally)
 terraform output -raw ssm_port_forward_command | bash   # leave running
@@ -45,9 +62,8 @@ terraform output -raw admin_password
 # 3. RDP to localhost:13389 with user Administrator + that password
 ```
 
-Anyone else who needs to log in just needs `terraform output -raw admin_password`
-run against this same state (or the password shared with them some other way) —
-same shared login for everyone, no individual credentials to provision.
+Either way it's the same shared login for everyone — no individual credentials
+to provision per person.
 
 Once connected, open a browser on the Windows desktop and hit the internal
 ALB's DNS name directly — it resolves and routes fine from inside the VPC.
