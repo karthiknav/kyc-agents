@@ -5,6 +5,13 @@ terraform {
     region  = "us-east-1"
     encrypt = true
   }
+
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+  }
 }
 
 provider "aws" {
@@ -14,6 +21,22 @@ provider "aws" {
 # Latest Windows Server AMI, resolved at apply time via the public SSM parameter.
 data "aws_ssm_parameter" "windows_ami" {
   name = "/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base"
+}
+
+# Sets the Administrator password directly via user_data instead of the usual
+# key-pair + get-password-data flow, so no EC2 key pair is needed at all.
+# Randomly generated (not a fixed/simple value) since this account is reached
+# by anyone with ssm:StartSession on this instance - keeping it strong costs
+# nothing and this is the only thing standing between that access and the box.
+resource "random_password" "admin" {
+  length      = 20
+  special     = true
+  min_upper   = 2
+  min_lower   = 2
+  min_numeric = 2
+  min_special = 2
+  # Windows local-account passwords reject some symbols; keep to a safe set.
+  override_special = "!@#$%^&*()-_=+"
 }
 
 # No inbound rules at all: RDP reaches the instance through an SSM Session
@@ -81,7 +104,15 @@ resource "aws_instance" "rdp_bastion" {
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.rdp_bastion.id]
   iam_instance_profile   = aws_iam_instance_profile.rdp_bastion.name
-  key_name               = var.key_pair_name
+
+  # Sets the local Administrator password on first boot; runs via EC2Launch.
+  # No key pair needed since we're not relying on the encrypted
+  # get-password-data flow.
+  user_data = <<-EOF
+    <script>
+    net user Administrator "${random_password.admin.result}"
+    </script>
+  EOF
 
   # Private subnet, no public IP - reached only via SSM tunnel/VPN, never
   # exposed to the internet.

@@ -22,11 +22,6 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
-variable "key_pair_name" {
-  description = "Name of an existing EC2 key pair, used only to decrypt the initial Windows Administrator password (create with 'aws ec2 create-key-pair' if you don't have one - do not commit the .pem)"
-  type        = string
-}
-
 variable "root_volume_size_gb" {
   description = "Root EBS volume size in GB"
   type        = number

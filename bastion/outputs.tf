@@ -8,7 +8,8 @@ output "ssm_port_forward_command" {
   value       = "aws ssm start-session --target ${aws_instance.rdp_bastion.id} --document-name AWS-StartPortForwardingSession --parameters '{\"portNumber\":[\"3389\"],\"localPortNumber\":[\"13389\"]}'"
 }
 
-output "get_password_command" {
-  description = "Run this locally with your key pair's .pem to retrieve the initial Administrator password"
-  value       = "aws ec2 get-password-data --instance-id ${aws_instance.rdp_bastion.id} --priv-launch-key /path/to/${var.key_pair_name}.pem"
+output "admin_password" {
+  description = "Windows Administrator password, set via user_data. Retrieve with: terraform output -raw admin_password"
+  value       = random_password.admin.result
+  sensitive   = true
 }
