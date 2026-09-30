@@ -23,6 +23,12 @@ module "langfuse" {
   public_subnet_ids  = ["subnet-0d1fb58fd1f9c49dc", "subnet-0a16166ebd67199fb"]
 
   private_route_table_ids = ["rtb-0a6f230d58b1d860c"]
+
+  # SES SMTP for transactional email (fixes "Missing environment variables for
+  # sending membership invitation email"). Requires python3 on the machine
+  # running terraform apply, and SES production access for inviting anyone
+  # other than a pre-verified recipient (new accounts start in the SES sandbox).
+  enable_ses_smtp = true
 }
 
 provider "kubernetes" {

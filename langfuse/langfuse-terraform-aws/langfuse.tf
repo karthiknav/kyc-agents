@@ -91,10 +91,12 @@ s3:
     prefix: "media/"
 EOT
 
-  additional_env_values = length(var.additional_env) == 0 ? "" : <<EOT
+  combined_additional_env = concat(var.additional_env, local.ses_additional_env)
+
+  additional_env_values = length(local.combined_additional_env) == 0 ? "" : <<EOT
 langfuse:
   additionalEnv:
-%{for env in var.additional_env~}
+%{for env in local.combined_additional_env~}
     - name: ${env.name}
 %{if env.value != null~}
       value: "${env.value}"
@@ -192,14 +194,17 @@ resource "kubernetes_secret" "langfuse" {
 
   depends_on = [kubernetes_namespace.langfuse]
 
-  data = {
-    "redis-password"      = random_password.redis_password.result
-    "postgres-password"   = random_password.postgres_password.result
-    "salt"                = random_bytes.salt.base64
-    "nextauth-secret"     = random_bytes.nextauth_secret.base64
-    "clickhouse-password" = random_password.clickhouse_password.result
-    "encryption_key"      = var.use_encryption_key ? random_bytes.encryption_key[0].hex : ""
-  }
+  data = merge(
+    {
+      "redis-password"      = random_password.redis_password.result
+      "postgres-password"   = random_password.postgres_password.result
+      "salt"                = random_bytes.salt.base64
+      "nextauth-secret"     = random_bytes.nextauth_secret.base64
+      "clickhouse-password" = random_password.clickhouse_password.result
+      "encryption_key"      = var.use_encryption_key ? random_bytes.encryption_key[0].hex : ""
+    },
+    var.enable_ses_smtp ? { "smtp-connection-url" = local.ses_smtp_connection_url } : {}
+  )
 }
 
 resource "helm_release" "langfuse" {

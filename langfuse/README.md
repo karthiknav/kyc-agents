@@ -318,6 +318,21 @@ Finally, restart the web deployment to re-trigger the migration:
 kubectl rollout restart deployment langfuse-web -n langfuse
 ```
 
+## SMTP / membership invitation emails
+
+Langfuse needs `SMTP_CONNECTION_URL` and `EMAIL_FROM_ADDRESS` set to send emails (e.g. inviting a teammate). Without them you'll see:
+
+```
+Missing environment variables for sending membership invitation email.
+```
+
+This module can provision that automatically via AWS SES (`enable_ses_smtp = true` in `main.tf`, already set). It creates an SES domain identity + DKIM records for `var.domain`, an IAM user scoped to sending from that domain, and wires the derived SMTP credentials into the `langfuse` Kubernetes secret.
+
+Notes:
+- Deriving the SES SMTP password (which is **not** the same as the IAM secret key) requires `python3` on the machine running `terraform apply`.
+- New AWS accounts start in the **SES sandbox**, which can only send to verified recipient email addresses. Request production access in the SES console (Account dashboard → "Request production access") before relying on this to invite arbitrary teammates — otherwise invites to unverified addresses will bounce.
+- To use a different provider instead, set `enable_ses_smtp = false` and pass your own credentials via `additional_env` (see the module's own README for the `additional_env` example).
+
 # Troubleshooting
 
 ## Restart worker or web without Terraform

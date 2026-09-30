@@ -248,3 +248,16 @@ variable "additional_env" {
     error_message = "Each environment variable must have either 'value' or 'valueFrom' specified, but not both."
   }
 }
+
+# SES-backed transactional email (SMTP), required for Langfuse membership invitation emails
+variable "enable_ses_smtp" {
+  description = "Whether to provision an SES domain identity + IAM SMTP user and wire SMTP_CONNECTION_URL/EMAIL_FROM_ADDRESS into Langfuse. Requires python3 on the machine running terraform apply (used to derive the SES SMTP password). New SES accounts are sandboxed and can only send to verified recipients until production access is requested in the AWS console."
+  type        = bool
+  default     = false
+}
+
+variable "ses_from_address" {
+  description = "From address used for SES-sent emails (e.g. membership invites). Defaults to 'Langfuse <noreply@<domain>>' when null. Only used if enable_ses_smtp is true."
+  type        = string
+  default     = null
+}
