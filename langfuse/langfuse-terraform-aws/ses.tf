@@ -20,13 +20,16 @@ resource "aws_sesv2_email_identity" "this" {
 }
 
 resource "aws_route53_record" "ses_dkim" {
-  for_each = var.enable_ses_smtp ? toset(aws_sesv2_email_identity.this[0].dkim_signing_attributes[0].tokens) : []
+  # Easy DKIM always issues exactly 3 tokens. for_each needs a plan-time-known
+  # key set, and the tokens themselves are only known after apply, so index
+  # into them by a static position (0, 1, 2) instead of using the tokens as keys.
+  for_each = var.enable_ses_smtp ? toset(["0", "1", "2"]) : []
 
   zone_id = aws_route53_zone.zone.zone_id
-  name    = "${each.value}._domainkey.${var.domain}"
+  name    = "${aws_sesv2_email_identity.this[0].dkim_signing_attributes[0].tokens[tonumber(each.value)]}._domainkey.${var.domain}"
   type    = "CNAME"
   ttl     = 600
-  records = ["${each.value}.dkim.amazonses.com"]
+  records = ["${aws_sesv2_email_identity.this[0].dkim_signing_attributes[0].tokens[tonumber(each.value)]}.dkim.amazonses.com"]
 }
 
 resource "aws_iam_user" "ses_smtp" {
@@ -85,22 +88,30 @@ locals {
   # Merged into local.additional_env_values in langfuse.tf so it survives even
   # if the caller also supplies their own var.additional_env (Helm replaces,
   # rather than merges, a values array across -f files).
-  ses_additional_env = var.enable_ses_smtp ? [
-    {
-      name  = "SMTP_CONNECTION_URL"
-      value = null
-      valueFrom = {
-        secretKeyRef = {
-          name = "langfuse"
-          key  = "smtp-connection-url"
+  #
+  # Built with a single `for ... if` expression rather than a `cond ? [...] : []`
+  # ternary: the two list entries below have different-shaped "value"/"valueFrom"
+  # attributes, and Terraform can't unify that tuple's type against the empty-list
+  # false-branch of a conditional ("Inconsistent conditional result types"). A
+  # for-expression doesn't need to unify branch types, so it doesn't hit that.
+  ses_additional_env = [
+    for entry in [
+      {
+        name  = "SMTP_CONNECTION_URL"
+        value = null
+        valueFrom = {
+          secretKeyRef = {
+            name = "langfuse"
+            key  = "smtp-connection-url"
+          }
+          configMapKeyRef = null
         }
-        configMapKeyRef = null
-      }
-    },
-    {
-      name      = "EMAIL_FROM_ADDRESS"
-      value     = local.ses_from_address
-      valueFrom = null
-    },
-  ] : []
+      },
+      {
+        name      = "EMAIL_FROM_ADDRESS"
+        value     = local.ses_from_address
+        valueFrom = null
+      },
+    ] : entry if var.enable_ses_smtp
+  ]
 }

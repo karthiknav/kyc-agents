@@ -29,6 +29,7 @@ git config --global credential.helper store
 ```bash
 # First time
 git clone https://github.com/<org>/kyc-agents.git
+git clone https://github.com/karthiknav/kyc-agents.git
 cd kyc-agents
 
 # Already cloned
@@ -183,3 +184,60 @@ Step 7: setup_ui_pipeline.sh             (needs Step 5 complete)
 For the pipeline-managed stacks (`agentcore-runtime`, `api`, `lambda`, `ui`), **do not redeploy them directly** — push code to the configured GitHub branch and the relevant CodePipeline will handle it automatically.
 
 To update pipeline infrastructure or pass-through parameters (e.g. `AgentArn`, Langfuse keys), re-run the corresponding `setup_*_pipeline.sh` script with updated values.
+
+---
+
+## On-demand: RDP into an internal-only UI (Windows bastion)
+
+Some UIs (e.g. an internal ALB with no public listener) are only reachable from
+inside the VPC. The [`bastion/`](bastion/) Terraform stack launches a Windows
+EC2 instance in the existing private subnets for exactly this — no public IP,
+no inbound security group or NACL rules, since RDP is tunneled over SSM
+Session Manager instead of opening port 3389 (see
+[`bastion/README.md`](bastion/README.md) and [`NACL-COMPLIANCE.md`](NACL-COMPLIANCE.md)
+for why).
+
+### One-time setup
+
+1. Install the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for the AWS CLI locally.
+2. Create an EC2 key pair (only needed once, to decrypt the Windows Administrator password):
+
+```bash
+aws ec2 create-key-pair --key-name kyc-rdp-bastion --query 'KeyMaterial' --output text > kyc-rdp-bastion.pem
+chmod 400 kyc-rdp-bastion.pem   # keep this out of git
+```
+
+3. Deploy the bastion:
+
+```bash
+cd bastion
+terraform init
+terraform apply -var="key_pair_name=kyc-rdp-bastion"
+```
+
+### Connect and open the internal UI
+
+1. Open the SSM port-forward tunnel and leave it running:
+
+```bash
+terraform output -raw ssm_port_forward_command | bash
+# forwards localhost:13389 -> the instance's 3389 over SSM, no open ports needed
+```
+
+2. In another terminal, decrypt the initial Administrator password:
+
+```bash
+terraform output -raw get_password_command   # edit in the path to your .pem, then run
+```
+
+3. RDP to `localhost:13389` with user `Administrator` and the password from step 2.
+4. Once connected, open a browser **inside the Windows session** and navigate to the internal ALB's DNS name — it resolves and routes fine from inside the VPC, since the bastion sits in the same subnets as the rest of the KYC workloads.
+
+### Cleanup
+
+This is meant for occasional access, not a standing service — tear it down when you're done:
+
+```bash
+cd bastion
+terraform destroy
+```
