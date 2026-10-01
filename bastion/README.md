@@ -47,7 +47,12 @@ terraform apply
 
 ### Option A — Fleet Manager (recommended, no local tooling)
 
-1. Get the password: `terraform output -raw admin_password`
+1. Get the password:
+   ```bash
+   terraform output -raw admin_password
+   # or, without needing Terraform state access:
+   aws secretsmanager get-secret-value --secret-id "$(terraform output -raw admin_password_secret_arn)" --query SecretString --output text
+   ```
 2. AWS Console → **Systems Manager → Fleet Manager → Managed nodes** → select this instance (`terraform output -raw instance_id`) → **Node actions → Connect → Remote Desktop**.
 3. Enter user `Administrator` and the password from step 1 → **Connect**.
 
