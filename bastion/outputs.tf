@@ -13,3 +13,8 @@ output "admin_password" {
   value       = random_password.admin.result
   sensitive   = true
 }
+
+output "admin_password_secret_arn" {
+  description = "Secrets Manager secret ARN holding the same password. Retrieve with: aws secretsmanager get-secret-value --secret-id <arn> --query SecretString --output text"
+  value       = aws_secretsmanager_secret.admin_password.arn
+}

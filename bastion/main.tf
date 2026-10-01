@@ -39,6 +39,18 @@ resource "random_password" "admin" {
   override_special = "!@#$%^&*()-_=+"
 }
 
+# Mirrors the generated password into Secrets Manager so it can be retrieved
+# via the AWS console/CLI without needing Terraform state access.
+resource "aws_secretsmanager_secret" "admin_password" {
+  name        = "${var.name}-admin-password"
+  description = "Windows Administrator password for the ${var.name} RDP bastion (bastion/main.tf)"
+}
+
+resource "aws_secretsmanager_secret_version" "admin_password" {
+  secret_id     = aws_secretsmanager_secret.admin_password.id
+  secret_string = random_password.admin.result
+}
+
 # No inbound rules at all: RDP reaches the instance through an SSM Session
 # Manager port-forward tunnel, not a directly opened port. Avoids reproducing
 # the "unrestricted admin port" pattern already remediated for this VPC

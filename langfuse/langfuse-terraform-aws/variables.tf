@@ -249,9 +249,9 @@ variable "additional_env" {
   }
 }
 
-# SES-backed transactional email (SMTP), required for Langfuse membership invitation emails
+# SES-backed transactional email, required for Langfuse membership invitation emails
 variable "enable_ses_smtp" {
-  description = "Whether to provision an SES domain identity + IAM SMTP user and wire SMTP_CONNECTION_URL/EMAIL_FROM_ADDRESS into Langfuse. Requires python3 on the machine running terraform apply (used to derive the SES SMTP password). New SES accounts are sandboxed and can only send to verified recipients until production access is requested in the AWS console."
+  description = "Whether to provision an SES domain identity + DKIM records and wire SMTP_CONNECTION_URL (ses://<region>) / EMAIL_FROM_ADDRESS into Langfuse. Sends via the IRSA role's AWS SDK credentials (no IAM user or static password). New SES accounts are sandboxed and can only send to verified recipients until production access is requested in the AWS console."
   type        = bool
   default     = false
 }

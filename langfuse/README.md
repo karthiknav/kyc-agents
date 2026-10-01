@@ -326,10 +326,16 @@ Langfuse needs `SMTP_CONNECTION_URL` and `EMAIL_FROM_ADDRESS` set to send emails
 Missing environment variables for sending membership invitation email.
 ```
 
-This module can provision that automatically via AWS SES (`enable_ses_smtp = true` in `main.tf`, already set). It creates an SES domain identity + DKIM records for `var.domain`, an IAM user scoped to sending from that domain, and wires the derived SMTP credentials into the `langfuse` Kubernetes secret.
+This module can provision that automatically via AWS SES (`enable_ses_smtp = true` in `main.tf`, already set). It creates an SES domain identity + DKIM records for `var.domain`, grants `ses:SendEmail`/`ses:SendRawEmail` (scoped to `*@var.domain`) to the existing IRSA role the Langfuse pods already assume, and sets:
+
+```
+SMTP_CONNECTION_URL=ses://<region>
+EMAIL_FROM_ADDRESS=Langfuse <noreply@<domain>>
+```
+
+Langfuse sends via the AWS SDK's normal credential chain in this mode (no SMTP username/password), so there's no IAM user or static access key to create — this also sidesteps AWS Organizations SCPs that deny `iam:CreateUser`.
 
 Notes:
-- Deriving the SES SMTP password (which is **not** the same as the IAM secret key) requires `python3` on the machine running `terraform apply`.
 - New AWS accounts start in the **SES sandbox**, which can only send to verified recipient email addresses. Request production access in the SES console (Account dashboard → "Request production access") before relying on this to invite arbitrary teammates — otherwise invites to unverified addresses will bounce.
 - To use a different provider instead, set `enable_ses_smtp = false` and pass your own credentials via `additional_env` (see the module's own README for the `additional_env` example).
 

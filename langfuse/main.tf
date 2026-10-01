@@ -24,10 +24,12 @@ module "langfuse" {
 
   private_route_table_ids = ["rtb-0a6f230d58b1d860c"]
 
-  # SES SMTP for transactional email (fixes "Missing environment variables for
-  # sending membership invitation email"). Requires python3 on the machine
-  # running terraform apply, and SES production access for inviting anyone
-  # other than a pre-verified recipient (new accounts start in the SES sandbox).
+  # SES for transactional email (fixes "Missing environment variables for
+  # sending membership invitation email"). Uses the IRSA role's AWS SDK
+  # credentials via SMTP_CONNECTION_URL=ses://<region> - no IAM user/access
+  # key, so it isn't blocked by org SCPs that deny iam:CreateUser. Needs SES
+  # production access to invite anyone other than a pre-verified recipient
+  # (new accounts start in the SES sandbox).
   enable_ses_smtp = true
 }
 
